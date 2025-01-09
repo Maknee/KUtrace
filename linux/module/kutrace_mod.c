@@ -99,8 +99,8 @@ MODULE_AUTHOR("Richard L Sites");
 
 /* Add others as you find and test them */
 #define Isx86_64	defined(__x86_64)
-#define IsAmd_64	Isx86_64 && defined(__znver1) 
-#define IsIntel_64	Isx86_64 && !defined(__znver1)
+#define IsAmd_64        (Isx86_64 && (defined(__znver1) || defined(__znver2) || defined(__znver3)))
+#define IsIntel_64	Isx86_64 && !defined(IsAmd_64)
 
 #define IsArm_64	defined(__aarch64__)
 #define IsRPi4		defined(__ARM_ARCH) && (__ARM_ARCH == 8)
@@ -190,6 +190,11 @@ MODULE_AUTHOR("Richard L Sites");
 #define IA32_PMC0		0x0C1
 #define IA32_PMC1		0x0C2
 
+/* AMD MSR addresses */
+#define AMD_PERF_EVT_SEL0 0xC0010000
+#define AMD_PERF_CTR0    0xC0010004  // Performance Counter Register
+#define MSR_PERF_CTL_1 0xC0010200    /* Performance Event Select Register 1 */
+#define MSR_PERF_CTR_1 0xC0010201    /* Performance Counter Register 1 */
 
 /* #define IA32_PERF_GLOBAL_CTRL	0x38F */
 #define PMC0_EN			(1L << 0)
@@ -627,6 +632,26 @@ void ku_setup_llc_miss(void)
 	llc_miss_enable = rdMSR(IA32_PERF_GLOBAL_CTRL);
 	llc_miss_enable |= PMC1_EN;
 	wrMSR(IA32_PERF_GLOBAL_CTRL, llc_miss_enable);
+#elif IsAmd_64
+    u64 llc_miss_sel;
+    /* AMD uses different MSR addresses and event codes for LLC misses
+     * Event Select: 0x60 (L3 Cache Misses)
+     * Unit Mask: 0x00 (All cache states)
+     * Enable user and OS mode counting
+     */
+	u64 UNIT_MASK = 0x01;
+	u64 EVENT_SELECT = 0x04;
+	llc_miss_sel = (UNIT_MASK << 8) |           // Unit mask in bits 8-15
+			(EVENT_SELECT) |              // Event select in bits 0-7
+			(1ULL << 16) |               // USR - count user events
+			(1ULL << 17) |               // OS - count kernel events
+			(1ULL << 22);                // Enable counter
+                   
+    /* Use Performance Event Select Register 1 (PERF_CTL[1]) */
+    wrMSR(AMD_PERF_EVT_SEL0, llc_miss_sel);
+
+    /* Enable the counter in PERF_CTR[1] */
+    /* Note: AMD typically doesn't require global enable like Intel */
 #else
 	/* Not implemented for AMD, RPi */
 #error Define ku_setup_llc_miss for your architecture
@@ -711,9 +736,14 @@ inline u64 ku_get_llc_miss(void)
 	int ecx = IA32_PMC1;		/* What counter it selects, Intel */
 	__asm __volatile("rdmsr" : "=a"(a), "=d"(d) : "c"(ecx));
 	return ((u64)a) | (((u64)d) << 32);
+#elif IsAmd_64
+    u32 a = 0, d = 0;
+    int ecx = AMD_PERF_CTR0;       /* PERF_CTR0 for AMD */
+    __asm __volatile("rdmsr" : "=a"(a), "=d"(d) : "c"(ecx));
+    return ((u64)a) | (((u64)d) << 32);
 #else
 	/* Not implemented for AMD, RPi */
-#error Define llc_miss for your architecture
+// #error Define llc_miss for your architecture
 	return 0;
 #endif
 }

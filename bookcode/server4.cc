@@ -3,6 +3,17 @@
 //
 // compile with g++ -O2 -pthread server4.cc dclab_log.cc dclab_rpc.cc kutrace_lib.cc spinlock.cc -o server4
 
+/*
+rm -rf client4_2024*
+./client4 192.168.50.233 12345 -rep 10 write -key "kkkkk" -value "vvvvv" 1000000
+./client4 192.168.50.233 12345 quit
+./dumplogfile4 "Write 1MB" client4_2024* > client4.json
+./makeself show_rpc.html client4.json client4.html
+
+./server4
+
+*/
+
 #include <errno.h>
 #include <pthread.h>
 #include <stdio.h>

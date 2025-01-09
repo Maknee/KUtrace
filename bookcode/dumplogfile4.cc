@@ -11,6 +11,7 @@
 //   od -Ax -tx4z -w32 foo.log
 //
 
+#include <time.h>
 #include <stdio.h>
 #include <string.h>
 

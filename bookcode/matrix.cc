@@ -3,13 +3,12 @@
 
 #include <stdio.h>
 #include <string.h>
-#include <sys/time.h>	// gettimeofday
+#include <sys/time.h> // gettimeofday
 #include "basetypes.h"
 #include "kutrace_lib.h"
 #include "timecounters.h"
 
-// compile with g++ -O2 matrix.cc  kutrace_lib.cc  -o matrix_ku 
-
+// compile with g++ -O2 matrix.cc  kutrace_lib.cc  -o matrix_ku
 
 //
 // Sample timings, with cache simulation and miss counts
@@ -165,7 +164,7 @@
 // Misses L1/L2/L3  268100748  147229568  132811796
 // BlockMultiplyRemap        	38.003 seconds, sum=2494884076.030973911
 // Misses L1/L2/L3   35197695   17894256   16808337
-// 
+//
 // 32x32 remap
 // BlockMultiplyRemap        	0.373 seconds, sum=2494884076.030955315
 // Misses L1/L2/L3   26161141    8116254    5228737
@@ -175,7 +174,7 @@
 //
 // Remap Misses L1/L2/L3     524288     524288     523376
 // Remap Misses L1/L2/L3     524288     524288     517579
-// 
+//
 
 #define TRACK_CACHES 0
 #define HASHED_L3 0
@@ -185,16 +184,16 @@ static const int kColsize = kRowsize;
 static const int kBlocksize = 8;
 
 static const int kRemapsize = 32;
-//static const int kRemapsize = 16;
-//static const int kRemapsize = 32;
-//static const int kRemapsize = 64;
+// static const int kRemapsize = 16;
+// static const int kRemapsize = 32;
+// static const int kRemapsize = 64;
 
 ////typedef unsigned long int uint64;
-typedef void MulProc(const double* a, const double* b, double* c);
+typedef void MulProc(const double *a, const double *b, double *c);
 
-static double* aa = NULL;
-static double* bb = NULL;
-static double* cc = NULL;
+static double *aa = NULL;
+static double *bb = NULL;
+static double *cc = NULL;
 
 static const int kL1LgSize = 15;
 static const int kL1LgAssoc = 3;
@@ -215,7 +214,6 @@ static const int kL2Assoc = 1 << kL2LgAssoc;
 static const int kL2Assocmask = kL2Assoc - 1;
 static const uint64 kL2Setmask = (1l << kL2LgSetsize) - 1;
 static const uint64 kL2Tagmask = (1l << kL2LgLinesize) - 1;
-
 
 static const int kL3LgSize = 21;
 static const int kL3LgAssoc = 4;
@@ -238,8 +236,8 @@ static uint64 L1tag[kL1Setsize * kL1Assoc];
 static uint64 L2tag[kL2Setsize * kL2Assoc];
 static uint64 L3tag[kL3Setsize * kL3Assoc];
 
-
-void InitTags() {
+void InitTags()
+{
   memset(L1tag, 0, kL1Setsize * kL1Assoc * sizeof(uint64));
   memset(L2tag, 0, kL2Setsize * kL2Assoc * sizeof(uint64));
   memset(L3tag, 0, kL3Setsize * kL3Assoc * sizeof(uint64));
@@ -247,47 +245,63 @@ void InitTags() {
 }
 
 #if TRACK_CACHES
-bool L1(uint64 addr) {
+bool L1(uint64 addr)
+{
   int set = ((addr >> kL1LgLinesize) & kL1Setmask) << kL1LgAssoc;
   uint64 tag = addr & ~kL1Tagmask;
-  for (int i = 0; i < kL1Assoc; ++i) {
-    if (L1tag[set + i] == tag) {return true;}
+  for (int i = 0; i < kL1Assoc; ++i)
+  {
+    if (L1tag[set + i] == tag)
+    {
+      return true;
+    }
   }
-  ++L1misses; 
+  ++L1misses;
   L1tag[set + L1rr] = tag;
   L1rr = (L1rr + 1) & kL1Assocmask;
   return false;
 }
 
-bool L2(uint64 addr) {
+bool L2(uint64 addr)
+{
   int set = ((addr >> kL2LgLinesize) & kL2Setmask) << kL2LgAssoc;
   uint64 tag = addr & ~kL2Tagmask;
-  for (int i = 0; i < kL2Assoc; ++i) {
-    if (L2tag[set + i] == tag) {return true;}
+  for (int i = 0; i < kL2Assoc; ++i)
+  {
+    if (L2tag[set + i] == tag)
+    {
+      return true;
+    }
   }
-  ++L2misses; 
+  ++L2misses;
   L2tag[set + L2rr] = tag;
   L2rr = (L2rr + 1) & kL2Assocmask;
   return false;
 }
 
-bool L3(uint64 addr) {
+bool L3(uint64 addr)
+{
 #if HASHED_L3
   int set = (((addr >> kL3LgLinesize) ^ (addr >> kL3LgSize)) & kL3Setmask) << kL3LgAssoc;
 #else
   int set = ((addr >> kL3LgLinesize) & kL3Setmask) << kL3LgAssoc;
 #endif
   uint64 tag = addr & ~kL3Tagmask;
-  for (int i = 0; i < kL3Assoc; ++i) {
-    if (L3tag[set + i] == tag) {return true;}
+  for (int i = 0; i < kL3Assoc; ++i)
+  {
+    if (L3tag[set + i] == tag)
+    {
+      return true;
+    }
   }
-  ++L3misses; 
+  ++L3misses;
   L3tag[set + L3rr] = tag;
   L3rr = (L3rr + 1) & kL3Assocmask;
   return false;
 }
 
-void L123(uint64 addr) {
+void L123(uint64 addr)
+{
   L1(addr);
   L2(addr);
   L3(addr);
@@ -295,37 +309,44 @@ void L123(uint64 addr) {
 
 #else
 
-bool L1(uint64 addr) {return false;}
-bool L2(uint64 addr) {return false;}
-bool L3(uint64 addr) {return false;}
+bool L1(uint64 addr) { return false; }
+bool L2(uint64 addr) { return false; }
+bool L3(uint64 addr) { return false; }
 void L123(uint64 addr) {}
 #endif
 
-
-
 // Give simple values near 1.0 to each element of arr
-void SimpleInit(double* arr) {
-  for (int row = 0; row < kRowsize; ++row) {
-    for (int col = 0; col < kColsize; ++col) {
+void SimpleInit(double *arr)
+{
+  for (int row = 0; row < kRowsize; ++row)
+  {
+    for (int col = 0; col < kColsize; ++col)
+    {
       arr[row * kRowsize + col] = 1.0 + (row * kRowsize + col) / 1000000.0;
     }
   }
 }
 
 // Zero arr
-void ZeroInit(double* arr) {
-  for (int row = 0; row < kRowsize; ++row) {
-    for (int col = 0; col < kColsize; ++col) {
+void ZeroInit(double *arr)
+{
+  for (int row = 0; row < kRowsize; ++row)
+  {
+    for (int col = 0; col < kColsize; ++col)
+    {
       arr[row * kRowsize + col] = 0.0;
     }
   }
 }
 
 // Sum all the elements of arr -- used for simple sameness check
-double SimpleSum(double* arr) {
+double SimpleSum(double *arr)
+{
   double sum = 0.0;
-  for (int row = 0; row < kRowsize; ++row) {
-    for (int col = 0; col < kColsize; ++col) {
+  for (int row = 0; row < kRowsize; ++row)
+  {
+    for (int col = 0; col < kColsize; ++col)
+    {
       sum += arr[row * kRowsize + col];
     }
   }
@@ -333,108 +354,142 @@ double SimpleSum(double* arr) {
 }
 
 // Test two arrays for equality
-bool EqualArray(const double* arr1, const double* arr2) {
-  for (int k = 0; k < kRowsize * kColsize; ++k) {
-    if (arr1[k] != arr2[k]) {return false;}
+bool EqualArray(const double *arr1, const double *arr2)
+{
+  for (int k = 0; k < kRowsize * kColsize; ++k)
+  {
+    if (arr1[k] != arr2[k])
+    {
+      return false;
+    }
   }
   return true;
 }
 
-void TimeMe(const char* label, MulProc f, const double* a, const double* b, double* c) {
+void TimeMe(const char *label, MulProc f, const double *a, const double *b, double *c)
+{
   InitTags();
   int64 start_usec = GetUsec();
-  f(a, b, c);  
+  f(a, b, c);
   int64 stop_usec = GetUsec();
   double duration_usec = stop_usec - start_usec;
-  fprintf(stdout, "%s\t%5.3f seconds, sum=%18.9f\n", label, duration_usec/1000000.0, SimpleSum(c)); 
+  fprintf(stdout, "%s\t%5.3f seconds, sum=%18.9f\n", label, duration_usec / 1000000.0, SimpleSum(c));
   fprintf(stdout, "Misses L1/L2/L3 %10lld %10lld %10lld\n", L1misses, L2misses, L3misses);
 }
 
-
-
-inline
-double VectorSum1(const double* aptr, const double* bptr, int count, int rowsize) {
-  const double* aptr2 = aptr;
-  const double* bptr2 = bptr;
+inline double VectorSum1(const double *aptr, const double *bptr, int count, int rowsize)
+{
+  const double *aptr2 = aptr;
+  const double *bptr2 = bptr;
   double sum0 = 0.0;
-  for (int k = 0; k < count; ++k) {
+  for (int k = 0; k < count; ++k)
+  {
     sum0 += aptr2[0] * bptr2[0 * rowsize];
-L1((uint64)&aptr2[0]);
-L2((uint64)&aptr2[0]);
-L3((uint64)&aptr2[0]);
-L1((uint64)&bptr2[0 * rowsize]);
-L2((uint64)&bptr2[0 * rowsize]);
-L3((uint64)&bptr2[0 * rowsize]);
+    L1((uint64)&aptr2[0]);
+    L2((uint64)&aptr2[0]);
+    L3((uint64)&aptr2[0]);
+    L1((uint64)&bptr2[0 * rowsize]);
+    L2((uint64)&bptr2[0 * rowsize]);
+    L3((uint64)&bptr2[0 * rowsize]);
     aptr2 += 1;
     bptr2 += 1 * rowsize;
   }
   return (sum0);
 }
 
-inline
-double VectorSum2(const double* aptr, const double* bptr, int count, int rowsize) {
-  const double* aptr2 = aptr;
-  const double* bptr2 = bptr;
+inline double VectorSum2(const double *aptr, const double *bptr, int count, int rowsize)
+{
+  const double *aptr2 = aptr;
+  const double *bptr2 = bptr;
   double sum0 = 0.0;
   double sum1 = 0.0;
-  for (int k = 0; k < count; k += 2) {
+  for (int k = 0; k < count; k += 2)
+  {
     sum0 += aptr2[0] * bptr2[0 * rowsize];
     sum1 += aptr2[1] * bptr2[1 * rowsize];
-L1((uint64)&aptr2[0]);
-L2((uint64)&aptr2[0]);
-L3((uint64)&aptr2[0]);
-L1((uint64)&bptr2[0 * rowsize]);
-L2((uint64)&bptr2[0 * rowsize]);
-L3((uint64)&bptr2[0 * rowsize]);
-L1((uint64)&aptr2[1]);
-L2((uint64)&aptr2[1]);
-L3((uint64)&aptr2[1]);
-L1((uint64)&bptr2[1 * rowsize]);
-L2((uint64)&bptr2[1 * rowsize]);
-L3((uint64)&bptr2[1 * rowsize]);
+    L1((uint64)&aptr2[0]);
+    L2((uint64)&aptr2[0]);
+    L3((uint64)&aptr2[0]);
+    L1((uint64)&bptr2[0 * rowsize]);
+    L2((uint64)&bptr2[0 * rowsize]);
+    L3((uint64)&bptr2[0 * rowsize]);
+    L1((uint64)&aptr2[1]);
+    L2((uint64)&aptr2[1]);
+    L3((uint64)&aptr2[1]);
+    L1((uint64)&bptr2[1 * rowsize]);
+    L2((uint64)&bptr2[1 * rowsize]);
+    L3((uint64)&bptr2[1 * rowsize]);
     aptr2 += 2;
     bptr2 += 2 * rowsize;
   }
   return (sum0 + sum1);
 }
 
-inline
-double VectorSum4(const double* aptr, const double* bptr, int count, int rowsize) {
-  const double* aptr2 = aptr;
-  const double* bptr2 = bptr;
+#include <immintrin.h> // For AVX2 intrinsics
+
+inline double VectorSum4_AVX(const double *aptr, const double *bptr, int count, int rowsize)
+{
+  __m256d sum = _mm256_setzero_pd();
+  for (int k = 0; k < count; k += 4)
+  {
+    __builtin_prefetch(&aptr[k + 8], 0, 3);             // Prefetch next A elements
+    __builtin_prefetch(&bptr[(k + 8) * rowsize], 0, 3); // Prefetch next B elements
+
+    __m256d a = _mm256_loadu_pd(&aptr[k]);
+    __m256d b = _mm256_setr_pd(
+        bptr[k * rowsize],
+        bptr[(k + 1) * rowsize],
+        bptr[(k + 2) * rowsize],
+        bptr[(k + 3) * rowsize]);
+    sum = _mm256_fmadd_pd(a, b, sum);
+  }
+  // Manual horizontal sum of the 4 doubles
+  __m128d high = _mm256_extractf128_pd(sum, 1);
+  __m128d low = _mm256_castpd256_pd128(sum);
+  __m128d sumQuad = _mm_add_pd(low, high);
+  __m128d sumDual = _mm_add_pd(sumQuad, _mm_shuffle_pd(sumQuad, sumQuad, 1));
+  return _mm_cvtsd_f64(sumDual);
+}
+
+inline double VectorSum4(const double *aptr, const double *bptr, int count, int rowsize)
+{
+  // return VectorSum4_AVX(aptr, bptr, count, rowsize);
+  const double *aptr2 = aptr;
+  const double *bptr2 = bptr;
   double sum0 = 0.0;
   double sum1 = 0.0;
   double sum2 = 0.0;
   double sum3 = 0.0;
-  for (int k = 0; k < count; k += 4) {
+  for (int k = 0; k < count; k += 4)
+  {
     sum0 += aptr2[0] * bptr2[0 * rowsize];
     sum1 += aptr2[1] * bptr2[1 * rowsize];
     sum2 += aptr2[2] * bptr2[2 * rowsize];
     sum3 += aptr2[3] * bptr2[3 * rowsize];
-L1((uint64)&aptr2[0]);
-L2((uint64)&aptr2[0]);
-L3((uint64)&aptr2[0]);
-L1((uint64)&bptr2[0 * rowsize]);
-L2((uint64)&bptr2[0 * rowsize]);
-L3((uint64)&bptr2[0 * rowsize]);
-L1((uint64)&aptr2[1]);
-L2((uint64)&aptr2[1]);
-L3((uint64)&aptr2[1]);
-L1((uint64)&bptr2[1 * rowsize]);
-L2((uint64)&bptr2[1 * rowsize]);
-L3((uint64)&bptr2[1 * rowsize]);
-L1((uint64)&aptr2[2]);
-L2((uint64)&aptr2[2]);
-L3((uint64)&aptr2[2]);
-L1((uint64)&bptr2[2 * rowsize]);
-L2((uint64)&bptr2[2 * rowsize]);
-L3((uint64)&bptr2[2 * rowsize]);
-L1((uint64)&aptr2[3]);
-L2((uint64)&aptr2[3]);
-L3((uint64)&aptr2[3]);
-L1((uint64)&bptr2[3 * rowsize]);
-L2((uint64)&bptr2[3 * rowsize]);
-L3((uint64)&bptr2[3 * rowsize]);
+    L1((uint64)&aptr2[0]);
+    L2((uint64)&aptr2[0]);
+    L3((uint64)&aptr2[0]);
+    L1((uint64)&bptr2[0 * rowsize]);
+    L2((uint64)&bptr2[0 * rowsize]);
+    L3((uint64)&bptr2[0 * rowsize]);
+    L1((uint64)&aptr2[1]);
+    L2((uint64)&aptr2[1]);
+    L3((uint64)&aptr2[1]);
+    L1((uint64)&bptr2[1 * rowsize]);
+    L2((uint64)&bptr2[1 * rowsize]);
+    L3((uint64)&bptr2[1 * rowsize]);
+    L1((uint64)&aptr2[2]);
+    L2((uint64)&aptr2[2]);
+    L3((uint64)&aptr2[2]);
+    L1((uint64)&bptr2[2 * rowsize]);
+    L2((uint64)&bptr2[2 * rowsize]);
+    L3((uint64)&bptr2[2 * rowsize]);
+    L1((uint64)&aptr2[3]);
+    L2((uint64)&aptr2[3]);
+    L3((uint64)&aptr2[3]);
+    L1((uint64)&bptr2[3 * rowsize]);
+    L2((uint64)&bptr2[3 * rowsize]);
+    L3((uint64)&bptr2[3 * rowsize]);
     aptr2 += 4;
     bptr2 += 4 * rowsize;
   }
@@ -445,81 +500,111 @@ L3((uint64)&bptr2[3 * rowsize]);
 //==============================================================================
 //
 
-void SimpleMultiply(const double* a, const double* b, double* c) {
-  for (int row = 0; row < kRowsize; ++row) {
-    for (int col = 0; col < kColsize; ++col) {
-bool traceme = (col<2) & (row < 2);
-traceme = false;
-if (traceme) {fprintf(stdout, "[%d,%d] = ", row, col);}
+void SimpleMultiply(const double *a, const double *b, double *c)
+{
+  for (int row = 0; row < kRowsize; ++row)
+  {
+    for (int col = 0; col < kColsize; ++col)
+    {
+      bool traceme = (col < 2) & (row < 2);
+      traceme = false;
+      if (traceme)
+      {
+        fprintf(stdout, "[%d,%d] = ", row, col);
+      }
       double sum = 0.0;
-      for (int k = 0; k < kRowsize; ++k) {
+      for (int k = 0; k < kRowsize; ++k)
+      {
         sum += a[row * kRowsize + k] * b[k * kRowsize + col];
-int hit1a = L1((uint64)&a[row * kRowsize + k]);
-int hit2a = L2((uint64)&a[row * kRowsize + k]);
-int hit3a = L3((uint64)&a[row * kRowsize + k]);
-int hit1b = L1((uint64)&b[k * kRowsize + col]);
-int hit2b = L2((uint64)&b[k * kRowsize + col]);
-int hit3b = L3((uint64)&b[k * kRowsize + col]);
-if (traceme) {fprintf(stdout, "%016llx %016llx a%d%d%d b%d%d%d ", 
-(uint64)&a[row * kRowsize + k], (uint64)&b[k * kRowsize + col],
-hit1a, hit2a, hit3a, hit1b, hit2b, hit3b);}
+        int hit1a = L1((uint64)&a[row * kRowsize + k]);
+        int hit2a = L2((uint64)&a[row * kRowsize + k]);
+        int hit3a = L3((uint64)&a[row * kRowsize + k]);
+        int hit1b = L1((uint64)&b[k * kRowsize + col]);
+        int hit2b = L2((uint64)&b[k * kRowsize + col]);
+        int hit3b = L3((uint64)&b[k * kRowsize + col]);
+        if (traceme)
+        {
+          fprintf(stdout, "%016llx %016llx a%d%d%d b%d%d%d ",
+                  (uint64)&a[row * kRowsize + k], (uint64)&b[k * kRowsize + col],
+                  hit1a, hit2a, hit3a, hit1b, hit2b, hit3b);
+        }
       }
       c[row * kRowsize + col] = sum;
-int hit1c = L1((uint64)&c[row * kRowsize + col]);
-int hit2c = L2((uint64)&c[row * kRowsize + col]);
-int hit3c = L3((uint64)&c[row * kRowsize + col]);
-if (traceme) {fprintf(stdout, "c%d%d%d\n", hit1c, hit2c, hit3c);}
-//if ((row < 16) && (col < 16)) {  
-//fprintf(stdout, "[%d,%d] Misses L1/L2/L3 %10lld %10lld %10lld\n", row, col, L1misses, L2misses, L3misses);
-//}
+      int hit1c = L1((uint64)&c[row * kRowsize + col]);
+      int hit2c = L2((uint64)&c[row * kRowsize + col]);
+      int hit3c = L3((uint64)&c[row * kRowsize + col]);
+      if (traceme)
+      {
+        fprintf(stdout, "c%d%d%d\n", hit1c, hit2c, hit3c);
+      }
+      // if ((row < 16) && (col < 16)) {
+      // fprintf(stdout, "[%d,%d] Misses L1/L2/L3 %10lld %10lld %10lld\n", row, col, L1misses, L2misses, L3misses);
+      // }
     }
   }
 }
 
-void SimpleMultiplyColumnwise(const double* a, const double* b, double* c) {
-  for (int col = 0; col < kColsize; ++col) {
-    for (int row = 0; row < kRowsize; ++row) {
-bool traceme = (col<2) & (row < 2);
-traceme = false;
-if (traceme) {fprintf(stdout, "[%d,%d] = ", row, col);}
+void SimpleMultiplyColumnwise(const double *a, const double *b, double *c)
+{
+  for (int col = 0; col < kColsize; ++col)
+  {
+    for (int row = 0; row < kRowsize; ++row)
+    {
+      bool traceme = (col < 2) & (row < 2);
+      traceme = false;
+      if (traceme)
+      {
+        fprintf(stdout, "[%d,%d] = ", row, col);
+      }
       double sum = 0.0;
-      for (int k = 0; k < kRowsize; ++k) {
+      for (int k = 0; k < kRowsize; ++k)
+      {
         sum += a[row * kRowsize + k] * b[k * kRowsize + col];
-int hit1a = L1((uint64)&a[row * kRowsize + k]);
-int hit2a = L2((uint64)&a[row * kRowsize + k]);
-int hit3a = L3((uint64)&a[row * kRowsize + k]);
-int hit1b = L1((uint64)&b[k * kRowsize + col]);
-int hit2b = L2((uint64)&b[k * kRowsize + col]);
-int hit3b = L3((uint64)&b[k * kRowsize + col]);
-if (traceme) {fprintf(stdout, "%016llx %016llx a%d%d%d b%d%d%d ", 
-(uint64)&a[row * kRowsize + k], (uint64)&b[k * kRowsize + col],
-hit1a, hit2a, hit3a, hit1b, hit2b, hit3b);}
+        int hit1a = L1((uint64)&a[row * kRowsize + k]);
+        int hit2a = L2((uint64)&a[row * kRowsize + k]);
+        int hit3a = L3((uint64)&a[row * kRowsize + k]);
+        int hit1b = L1((uint64)&b[k * kRowsize + col]);
+        int hit2b = L2((uint64)&b[k * kRowsize + col]);
+        int hit3b = L3((uint64)&b[k * kRowsize + col]);
+        if (traceme)
+        {
+          fprintf(stdout, "%016llx %016llx a%d%d%d b%d%d%d ",
+                  (uint64)&a[row * kRowsize + k], (uint64)&b[k * kRowsize + col],
+                  hit1a, hit2a, hit3a, hit1b, hit2b, hit3b);
+        }
       }
       c[row * kRowsize + col] = sum;
-int hit1c = L1((uint64)&c[row * kRowsize + col]);
-int hit2c = L2((uint64)&c[row * kRowsize + col]);
-int hit3c = L3((uint64)&c[row * kRowsize + col]);
-if (traceme) {fprintf(stdout, "c%d%d%d\n", hit1c, hit2c, hit3c);}
-//if ((row < 16) && (col < 16)) {  
-//fprintf(stdout, "[%d,%d] Misses L1/L2/L3 %10lld %10lld %10lld\n", row, col, L1misses, L2misses, L3misses);
-//}
+      int hit1c = L1((uint64)&c[row * kRowsize + col]);
+      int hit2c = L2((uint64)&c[row * kRowsize + col]);
+      int hit3c = L3((uint64)&c[row * kRowsize + col]);
+      if (traceme)
+      {
+        fprintf(stdout, "c%d%d%d\n", hit1c, hit2c, hit3c);
+      }
+      // if ((row < 16) && (col < 16)) {
+      // fprintf(stdout, "[%d,%d] Misses L1/L2/L3 %10lld %10lld %10lld\n", row, col, L1misses, L2misses, L3misses);
+      // }
     }
   }
 }
 
 // Just access 1 row and column, to time 1B pure multiplies. unroll to avoid dependant adds
-void SimpleMultiplyOne(const double* a, const double* b, double* c) {
-  for (int row = 0; row < kRowsize; ++row) {
-    for (int col = 0; col < kColsize; ++col) {
+void SimpleMultiplyOne(const double *a, const double *b, double *c)
+{
+  for (int row = 0; row < kRowsize; ++row)
+  {
+    for (int col = 0; col < kColsize; ++col)
+    {
       double sum0 = 0.0;
       double sum1 = 0.0;
       double sum2 = 0.0;
       double sum3 = 0.0;
-      //for (int k = 0; k < kRowsize; ++k) {
-      //  sum += a[(row * kRowsize + k) & 1] * b[(k * kRowsize + col) & 1];
-      //}
-      //c[(row * kRowsize + col) & 1] = sum;
-      for (int k = 0; k < kRowsize; k += 4) {
+      // for (int k = 0; k < kRowsize; ++k) {
+      //   sum += a[(row * kRowsize + k) & 1] * b[(k * kRowsize + col) & 1];
+      // }
+      // c[(row * kRowsize + col) & 1] = sum;
+      for (int k = 0; k < kRowsize; k += 4)
+      {
         sum0 += a[0] * b[0];
         sum1 += a[1] * b[1];
         sum2 += a[2] * b[2];
@@ -530,141 +615,163 @@ void SimpleMultiplyOne(const double* a, const double* b, double* c) {
   }
 }
 
-
-void SimpleMultiplyUnrolled4(const double* a, const double* b, double* c) {
-  for (int row = 0; row < kRowsize; ++row) {
-    for (int col = 0; col < kColsize; ++col) {
-      c[row * kRowsize + col] = VectorSum4(&a[row * kRowsize + 0], 
-					   &b[0 * kRowsize + col], 
-					   kRowsize, kRowsize);
-L1((uint64)&c[row * kRowsize + col]);
-L2((uint64)&c[row * kRowsize + col]);
-L3((uint64)&c[row * kRowsize + col]);
+void SimpleMultiplyUnrolled4(const double *a, const double *b, double *c)
+{
+  for (int row = 0; row < kRowsize; ++row)
+  {
+    for (int col = 0; col < kColsize; ++col)
+    {
+      c[row * kRowsize + col] = VectorSum4(&a[row * kRowsize + 0],
+                                           &b[0 * kRowsize + col],
+                                           kRowsize, kRowsize);
+      L1((uint64)&c[row * kRowsize + col]);
+      L2((uint64)&c[row * kRowsize + col]);
+      L3((uint64)&c[row * kRowsize + col]);
     }
   }
 }
 
-void SimpleMultiplyUnrolled2(const double* a, const double* b, double* c) {
-  for (int row = 0; row < kRowsize; ++row) {
-    for (int col = 0; col < kColsize; ++col) {
-      c[row * kRowsize + col] = VectorSum2(&a[row * kRowsize + 0], 
-					   &b[0 * kRowsize + col], 
-					   kRowsize, kRowsize);
-L1((uint64)&c[row * kRowsize + col]);
-L2((uint64)&c[row * kRowsize + col]);
-L3((uint64)&c[row * kRowsize + col]);
+void SimpleMultiplyUnrolled2(const double *a, const double *b, double *c)
+{
+  for (int row = 0; row < kRowsize; ++row)
+  {
+    for (int col = 0; col < kColsize; ++col)
+    {
+      c[row * kRowsize + col] = VectorSum2(&a[row * kRowsize + 0],
+                                           &b[0 * kRowsize + col],
+                                           kRowsize, kRowsize);
+      L1((uint64)&c[row * kRowsize + col]);
+      L2((uint64)&c[row * kRowsize + col]);
+      L3((uint64)&c[row * kRowsize + col]);
     }
   }
 }
 
-void SimpleMultiplyUnrolled1(const double* a, const double* b, double* c) {
-  for (int row = 0; row < kRowsize; ++row) {
-    for (int col = 0; col < kColsize; ++col) {
-      c[row * kRowsize + col] = VectorSum1(&a[row * kRowsize + 0], 
-					   &b[0 * kRowsize + col], 
-					   kRowsize, kRowsize);
-L1((uint64)&c[row * kRowsize + col]);
-L2((uint64)&c[row * kRowsize + col]);
-L3((uint64)&c[row * kRowsize + col]);
+void SimpleMultiplyUnrolled1(const double *a, const double *b, double *c)
+{
+  for (int row = 0; row < kRowsize; ++row)
+  {
+    for (int col = 0; col < kColsize; ++col)
+    {
+      c[row * kRowsize + col] = VectorSum1(&a[row * kRowsize + 0],
+                                           &b[0 * kRowsize + col],
+                                           kRowsize, kRowsize);
+      L1((uint64)&c[row * kRowsize + col]);
+      L2((uint64)&c[row * kRowsize + col]);
+      L3((uint64)&c[row * kRowsize + col]);
     }
   }
 }
 
-void PointerMultiplyUnrolled4(const double* a, const double* b, double* c) {
-  const double* aptr = &a[0];
-  const double* bptr = &b[0];
-  for (int row = 0; row < kRowsize; ++row) {
-    for (int col = 0; col < kColsize; ++col) {
-      c[row * kRowsize + col] = VectorSum4(&a[row * kRowsize + 0], 
-					   &b[0 * kRowsize + col], 
-					   kRowsize, kRowsize);
-L1((uint64)&c[row * kRowsize + col]);
-L2((uint64)&c[row * kRowsize + col]);
-L3((uint64)&c[row * kRowsize + col]);
+void PointerMultiplyUnrolled4(const double *a, const double *b, double *c)
+{
+  const double *aptr = &a[0];
+  const double *bptr = &b[0];
+  for (int row = 0; row < kRowsize; ++row)
+  {
+    for (int col = 0; col < kColsize; ++col)
+    {
+      c[row * kRowsize + col] = VectorSum4(&a[row * kRowsize + 0],
+                                           &b[0 * kRowsize + col],
+                                           kRowsize, kRowsize);
+      L1((uint64)&c[row * kRowsize + col]);
+      L2((uint64)&c[row * kRowsize + col]);
+      L3((uint64)&c[row * kRowsize + col]);
     }
   }
 }
 
 // Depends on c being zero'd on entry
-void BlockMultiply(const double* a, const double* b, double* c) {
-  for (int row = 0; row < kRowsize; row += kBlocksize) {
-    for (int col = 0; col < kColsize; col += kBlocksize) {
+void BlockMultiply(const double *a, const double *b, double *c)
+{
+  for (int row = 0; row < kRowsize; row += kBlocksize)
+  {
+    for (int col = 0; col < kColsize; col += kBlocksize)
+    {
       // Calculate an 8x8 subarray of c
-      for (int subcol = 0; subcol < kBlocksize; ++subcol) {
-        for (int subrow = 0; subrow < kBlocksize; ++subrow) {
-          c[(row + subrow) * kRowsize + (col + subcol)] += 
-            VectorSum1(&a[(row + subrow) * kRowsize + 0], 
-		       &b[0 * kRowsize + (col + subcol)], 
-		       kRowsize, kRowsize);
-L1((uint64)&c[(row + subrow) * kRowsize + (col + subcol)]);
-L2((uint64)&c[(row + subrow) * kRowsize + (col + subcol)]);
-L3((uint64)&c[(row + subrow) * kRowsize + (col + subcol)]);
+      for (int subcol = 0; subcol < kBlocksize; ++subcol)
+      {
+        for (int subrow = 0; subrow < kBlocksize; ++subrow)
+        {
+          c[(row + subrow) * kRowsize + (col + subcol)] +=
+              VectorSum1(&a[(row + subrow) * kRowsize + 0],
+                         &b[0 * kRowsize + (col + subcol)],
+                         kRowsize, kRowsize);
+          L1((uint64)&c[(row + subrow) * kRowsize + (col + subcol)]);
+          L2((uint64)&c[(row + subrow) * kRowsize + (col + subcol)]);
+          L3((uint64)&c[(row + subrow) * kRowsize + (col + subcol)]);
         }
       }
     }
   }
 }
 
-
 // Depends on c being zero'd on entry
-void BlockMultiplyPtrUnrolled4(const double* a, const double* b, double* c) {
-  for (int row = 0; row < kRowsize; row += kBlocksize) {
-    for (int col = 0; col < kColsize; col += kBlocksize) {
+void BlockMultiplyPtrUnrolled4(const double *a, const double *b, double *c)
+{
+  for (int row = 0; row < kRowsize; row += kBlocksize)
+  {
+    for (int col = 0; col < kColsize; col += kBlocksize)
+    {
       // Calculate an 8x8 subarray of c
-      for (int subrow = 0; subrow < kBlocksize; ++subrow) {
-        for (int subcol = 0; subcol < kBlocksize; ++subcol) {
-          c[(row + subrow) * kRowsize + (col + subcol)] += 
-            VectorSum4(&a[(row + subrow) * kRowsize + 0], 
-		       &b[0 * kRowsize + (col + subcol)], 
-		       kRowsize, kRowsize);
-L1((uint64)&c[(row + subrow) * kRowsize + (col + subcol)]);
-L2((uint64)&c[(row + subrow) * kRowsize + (col + subcol)]);
-L3((uint64)&c[(row + subrow) * kRowsize + (col + subcol)]);
+      for (int subrow = 0; subrow < kBlocksize; ++subrow)
+      {
+        for (int subcol = 0; subcol < kBlocksize; ++subcol)
+        {
+          c[(row + subrow) * kRowsize + (col + subcol)] +=
+              VectorSum4(&a[(row + subrow) * kRowsize + 0],
+                         &b[0 * kRowsize + (col + subcol)],
+                         kRowsize, kRowsize);
+          L1((uint64)&c[(row + subrow) * kRowsize + (col + subcol)]);
+          L2((uint64)&c[(row + subrow) * kRowsize + (col + subcol)]);
+          L3((uint64)&c[(row + subrow) * kRowsize + (col + subcol)]);
         }
       }
     }
   }
 }
-
 
 // Copy an NxN subarray to linear addresses, spreading across all L1 cache sets
 // 8x8   => 64*8 bytes = 512 bytes or 8 sequential cache lines
 // 16x16 => 256*8  = 2048 bytes or 32 sequential cache lines
 // 32x32 => 1024*8 = 8192 bytes or 128 sequential cache lines (two lines per set in i3 L1 cache)
-void Remap(const double* x, double* xprime) {
+void Remap(const double *x, double *xprime)
+{
   int k = 0;
-  for (int row = 0; row < kRemapsize; ++row) {
-    for (int col = 0; col < kRemapsize; col += 4) {
+  for (int row = 0; row < kRemapsize; ++row)
+  {
+    for (int col = 0; col < kRemapsize; col += 4)
+    {
       xprime[k + 0] = x[row * kRowsize + col + 0];
       xprime[k + 1] = x[row * kRowsize + col + 1];
       xprime[k + 2] = x[row * kRowsize + col + 2];
       xprime[k + 3] = x[row * kRowsize + col + 3];
-L1((uint64)&xprime[k + 0]);
-L1((uint64)&xprime[k + 1]);
-L1((uint64)&xprime[k + 2]);
-L1((uint64)&xprime[k + 3]);
-L1((uint64)&x[row * kRowsize + col + 0]);
-L1((uint64)&x[row * kRowsize + col + 1]);
-L1((uint64)&x[row * kRowsize + col + 2]);
-L1((uint64)&x[row * kRowsize + col + 3]);
+      L1((uint64)&xprime[k + 0]);
+      L1((uint64)&xprime[k + 1]);
+      L1((uint64)&xprime[k + 2]);
+      L1((uint64)&xprime[k + 3]);
+      L1((uint64)&x[row * kRowsize + col + 0]);
+      L1((uint64)&x[row * kRowsize + col + 1]);
+      L1((uint64)&x[row * kRowsize + col + 2]);
+      L1((uint64)&x[row * kRowsize + col + 3]);
 
-L2((uint64)&xprime[k + 0]);
-L2((uint64)&xprime[k + 1]);
-L2((uint64)&xprime[k + 2]);
-L2((uint64)&xprime[k + 3]);
-L2((uint64)&x[row * kRowsize + col + 0]);
-L2((uint64)&x[row * kRowsize + col + 1]);
-L2((uint64)&x[row * kRowsize + col + 2]);
-L2((uint64)&x[row * kRowsize + col + 3]);
+      L2((uint64)&xprime[k + 0]);
+      L2((uint64)&xprime[k + 1]);
+      L2((uint64)&xprime[k + 2]);
+      L2((uint64)&xprime[k + 3]);
+      L2((uint64)&x[row * kRowsize + col + 0]);
+      L2((uint64)&x[row * kRowsize + col + 1]);
+      L2((uint64)&x[row * kRowsize + col + 2]);
+      L2((uint64)&x[row * kRowsize + col + 3]);
 
-L3((uint64)&xprime[k + 0]);
-L3((uint64)&xprime[k + 1]);
-L3((uint64)&xprime[k + 2]);
-L3((uint64)&xprime[k + 3]);
-L3((uint64)&x[row * kRowsize + col + 0]);
-L3((uint64)&x[row * kRowsize + col + 1]);
-L3((uint64)&x[row * kRowsize + col + 2]);
-L3((uint64)&x[row * kRowsize + col + 3]);
+      L3((uint64)&xprime[k + 0]);
+      L3((uint64)&xprime[k + 1]);
+      L3((uint64)&xprime[k + 2]);
+      L3((uint64)&xprime[k + 3]);
+      L3((uint64)&x[row * kRowsize + col + 0]);
+      L3((uint64)&x[row * kRowsize + col + 1]);
+      L3((uint64)&x[row * kRowsize + col + 2]);
+      L3((uint64)&x[row * kRowsize + col + 3]);
 
       k += 4;
     }
@@ -672,10 +779,13 @@ L3((uint64)&x[row * kRowsize + col + 3]);
 }
 
 // Copy all NxN subarrays to linear addresses
-void RemapAll(const double* x, double* xprime) {
+void RemapAll(const double *x, double *xprime)
+{
   int k = 0;
-  for (int row = 0; row < kRowsize; row += kRemapsize) {
-    for (int col = 0; col < kColsize; col += kRemapsize) {
+  for (int row = 0; row < kRowsize; row += kRemapsize)
+  {
+    for (int col = 0; col < kColsize; col += kRemapsize)
+    {
       Remap(&x[row * kRowsize + col], &xprime[k]);
       k += (kRemapsize * kRemapsize);
     }
@@ -683,40 +793,43 @@ void RemapAll(const double* x, double* xprime) {
 }
 
 // Copy an NxN subarray from linear addresses
-void UnRemap(const double* xprime, double* x) {
+void UnRemap(const double *xprime, double *x)
+{
   int k = 0;
-  for (int row = 0; row < kRemapsize; ++row) {
-    for (int col = 0; col < kRemapsize; col += 4) {
+  for (int row = 0; row < kRemapsize; ++row)
+  {
+    for (int col = 0; col < kRemapsize; col += 4)
+    {
       x[row * kRowsize + col + 0] = xprime[k + 0];
       x[row * kRowsize + col + 1] = xprime[k + 1];
       x[row * kRowsize + col + 2] = xprime[k + 2];
       x[row * kRowsize + col + 3] = xprime[k + 3];
-L1((uint64)&x[row * kRowsize + col + 0]);
-L1((uint64)&x[row * kRowsize + col + 1]);
-L1((uint64)&x[row * kRowsize + col + 2]);
-L1((uint64)&x[row * kRowsize + col + 3]);
-L1((uint64)&xprime[k + 0]);
-L1((uint64)&xprime[k + 1]);
-L1((uint64)&xprime[k + 2]);
-L1((uint64)&xprime[k + 3]);
+      L1((uint64)&x[row * kRowsize + col + 0]);
+      L1((uint64)&x[row * kRowsize + col + 1]);
+      L1((uint64)&x[row * kRowsize + col + 2]);
+      L1((uint64)&x[row * kRowsize + col + 3]);
+      L1((uint64)&xprime[k + 0]);
+      L1((uint64)&xprime[k + 1]);
+      L1((uint64)&xprime[k + 2]);
+      L1((uint64)&xprime[k + 3]);
 
-L2((uint64)&x[row * kRowsize + col + 0]);
-L2((uint64)&x[row * kRowsize + col + 1]);
-L2((uint64)&x[row * kRowsize + col + 2]);
-L2((uint64)&x[row * kRowsize + col + 3]);
-L2((uint64)&xprime[k + 0]);
-L2((uint64)&xprime[k + 1]);
-L2((uint64)&xprime[k + 2]);
-L2((uint64)&xprime[k + 3]);
+      L2((uint64)&x[row * kRowsize + col + 0]);
+      L2((uint64)&x[row * kRowsize + col + 1]);
+      L2((uint64)&x[row * kRowsize + col + 2]);
+      L2((uint64)&x[row * kRowsize + col + 3]);
+      L2((uint64)&xprime[k + 0]);
+      L2((uint64)&xprime[k + 1]);
+      L2((uint64)&xprime[k + 2]);
+      L2((uint64)&xprime[k + 3]);
 
-L3((uint64)&x[row * kRowsize + col + 0]);
-L3((uint64)&x[row * kRowsize + col + 1]);
-L3((uint64)&x[row * kRowsize + col + 2]);
-L3((uint64)&x[row * kRowsize + col + 3]);
-L3((uint64)&xprime[k + 0]);
-L3((uint64)&xprime[k + 1]);
-L3((uint64)&xprime[k + 2]);
-L3((uint64)&xprime[k + 3]);
+      L3((uint64)&x[row * kRowsize + col + 0]);
+      L3((uint64)&x[row * kRowsize + col + 1]);
+      L3((uint64)&x[row * kRowsize + col + 2]);
+      L3((uint64)&x[row * kRowsize + col + 3]);
+      L3((uint64)&xprime[k + 0]);
+      L3((uint64)&xprime[k + 1]);
+      L3((uint64)&xprime[k + 2]);
+      L3((uint64)&xprime[k + 3]);
 
       k += 4;
     }
@@ -724,10 +837,13 @@ L3((uint64)&xprime[k + 3]);
 }
 
 // Copy all NxN subarrays from linear addresses
-void UnRemapAll(const double* xprime, double* x) {
+void UnRemapAll(const double *xprime, double *x)
+{
   int k = 0;
-  for (int row = 0; row < kRowsize; row += kRemapsize) {
-    for (int col = 0; col < kColsize; col += kRemapsize) {
+  for (int row = 0; row < kRowsize; row += kRemapsize)
+  {
+    for (int col = 0; col < kColsize; col += kRemapsize)
+    {
       UnRemap(&xprime[k], &x[row * kRowsize + col]);
       k += (kRemapsize * kRemapsize);
     }
@@ -735,99 +851,112 @@ void UnRemapAll(const double* xprime, double* x) {
 }
 
 // Transpose matrix
-void TransposeAll(const double* x, double* xprime) {
-  for (int row = 0; row < kRowsize; ++row) {
-    for (int col = 0; col < kColsize; ++col) {
+void TransposeAll(const double *x, double *xprime)
+{
+  for (int row = 0; row < kRowsize; ++row)
+  {
+    for (int col = 0; col < kColsize; ++col)
+    {
       xprime[col * kRowsize + row] = x[row * kRowsize + col];
-L1((uint64)&x[row * kRowsize + col]);
-L2((uint64)&x[row * kRowsize + col]);
-L3((uint64)&x[row * kRowsize + col]);
-L1((uint64)&xprime[col * kRowsize + row]);
-L2((uint64)&xprime[col * kRowsize + row]);
-L3((uint64)&xprime[col * kRowsize + row]);
+      L1((uint64)&x[row * kRowsize + col]);
+      L2((uint64)&x[row * kRowsize + col]);
+      L3((uint64)&x[row * kRowsize + col]);
+      L1((uint64)&xprime[col * kRowsize + row]);
+      L2((uint64)&xprime[col * kRowsize + row]);
+      L3((uint64)&xprime[col * kRowsize + row]);
     }
   }
 }
 
 // Transpose one block
-void BlockTranspose(const double* x, double* xprime) {
-  for (int row = 0; row < kBlocksize; ++row) {
-    for (int col = 0; col < kBlocksize; col += 4) {
+void BlockTranspose(const double *x, double *xprime)
+{
+  for (int row = 0; row < kBlocksize; ++row)
+  {
+    for (int col = 0; col < kBlocksize; col += 4)
+    {
       xprime[(col + 0) * kRowsize + row] = x[row * kRowsize + col + 0];
       xprime[(col + 1) * kRowsize + row] = x[row * kRowsize + col + 1];
       xprime[(col + 2) * kRowsize + row] = x[row * kRowsize + col + 2];
       xprime[(col + 3) * kRowsize + row] = x[row * kRowsize + col + 3];
 
-L1((uint64)&x[row * kRowsize + col + 0]);
-L2((uint64)&x[row * kRowsize + col + 0]);
-L3((uint64)&x[row * kRowsize + col + 0]);
-L1((uint64)&xprime[(col + 0) * kRowsize + row]);
-L2((uint64)&xprime[(col + 0) * kRowsize + row]);
-L3((uint64)&xprime[(col + 0) * kRowsize + row]);
+      L1((uint64)&x[row * kRowsize + col + 0]);
+      L2((uint64)&x[row * kRowsize + col + 0]);
+      L3((uint64)&x[row * kRowsize + col + 0]);
+      L1((uint64)&xprime[(col + 0) * kRowsize + row]);
+      L2((uint64)&xprime[(col + 0) * kRowsize + row]);
+      L3((uint64)&xprime[(col + 0) * kRowsize + row]);
 
-L1((uint64)&x[row * kRowsize + col + 1]);
-L2((uint64)&x[row * kRowsize + col + 1]);
-L3((uint64)&x[row * kRowsize + col + 1]);
-L1((uint64)&xprime[(col + 1) * kRowsize + row]);
-L2((uint64)&xprime[(col + 1) * kRowsize + row]);
-L3((uint64)&xprime[(col + 1) * kRowsize + row]);
+      L1((uint64)&x[row * kRowsize + col + 1]);
+      L2((uint64)&x[row * kRowsize + col + 1]);
+      L3((uint64)&x[row * kRowsize + col + 1]);
+      L1((uint64)&xprime[(col + 1) * kRowsize + row]);
+      L2((uint64)&xprime[(col + 1) * kRowsize + row]);
+      L3((uint64)&xprime[(col + 1) * kRowsize + row]);
 
-L1((uint64)&x[row * kRowsize + col + 2]);
-L2((uint64)&x[row * kRowsize + col + 2]);
-L3((uint64)&x[row * kRowsize + col + 2]);
-L1((uint64)&xprime[(col + 2) * kRowsize + row]);
-L2((uint64)&xprime[(col + 2) * kRowsize + row]);
-L3((uint64)&xprime[(col + 2) * kRowsize + row]);
+      L1((uint64)&x[row * kRowsize + col + 2]);
+      L2((uint64)&x[row * kRowsize + col + 2]);
+      L3((uint64)&x[row * kRowsize + col + 2]);
+      L1((uint64)&xprime[(col + 2) * kRowsize + row]);
+      L2((uint64)&xprime[(col + 2) * kRowsize + row]);
+      L3((uint64)&xprime[(col + 2) * kRowsize + row]);
 
-L1((uint64)&x[row * kRowsize + col + 3]);
-L2((uint64)&x[row * kRowsize + col + 3]);
-L3((uint64)&x[row * kRowsize + col + 3]);
-L1((uint64)&xprime[(col + 3) * kRowsize + row]);
-L2((uint64)&xprime[(col + 3) * kRowsize + row]);
-L3((uint64)&xprime[(col + 3) * kRowsize + row]);
-
+      L1((uint64)&x[row * kRowsize + col + 3]);
+      L2((uint64)&x[row * kRowsize + col + 3]);
+      L3((uint64)&x[row * kRowsize + col + 3]);
+      L1((uint64)&xprime[(col + 3) * kRowsize + row]);
+      L2((uint64)&xprime[(col + 3) * kRowsize + row]);
+      L3((uint64)&xprime[(col + 3) * kRowsize + row]);
     }
   }
 }
 
 // Block Transpose matrix
-void BlockTransposeAll(const double* x, double* xprime) {
-  for (int row = 0; row < kRowsize; row += kBlocksize) {
-    for (int col = 0; col < kColsize; col += kBlocksize) {
+void BlockTransposeAll(const double *x, double *xprime)
+{
+  for (int row = 0; row < kRowsize; row += kBlocksize)
+  {
+    for (int col = 0; col < kColsize; col += kBlocksize)
+    {
       BlockTranspose(&x[row * kRowsize + col], &xprime[col * kRowsize + row]);
     }
   }
 }
 
-
 // Remap input arrays to spread Remap blocks across successive cache lines,
 // multiply, then remap output
 // Depends on c being zero'd on entry
-void BlockMultiplyRemap(const double* a, const double* b, double* c) {
+void BlockMultiplyRemap(const double *a, const double *b, double *c)
+{
   RemapAll(a, aa);
   RemapAll(b, bb);
 #if 1
-  for (int row = 0; row < kRowsize; row += kRemapsize) {
-    for (int col = 0; col < kColsize; col += kRemapsize) {
+  for (int row = 0; row < kRowsize; row += kRemapsize)
+  {
+    for (int col = 0; col < kColsize; col += kRemapsize)
+    {
       // cc block starts at row * kRowsize + col * kRemapsize
-      double* ccptr = &cc[(row * kRowsize) + (col * kRemapsize)];     
+      double *ccptr = &cc[(row * kRowsize) + (col * kRemapsize)];
 
-      for (int k = 0; k < kRowsize; k += kRemapsize) {
-        // aa block starts at row * kRowsize + k * kRemapsize 
+      for (int k = 0; k < kRowsize; k += kRemapsize)
+      {
+        // aa block starts at row * kRowsize + k * kRemapsize
         // bb block starts at(k * kRowsize + col * kRemapsize
-        const double* aaptr = &aa[(row * kRowsize) + (k * kRemapsize)];
-        const double* bbptr = &bb[(k * kRowsize) + (col * kRemapsize)];
+        const double *aaptr = &aa[(row * kRowsize) + (k * kRemapsize)];
+        const double *bbptr = &bb[(k * kRowsize) + (col * kRemapsize)];
 
         // Calculate an NxN subarray of c
         int kk = 0;
-        for (int subrow = 0; subrow < kRemapsize; ++subrow) {
-          for (int subcol = 0; subcol < kRemapsize; ++subcol) {
+        for (int subrow = 0; subrow < kRemapsize; ++subrow)
+        {
+          for (int subcol = 0; subcol < kRemapsize; ++subcol)
+          {
             ccptr[kk] += VectorSum4(&aaptr[subrow * kRemapsize + 0],
                                     &bbptr[0 * kRemapsize + subcol],
-		                    kRemapsize, kRemapsize);
-L1((uint64)&ccptr[kk]);
-L2((uint64)&ccptr[kk]);
-L3((uint64)&ccptr[kk]);
+                                    kRemapsize, kRemapsize);
+            L1((uint64)&ccptr[kk]);
+            L2((uint64)&ccptr[kk]);
+            L3((uint64)&ccptr[kk]);
             ++kk;
           }
         }
@@ -838,101 +967,106 @@ L3((uint64)&ccptr[kk]);
   RemapAll(cc, c);
 }
 
-
 // Transpose second input array to be in column-major order
-void SimpleMultiplyTranspose(const double* a, const double* b, double* c) {
+void SimpleMultiplyTranspose(const double *a, const double *b, double *c)
+{
   TransposeAll(b, bb);
-  for (int row = 0; row < kRowsize; ++row) {
-    for (int col = 0; col < kColsize; ++col) {
-      c[row * kRowsize + col] = VectorSum1(&a[row * kRowsize + 0], 
-					   &bb[col * kRowsize + 0], 
-					   kRowsize, 1);
-L1((uint64)&c[row * kRowsize + col]);
-L2((uint64)&c[row * kRowsize + col]);
-L3((uint64)&c[row * kRowsize + col]);
+  for (int row = 0; row < kRowsize; ++row)
+  {
+    for (int col = 0; col < kColsize; ++col)
+    {
+      c[row * kRowsize + col] = VectorSum1(&a[row * kRowsize + 0],
+                                           &bb[col * kRowsize + 0],
+                                           kRowsize, 1);
+      L1((uint64)&c[row * kRowsize + col]);
+      L2((uint64)&c[row * kRowsize + col]);
+      L3((uint64)&c[row * kRowsize + col]);
     }
   }
 }
 
 // Transpose second input array to be in column-major order
-void SimpleMultiplyTransposeFast(const double* a, const double* b, double* c) {
+void SimpleMultiplyTransposeFast(const double *a, const double *b, double *c)
+{
   BlockTransposeAll(b, bb);
-  for (int row = 0; row < kRowsize; ++row) {
-    for (int col = 0; col < kColsize; ++col) {
-      c[row * kRowsize + col] = VectorSum4(&a[row * kRowsize + 0], 
-					   &bb[col * kRowsize + 0], 
-					   kRowsize, 1);
-L1((uint64)&c[row * kRowsize + col]);
-L2((uint64)&c[row * kRowsize + col]);
-L3((uint64)&c[row * kRowsize + col]);
+  for (int row = 0; row < kRowsize; ++row)
+  {
+    for (int col = 0; col < kColsize; ++col)
+    {
+      c[row * kRowsize + col] = VectorSum4(&a[row * kRowsize + 0],
+                                           &bb[col * kRowsize + 0],
+                                           kRowsize, 1);
+      L1((uint64)&c[row * kRowsize + col]);
+      L2((uint64)&c[row * kRowsize + col]);
+      L3((uint64)&c[row * kRowsize + col]);
     }
   }
 }
 
-
-double* PageAlign(double* p) {
-  double* p_local = p + 511;
-  *reinterpret_cast<uint64*>(&p_local) &= ~0xfff;
-////  fprintf(stdout, "%016llx %016llx\n", (uint64)p, (uint64)p_local);
+double *PageAlign(double *p)
+{
+  double *p_local = p + 511;
+  *reinterpret_cast<uint64 *>(&p_local) &= ~0xfff;
+  ////  fprintf(stdout, "%016llx %016llx\n", (uint64)p, (uint64)p_local);
   return p_local;
 }
 
-int main(int argc, const char** argv) {
-kutrace::mark_a("alloc");
-  double* abase = new double[kRowsize * kColsize + 512];
-  double* bbase = new double[kRowsize * kColsize + 512];
-  double* cbase = new double[kRowsize * kColsize + 512];
-  double* a = PageAlign(abase);
-  double* b = PageAlign(bbase);
-  double* c = PageAlign(cbase);
-  double* aabase = new double[kRowsize * kColsize + 512];
-  double* bbbase = new double[kRowsize * kColsize + 512];
-  double* ccbase = new double[kRowsize * kColsize + 512];
+int main(int argc, const char **argv)
+{
+  kutrace::mark_a("alloc");
+  double *abase = new double[kRowsize * kColsize + 512];
+  double *bbase = new double[kRowsize * kColsize + 512];
+  double *cbase = new double[kRowsize * kColsize + 512];
+  double *a = PageAlign(abase);
+  double *b = PageAlign(bbase);
+  double *c = PageAlign(cbase);
+  double *aabase = new double[kRowsize * kColsize + 512];
+  double *bbbase = new double[kRowsize * kColsize + 512];
+  double *ccbase = new double[kRowsize * kColsize + 512];
   aa = PageAlign(aabase);
   bb = PageAlign(bbbase);
   cc = PageAlign(ccbase);
 
-kutrace::mark_a("init");
+  kutrace::mark_a("init");
   SimpleInit(a);
   SimpleInit(b);
   InitTags();
 
   // Test remap
-kutrace::mark_a("remap");
+  kutrace::mark_a("remap");
   RemapAll(a, aa);
   UnRemapAll(aa, c);
-  fprintf(stdout, "a  sum=%18.9f\n", SimpleSum(a)); 
-  fprintf(stdout, "aa sum=%18.9f\n", SimpleSum(aa)); 
-  fprintf(stdout, "c  sum=%18.9f\n", SimpleSum(c)); 
-  fprintf(stdout, "%s\n", EqualArray(a, c) ? "Equal" : "Not equal"); 
+  fprintf(stdout, "a  sum=%18.9f\n", SimpleSum(a));
+  fprintf(stdout, "aa sum=%18.9f\n", SimpleSum(aa));
+  fprintf(stdout, "c  sum=%18.9f\n", SimpleSum(c));
+  fprintf(stdout, "%s\n", EqualArray(a, c) ? "Equal" : "Not equal");
   fprintf(stdout, "Remap Misses L1/L2/L3 %10lld %10lld %10lld\n", L1misses, L2misses, L3misses);
   InitTags();
 
   // Test transpose
-kutrace::mark_a("trans");
+  kutrace::mark_a("trans");
   TransposeAll(b, bb);
   TransposeAll(bb, c);
-  fprintf(stdout, "b  sum=%18.9f\n", SimpleSum(b)); 
-  fprintf(stdout, "bb sum=%18.9f\n", SimpleSum(bb)); 
-  fprintf(stdout, "c  sum=%18.9f\n", SimpleSum(c)); 
-  fprintf(stdout, "%s\n", EqualArray(b, c) ? "Equal" : "Not equal"); 
+  fprintf(stdout, "b  sum=%18.9f\n", SimpleSum(b));
+  fprintf(stdout, "bb sum=%18.9f\n", SimpleSum(bb));
+  fprintf(stdout, "c  sum=%18.9f\n", SimpleSum(c));
+  fprintf(stdout, "%s\n", EqualArray(b, c) ? "Equal" : "Not equal");
   fprintf(stdout, "Transpose Misses L1/L2/L3 %10lld %10lld %10lld\n", L1misses, L2misses, L3misses);
   InitTags();
 
-kutrace::mark_a("btrans");
+  kutrace::mark_a("btrans");
   BlockTransposeAll(b, bb);
   BlockTransposeAll(bb, c);
-  fprintf(stdout, "b  sum=%18.9f\n", SimpleSum(b)); 
-  fprintf(stdout, "bb sum=%18.9f\n", SimpleSum(bb)); 
-  fprintf(stdout, "c  sum=%18.9f\n", SimpleSum(c)); 
-  fprintf(stdout, "%s\n", EqualArray(b, c) ? "Equal" : "Not equal"); 
+  fprintf(stdout, "b  sum=%18.9f\n", SimpleSum(b));
+  fprintf(stdout, "bb sum=%18.9f\n", SimpleSum(bb));
+  fprintf(stdout, "c  sum=%18.9f\n", SimpleSum(c));
+  fprintf(stdout, "%s\n", EqualArray(b, c) ? "Equal" : "Not equal");
   fprintf(stdout, "BlockTranspose Misses L1/L2/L3 %10lld %10lld %10lld\n", L1misses, L2misses, L3misses);
   InitTags();
 
-
-kutrace::mark_a("simp");
+  kutrace::mark_a("simp");
   TimeMe("SimpleMultiply            ", SimpleMultiply, a, b, c);
-kutrace::mark_a("simpc");
+  kutrace::mark_a("simpc");
   TimeMe("SimpleMultiplyColumnwise  ", SimpleMultiplyColumnwise, a, b, c);
 
 #if 0
@@ -947,25 +1081,23 @@ kutrace::mark_a("simpc");
   TimeMe("BlockMultiplyPtrUnrolled4 ", BlockMultiplyPtrUnrolled4, a, b, c);
 #endif
 
-kutrace::mark_a("simpt");
+  kutrace::mark_a("simpt");
   TimeMe("SimpleMultiplyTranspose   ", SimpleMultiplyTranspose, a, b, c);
   ZeroInit(c);
-kutrace::mark_a("simptf");
+  kutrace::mark_a("simptf");
   TimeMe("SimpleMultiplyTransposeFast", SimpleMultiplyTransposeFast, a, b, c);
   ZeroInit(c);
-kutrace::mark_a("simpr");
+  kutrace::mark_a("simpr");
   TimeMe("BlockMultiplyRemap        ", BlockMultiplyRemap, a, b, c);
   ZeroInit(c);
-kutrace::mark_a("simp1");
+  kutrace::mark_a("simp1");
   TimeMe("IGNORE SimpleMultiplyOne     ", SimpleMultiplyOne, a, b, c);
 
-
-  delete[] ccbase; 
-  delete[] bbbase; 
-  delete[] aabase; 
-  delete[] cbase; 
-  delete[] bbase; 
-  delete[] abase; 
+  delete[] ccbase;
+  delete[] bbbase;
+  delete[] aabase;
+  delete[] cbase;
+  delete[] bbase;
+  delete[] abase;
   return 0;
 }
-
