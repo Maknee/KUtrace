@@ -100,11 +100,11 @@ MODULE_AUTHOR("Richard L Sites");
 /* Add others as you find and test them */
 #define Isx86_64	defined(__x86_64)
 #define IsAmd_64        (Isx86_64 && (defined(__znver1) || defined(__znver2) || defined(__znver3) || defined(__znver4) || defined(__znver5)))
-#define IsIntel_64	Isx86_64 && !defined(IsAmd_64)
+#define IsIntel_64	(Isx86_64 && !IsAmd_64)
 
 #define IsArm_64	defined(__aarch64__)
 #define IsRPi4		defined(__ARM_ARCH) && (__ARM_ARCH == 8)
-#define IsRPi4_64	IsRPi4 && IsArm_64
+#define IsRPi4_64	(IsRPi4 && IsArm_64)
 
 
 /* AMD-specific defines           */
