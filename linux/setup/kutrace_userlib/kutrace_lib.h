@@ -319,7 +319,7 @@ namespace kutrace {
 
 
 // All the real stuff is inside this anonymous namespace
-namespace {
+namespace KutraceInternal {
 
 /* Outgoing arg to DoReset  */
 #define DO_IPC 1
@@ -1357,48 +1357,48 @@ inline u64 CharToBase40(const char* str) {
 
 }  // End anonymous namespace
 
-inline bool kutrace::test() {return TestModule();}
-inline void kutrace::go(const char* process_name) {DoReset(0); DoInit(process_name); DoOn();}
-inline void kutrace::goipc(const char* process_name) {DoReset(1); DoInit(process_name); DoOn();}
-inline void kutrace::stop(const char* fname) {DoOff(); DoFlush(); DoDump(fname); DoQuit();}
-inline void kutrace::mark_a(const char* label) {DoMark(KUTRACE_MARKA, CharToBase40(label));}
-inline void kutrace::mark_b(const char* label) {DoMark(KUTRACE_MARKB, CharToBase40(label));}
-inline void kutrace::mark_c(const char* label) {DoMark(KUTRACE_MARKC, CharToBase40(label));}
-inline void kutrace::mark_d(uint64 n) {DoMark(KUTRACE_MARKD, n);}
+inline bool kutrace::test() {return KutraceInternal::TestModule();}
+inline void kutrace::go(const char* process_name) {KutraceInternal::DoReset(0); KutraceInternal::DoInit(process_name); KutraceInternal::DoOn();}
+inline void kutrace::goipc(const char* process_name) {KutraceInternal::DoReset(1); KutraceInternal::DoInit(process_name); KutraceInternal::DoOn();}
+inline void kutrace::stop(const char* fname) {KutraceInternal::DoOff(); KutraceInternal::DoFlush(); KutraceInternal::DoDump(fname); KutraceInternal::DoQuit();}
+inline void kutrace::mark_a(const char* label) {KutraceInternal::DoMark(KUTRACE_MARKA, KutraceInternal::CharToBase40(label));}
+inline void kutrace::mark_b(const char* label) {KutraceInternal::DoMark(KUTRACE_MARKB, KutraceInternal::CharToBase40(label));}
+inline void kutrace::mark_c(const char* label) {KutraceInternal::DoMark(KUTRACE_MARKC, KutraceInternal::CharToBase40(label));}
+inline void kutrace::mark_d(uint64 n) {KutraceInternal::DoMark(KUTRACE_MARKD, n);}
 
 // Returns number of words inserted 1..8, or
 //   0 if tracing is off, negative if module is not not loaded 
-inline u64 kutrace::addevent(uint64 eventnum, uint64 arg) {return DoEvent(eventnum, arg);}
+inline u64 kutrace::addevent(uint64 eventnum, uint64 arg) {return KutraceInternal::DoEvent(eventnum, arg);}
 
-inline void kutrace::addname(uint64 eventnum, uint64 number, const char* name) {addname(eventnum, number, name);}
+inline void kutrace::addname(uint64 eventnum, uint64 number, const char* name) {KutraceInternal::addname(eventnum, number, name);}
 
-inline void kutrace::msleep(int msec) {msleep(msec);}
-inline int64 kutrace::readtime() {return ku_get_cycles();}
+inline void kutrace::msleep(int msec) {KutraceInternal::msleep(msec);}
+inline int64 kutrace::readtime() {return KutraceInternal::ku_get_cycles();}
 
 // Go ahead and expose all the routines
-inline const char* kutrace::Base40ToChar(u64 base40, char* str) {return Base40ToChar(base40, str);}
-inline u64 kutrace::CharToBase40(const char* str) {return CharToBase40(str);}
+inline const char* kutrace::Base40ToChar(u64 base40, char* str) {return KutraceInternal::Base40ToChar(base40, str);}
+inline u64 kutrace::CharToBase40(const char* str) {return KutraceInternal::CharToBase40(str);}
 
 inline u64 kutrace::DoControl(u64 command, u64 arg) {
-  return DoControl(command, arg);
+  return KutraceInternal::DoControl(command, arg);
 }
-inline void kutrace::DoDump(const char* fname) {DoDump(fname);}
-inline u64  kutrace::DoEvent(u64 eventnum, u64 arg) {return DoEvent(eventnum, arg);}
-inline void kutrace::DoFlush() {DoFlush();}
-inline void kutrace::DoInit(const char* process_name) {DoInit(process_name);}
-inline void kutrace::DoMark(u64 n, u64 arg) {DoMark(n, arg);}
-inline bool kutrace::DoTest() {return DoTest();}
-inline bool kutrace::DoOff() {return DoOff();}
-inline bool kutrace::DoOn() {return DoOn();}
-inline void kutrace::DoQuit() {DoQuit();}
-inline void kutrace::DoReset(u64 doing_ipc){DoReset(doing_ipc);}
-inline void kutrace::DoStat(u64 control_flags) {DoStat(control_flags);}
-inline void kutrace::EmitNames(const NumNamePair* ipair, u64 n) {EmitNames(ipair, n);}
-inline u64 kutrace::GetUsec() {return GetUsec();}
+inline void kutrace::DoDump(const char* fname) {KutraceInternal::DoDump(fname);}
+inline u64  kutrace::DoEvent(u64 eventnum, u64 arg) {return KutraceInternal::DoEvent(eventnum, arg);}
+inline void kutrace::DoFlush() {KutraceInternal::DoFlush();}
+inline void kutrace::DoInit(const char* process_name) {KutraceInternal::DoInit(process_name);}
+inline void kutrace::DoMark(u64 n, u64 arg) {KutraceInternal::DoMark(n, arg);}
+inline bool kutrace::DoTest() {return KutraceInternal::DoTest();}
+inline bool kutrace::DoOff() {return KutraceInternal::DoOff();}
+inline bool kutrace::DoOn() {return KutraceInternal::DoOn();}
+inline void kutrace::DoQuit() {KutraceInternal::DoQuit();}
+inline void kutrace::DoReset(u64 doing_ipc){KutraceInternal::DoReset(doing_ipc);}
+inline void kutrace::DoStat(u64 control_flags) {KutraceInternal::DoStat(control_flags);}
+inline void kutrace::EmitNames(const NumNamePair* ipair, u64 n) {KutraceInternal::EmitNames(ipair, n);}
+inline u64 kutrace::GetUsec() {return KutraceInternal::GetUsec();}
 inline const char* kutrace::MakeTraceFileName(const char* name, char* str) {
-  return MakeTraceFileName(name, str);
+  return KutraceInternal::MakeTraceFileName(name, str);
 }
-inline bool kutrace::TestModule() {return TestModule();}
+inline bool kutrace::TestModule() {return KutraceInternal::TestModule();}
 
 #endif	// __KUTRACE_LIB_H__
 
