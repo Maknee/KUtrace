@@ -35,6 +35,19 @@ yes "" | make localmodconfig
 
 fakeroot make -j$(($(nproc) - 1))
 
+sudo apt-get install -y \
+    libdw-dev \
+    systemtap-sdt-dev \
+    libunwind-dev \
+    libslang2-dev \
+    libperl-dev \
+    liblzma-dev \
+    libcap-dev \
+    libnuma-dev \
+    libbabeltrace-dev \
+    libpfm4-dev \
+    libtraceevent-dev
+
 cd tools/perf
 make -j
 cp perf ../../../postproc
@@ -52,7 +65,7 @@ sudo kexec -e
 cd module
 make -j
 
-sudo insmod kutrace_mod.ko tracemb=20 check=0
+sudo insmod kutrace_mod.ko tracemb=40 check=0
 sudo rmmod kutrace_mod.ko
 
 cd ../
