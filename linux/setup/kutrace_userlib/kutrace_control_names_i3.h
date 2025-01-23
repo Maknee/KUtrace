@@ -1,5 +1,6 @@
 // Names for syscall, etc. in dclab_tracing 
-// dick sites 2019.03.13, 2020.07.10
+// Copyright 2021 Richard L. Sites
+//
 // These are from linux-4.19.19 x86 AMD 64-bit. Others will vary.
 //
 
@@ -17,12 +18,10 @@ static const NumNamePair PidNames[] = {
 };
 
 static const NumNamePair Syscall32Names[] = {
-  {1023, "-sched-"},	// Fake last syscall. Indicates where __schedule runs
+  {511, "-sched-"},	// Fake last syscall. Indicates where __schedule runs
   {-1, NULL},		// Must be last
 };
 
-// From linux-6.1.12/arch/x86/include/generated/uapi/asm/unistd_64.h
-// grep define arch/x86/include/generated/uapi/asm/unistd_64.h |sed 's/#define __NR_\([^ ]*\) \([0-9]*\)/  \{\2, \"\1\"\},/'
 static const NumNamePair Syscall64Names[] = {
   {0, "read"},
   {1, "write"},
@@ -350,46 +349,7 @@ static const NumNamePair Syscall64Names[] = {
   {323, "userfaultfd"},
   {324, "membarrier"},
   {325, "mlock2"},
-
-  {326, "copy_file_range"},
-  {327, "preadv2"},
-  {328, "pwritev2"},
-  {329, "pkey_mprotect"},
-  {330, "pkey_alloc"},
-  {331, "pkey_free"},
-  {332, "statx"},
-  {333, "io_pgetevents"},
-  {334, "rseq"},
-  {424, "pidfd_send_signal"},
-  {425, "io_uring_setup"},
-  {426, "io_uring_enter"},
-  {427, "io_uring_register"},
-  {428, "open_tree"},
-  {429, "move_mount"},
-  {430, "fsopen"},
-  {431, "fsconfig"},
-  {432, "fsmount"},
-  {433, "fspick"},
-  {434, "pidfd_open"},
-  {435, "clone3"},
-  {436, "close_range"},
-  {437, "openat2"},
-  {438, "pidfd_getfd"},
-  {439, "faccessat2"},
-  {440, "process_madvise"},
-  {441, "epoll_pwait2"},
-  {442, "mount_setattr"},
-  {443, "quotactl_fd"},
-  {444, "landlock_create_ruleset"},
-  {445, "landlock_add_rule"},
-  {446, "landlock_restrict_self"},
-  {447, "memfd_secret"},
-  {448, "process_mrelease"},
-  {449, "futex_waitv"},
-  {450, "set_mempolicy_home_node"},
-  {451, "syscalls"},
-
-  {1023, "-sched-"},	// Fake last syscall. Indicates where __schedule runs
+  {511, "-sched-"},	// Fake last syscall. Indicates where __schedule runs
   {-1, NULL},		// Must be last
 };
 
@@ -403,44 +363,6 @@ static const NumNamePair Syscall64Names[] = {
  *  Vectors 129 ... INVALIDATE_TLB_VECTOR_START-1 except 204 : device interrupts
  *  Vectors INVALIDATE_TLB_VECTOR_START ... 255 : special interrupts
  */
-
-/***
-~/linux-6.1.12$ cat /proc/interrupts
-            CPU0       CPU1       CPU2       CPU3       
-   0:         11          0          0          0  IR-IO-APIC    2-edge      timer
-   8:          0          0          0          0  IR-IO-APIC    8-edge      rtc0
-   9:          0          0          0          0  IR-IO-APIC    9-fasteoi   acpi
- 120:          0          0          0          0  DMAR-MSI    0-edge      dmar0
- 121:          0          0          0          0  DMAR-MSI    1-edge      dmar1
- 125:          0         12          0          0  IR-PCI-MSI 524288-edge      nvme0q0
- 126:          0          0         86          0  IR-PCI-MSI 327680-edge      xhci_hcd
- 127:         97          0          0          0  IR-PCI-MSI 524289-edge      nvme0q1
- 128:          0         25          0          0  IR-PCI-MSI 524290-edge      nvme0q2
- 129:          0          0         89          0  IR-PCI-MSI 524291-edge      nvme0q3
- 130:          0          0          0         19  IR-PCI-MSI 524292-edge      nvme0q4
- 131:          0      47097       7148          0  IR-PCI-MSI 376832-edge      ahci[0000:00:17.0]
- 132:         78          0          0     262704  IR-PCI-MSI 1048576-edge      enp2s0
- 133:          0          0          0        463  IR-PCI-MSI 514048-edge      snd_hda_intel:card0
- NMI:          1          1          1          1   Non-maskable interrupts
- LOC:     380691     378255     378221     380382   Local timer interrupts
- SPU:          0          0          0          0   Spurious interrupts
- PMI:          1          1          1          1   Performance monitoring interrupts
- IWI:          0          0          0          0   IRQ work interrupts
- RTR:          0          0          0          0   APIC ICR read retries
- RES:        468        430        517        461   Rescheduling interrupts
- CAL:       5460       5010       4892       5592   Function call interrupts
- TLB:       2102       2009       1803       1715   TLB shootdowns
- TRM:          0          0          0          0   Thermal event interrupts
- THR:          0          0          0          0   Threshold APIC interrupts
- DFR:          0          0          0          0   Deferred Error APIC interrupts
- MCE:          0          0          0          0   Machine check exceptions
- MCP:          5          6          6          6   Machine check polls
- ERR:          0
- MIS:          0
- PIN:          0          0          0          0   Posted-interrupt notification event
- NPI:          0          0          0          0   Nested posted-interrupt event
- PIW:          0          0          0          0   Posted-interrupt wakeup event
-***/
 
 static const NumNamePair IrqNames[] = {
   // 2017 machines

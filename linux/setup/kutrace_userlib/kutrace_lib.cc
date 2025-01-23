@@ -1,11 +1,6 @@
-// kutrace_lib.h 
+// Little user-mode library program to control kutracing 
 // Copyright 2021 Richard L. Sites
 //
-// This is a simple interface for user-mode code to control kernel/user tracing and add markers
-//
-
-#ifndef __KUTRACE_LIB_H__
-#define __KUTRACE_LIB_H__
 
 #include <stdio.h>
 #include <stdlib.h>     // exit, system
@@ -19,280 +14,12 @@
 #include <x86intrin.h>		// _rdtsc
 #endif
 
-typedef struct {
-  int number;
-  const char* name; 
-} NumNamePair;
-
-
 #include "basetypes.h"
 #include "kutrace_control_names.h"	// PidNames, TrapNames, IrqNames, Syscall64Names
-
-typedef uint32 u32;
-typedef uint64 u64;
-typedef int64  s64;
-
-
-/* This is the definitive list of raw trace 12-bit event numbers */
-// These user-mode declarations need to exactly match 
-// include/linux/kutrace.h kernel-mode ones 
-
-/* kutrace_control() commands */
-#define KUTRACE_CMD_OFF 0
-#define KUTRACE_CMD_ON 1
-#define KUTRACE_CMD_FLUSH 2
-#define KUTRACE_CMD_RESET 3
-#define KUTRACE_CMD_STAT 4
-#define KUTRACE_CMD_GETCOUNT 5
-#define KUTRACE_CMD_GETWORD 6
-#define KUTRACE_CMD_INSERT1 7
-#define KUTRACE_CMD_INSERTN 8
-#define KUTRACE_CMD_GETIPCWORD 9
-#define KUTRACE_CMD_TEST 10
-#define KUTRACE_CMD_VERSION 11
-
-
-
-// All events are single uint64 entries unless otherwise specified
-// +-------------------+-----------+---------------+-------+-------+
-// | timestamp         | event     | delta | retval|      arg0     |
-// +-------------------+-----------+---------------+-------+-------+
-//          20              12         8       8           16 
-
-// Add KUTRACE_ and uppercase
-#define KUTRACE_NOP           0x000
-#define KUTRACE_RDTSC         0x001	// unused
-#define KUTRACE_GETTOD        0x002	// unused
-
-#define KUTRACE_VARLENLO      0x010
-#define KUTRACE_VARLENHI      0x1FF
-
-// Variable-length starting numbers. Only events 010-1FF are variable length
-// Middle hex digit of event number is 2..8, giving total length of entry including first uint64
-// The arg is the lock# or PID# etc. that this name belongs to.
-// +-------------------+-----------+-------------------------------+
-// | timestamp         | event     |              arg              |
-// +-------------------+-----------+-------------------------------+
-// |  character name, 1-56 bytes, NUL padded                       |
-// +- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -+
-// ~                                                               ~
-// +---------------------------------------------------------------+
-//          20              12                    32 
-
-// TimePair (DEFUNCT)
-// +-------------------+-----------+-------------------------------+
-// | timestamp         | event     |              arg              |
-// +-------------------+-----------+-------------------------------+
-// |   cycle counter value                                         |
-// +---------------------------------------------------------------+
-// |   matching gettimeofday value                                 |
-// +---------------------------------------------------------------+
-//          20              12                    32 
-
-
-// Variable-length starting numbers. 
-// Middle hex digit will become length in u64 words, 2..8
-#define KUTRACE_FILENAME      0x001
-#define KUTRACE_PIDNAME       0x002
-#define KUTRACE_METHODNAME    0x003
-#define KUTRACE_TRAPNAME      0x004
-#define KUTRACE_INTERRUPTNAME 0x005
-#define KUTRACE_TIMEPAIR      0x006	/* DEPRECATED */
-#define KUTRACE_LOCKNAME      0x007	/* added 2019.10.25 */
-#define KUTRACE_SYSCALL64NAME 0x008
-#define KUTRACE_SYSCALL32NAME 0x00C
-#define KUTRACE_PACKETNAME    0x100
-#define KUTRACE_PC_TEMP       0x101	/* scaffolding 2020.01.29 now PC_U nd PC_K */
-#define KUTRACE_KERNEL_VER    0x102	/* Kernel version, uname -rv */
-#define KUTRACE_MODEL_NAME    0x103	/* CPU model name, /proc/cpuinfo */
-#define KUTRACE_HOST_NAME     0x104 	/* CPU host name */
-#define KUTRACE_QUEUE_NAME    0x105 	/* Queue name */
-#define KUTRACE_RES_NAME      0x106 	/* Arbitrary resource name */
-
-// Specials are point events. Hex 200-220 currently. PC sample is outside this range
-#define KUTRACE_USERPID       0x200	/* Context switch */
-#define KUTRACE_RPCIDREQ      0x201	/* CPU is processing RPC# n request */
-#define KUTRACE_RPCIDRESP     0x202	/* CPU is processing RPC# n response */
-#define KUTRACE_RPCIDMID      0x203	/* CPU is processing RPC# n middle */
-#define KUTRACE_RPCIDRXMSG    0x204	/* For display: RPC message received, approx packet time */
-#define KUTRACE_RPCIDTXMSG    0x205	/* For display: RPC message sent, approx packet time */
-#define KUTRACE_RUNNABLE      0x206	/* Make runnable */
-#define KUTRACE_IPI           0x207	/* Send IPI */
-#define KUTRACE_MWAIT         0x208	/* C-states: how deep to sleep */
-#define KUTRACE_PSTATE        0x209	/* P-states: cpu freq sample in MHz increments */
-
-
-// MARK_A,B,C arg is six base-40 chars NUL, A-Z, 0-9, . - /
-// MARK_D     arg is unsigned int
-// +-------------------+-----------+-------------------------------+
-// | timestamp         | event     |              arg              |
-// +-------------------+-----------+-------------------------------+
-//          20              12                    32 
-
-#define KUTRACE_MARKA            0x20A
-#define KUTRACE_MARKB            0x20B
-#define KUTRACE_MARKC            0x20C
-#define KUTRACE_MARKD            0x20D
-#define KUTRACE_LEFTMARK         0x20E	// Inserted by eventtospan
-#define KUTRACE_RIGHTMARK        0x20F	// Inserted by eventtospan
-#define KUTRACE_LOCKNOACQUIRE    0x210
-#define KUTRACE_LOCKACQUIRE      0x211
-#define KUTRACE_LOCKWAKEUP       0x212
-
-// Added 2020.10.29
-#define KUTRACE_RX_PKT           0x214 	/* Raw packet received w/32-byte payload hash */ 
-#define KUTRACE_TX_PKT           0x215 	/* Raw packet sent w/32-byte payload hash */
-
-#define KUTRACE_RX_USER          0x216 	/* Request beginning at user code w/32-byte payload hash */ 
-#define KUTRACE_TX_USER          0x217 	/* Response ending at user code w/32-byte payload hash */
-  
-#define KUTRACE_MBIT_SEC         0x218 	/* Network rate in Mb/s */
-
-#define KUTRACE_RESOURCE	 0x219  /* Arbitrary resource span; arg says which resource */
-#define KUTRACE_ENQUEUE	 	 0x21A  /* Put RPC on a work queue; arg says which queue */
-#define KUTRACE_DEQUEUE	 	 0x21B  /* Remove RPC from a queue; arg says which queue */
-#define KUTRACE_PSTATE2          0x21C	/* P-states: cpu freq change, new in MHz increments */
-
-
-#define KUTRACE_MAX_SPECIAL      0x27F	// Last special, range 200..27F
-
-// Extra events have duration, but are otherwise similar to specials
-// PC sample. Not a special
-#define KUTRACE_PC_U             0x280	/* added 2020.01.29 */
-#define KUTRACE_PC_K             0x281	/* added 2020.02.01 */
-
-// Lock held
-#define KUTRACE_LOCK_HELD	 0x282	/* Inserted by eventtospan 2020.09.27 */
-#define KUTRACE_LOCK_TRY	 0x283	/* Inserted by eventtospan 2020.09.27 */
-
-
-/* Reasons for waiting, inserted only in postprocessing */
-/* dsites 2019.10.25 */
-#define KUTRACE_WAITA     0x0300	/* a-z, through 0x0319 */
-#define KUTRACE_WAITZ     0x0319		
-
-/* These are in blocks of 256 or 512 numbers */
-#define KUTRACE_TRAP      0x0400
-#define KUTRACE_IRQ       0x0500
-#define KUTRACE_TRAPRET   0x0600
-#define KUTRACE_IRQRET    0x0700
-#define KUTRACE_SYSCALL64 0x0800
-#define KUTRACE_SYSRET64  0x0A00
-#define KUTRACE_SYSCALL32 0x0C00
-#define KUTRACE_SYSRET32  0x0E00
-
-/* Event numbers added in postprocessing or manually */
-/*  -1 bracket, big } */
-/*  -2 oval, fades out part of diagram */
-/*  -3 arc, wakeup from one thread to another */
-/*  -4 callout, bubble to label some event */
-/*  -5 ... */
-
-
-// Names for events 000-00F could be added when one of these code points is
-// actually used
-
-// Names for the variable-length events 0y0-0yF and 1y0-1yF, where y is length in words 2..8
-inline const char* const kNameName[32] = {
-  "-000-", "file", "pid", "rpc", 
-  "trap", "irq", "trap", "irq",
-  "syscall", "syscall", "syscall", "syscall",
-  "syscall32", "syscall32", "syscall32", "syscall32",
-
-  "packet", "pctmp", "kernv", "cpum",
-  "host", "", "", "",
-  "", "", "", "",
-  "", "", "", "",
-};
-
-// Names for the special events 200-21F
-inline const char* const kSpecialName[32] = {
-  "userpid", "rpcreq", "rpcresp", "rpcmid", 
-  "rxmsg", "txmsg", "runnable", "sendipi",
-  "mwait", "freq", "mark_a", "mark_b", 
-  "mark_c", "mark_d", "-20e-", "-20f-", 
-  "try_", "acq_", "rel_", "-213-",		// Locks
-  "rx", "tx", "urx", "utx",
-  "mbs", "res", "enq", "deq",
-  "-21c-", "-21d-", "-21e-", "-21f-",
-};
-
-// Names for events 210-3FF could be added when one of these code points is
-// actually used
-
-// Names for events 400-FFF are always embedded in the trace
-
-// x86- and ARM-specific Names for return codes -128 to -1
-// If errno is in [-128..-1], subscript this by -errno - 1. 
-// Error -1 EPERM thus maps to kErrnoName[0], not [1]
-// See include/uapi/asm-generic/errno-base.h
-// See include/uapi/asm-generic/errno.h
-// ...more could be added
-inline const char* const kErrnoName[128] = {
-  "EPERM", "ENOENT", "ESRCH", "EINTR", "EIO", "ENXIO", "E2BIG", "ENOEXEC",
-  "EBADF", "ECHILD", "EAGAIN", "ENOMEM", "EACCES", "EFAULT", "ENOTBLK", "EBUSY",
-  "EEXIST", "EXDEV", "ENODEV", "ENOTDIR", "EISDIR", "EINVAL", "ENFILE", "EMFILE",
-  "ENOTTY", "ETXTBSY", "EFBIG", "ENOSPC", "ESPIPE", "EROFS", "EMLINK", "EPIPE",
-
-  "EDOM", "ERANGE", "EDEADLK", "ENAMETOOLONG", "ENOLCK", "ENOSYS", "ENOTEMPTY", "ELOOP", 
-  "", "ENOMSG", "EIDRM", "ECHRNG", "EL2NSYNC", "EL3HLT", "EL3RST", "ELNRNG", 
-  "EUNATCH", "ENOCSI", "EL2HLT", "EBADE", "EBADR", "EXFULL", "ENOANO", "EBADRQC", 
-  "EBADSLT", "", "EBFONT", "ENOSTR", "ENODATA", "ETIME", "ENOSR", "ENONET", 
-
-  "", "", "", "", "", "", "", "", 
-  "", "", "", "", "", "", "", "", 
-  "", "", "", "", "", "", "", "", 
-  "", "", "", "", "", "", "", "", 
-
-  "", "", "", "", "", "", "", "", 
-  "", "", "", "", "", "", "", "", 
-  "", "", "", "", "", "", "", "", 
-  "", "", "", "", "", "", "", "", 
-};
-
-
-namespace kutrace {
-  inline bool test();
-  inline void go(const char* process_name);
-  inline void goipc(const char* process_name);
-  inline void stop(const char* fname);
-  inline void mark_a(const char* label);
-  inline void mark_b(const char* label);
-  inline void mark_c(const char* label);
-  inline void mark_d(u64 n);
-
-  // Returns number of words inserted 1..8, or
-  //   0 if tracing is off, negative if module is not not loaded 
-  inline u64 addevent(u64 eventnum, u64 arg);
-  inline void addname(u64 eventnum, u64 number, const char* name);
-
-  inline void msleep(int msec);
-  inline int64 readtime();
-
-  inline const char* Base40ToChar(u64 base40, char* str);
-  inline u64 CharToBase40(const char* str);
-
-  inline u64 DoControl(u64 command, u64 arg);
-  inline void DoDump(const char* fname);
-  inline u64 DoEvent(u64 eventnum, u64 arg);
-  inline void DoFlush();
-  inline void DoInit(const char* process_name);
-  inline void DoMark(u64 n, u64 arg);
-  inline bool DoTest();
-  inline bool DoOff();
-  inline bool DoOn();
-  inline void DoQuit();
-  inline void DoReset(u64 doing_ipc);
-  inline void DoStat(u64 control_flags);
-  inline void EmitNames(const NumNamePair* ipair, u64 n);
-  inline u64 GetUsec();
-  inline const char* MakeTraceFileName(const char* name, char* str);
-  inline bool TestModule();
-}
-
+#include "kutrace_lib.h"
 
 // All the real stuff is inside this anonymous namespace
-namespace KutraceInternal {
+namespace {
 
 /* Outgoing arg to DoReset  */
 #define DO_IPC 1
@@ -307,31 +34,31 @@ namespace KutraceInternal {
 
 
 // Module/code must be at least this version number for us to run
-inline const u64 kMinModuleVersionNumber = 3;
+static const u64 kMinModuleVersionNumber = 3;
 
 // This defines the format of the resulting trace file
-inline const u64 kTracefileVersionNumber = 3;
+static const u64 kTracefileVersionNumber = 3;
 
 // Number of u64 values per trace block
-inline const int kTraceBufSize = 8192;
+static const int kTraceBufSize = 8192;
 
 // Number of u64 values per IPC block, one u8 per u64 in trace buf
-inline const int kIpcBufSize = kTraceBufSize >> 3;
+static const int kIpcBufSize = kTraceBufSize >> 3;
 
 // For wraparound fixup on Raspberry Pi-4B Arm-v7
-inline const int mhz_32bit_cycles = 54;
+static const int mhz_32bit_cycles = 54;
 
 // Globals for mapping cycles to gettimeofday
-inline static int64 start_cycles = 0;
-inline static int64 stop_cycles = 0;
-inline static int64 start_usec = 0;
-inline static int64 stop_usec = 0;
+int64 start_cycles = 0;
+int64 stop_cycles = 0;
+int64 start_usec = 0;
+int64 stop_usec = 0;
 
-inline static char kernelversion[256];
-inline static char modelname[256];
+char kernelversion[256];
+char modelname[256];
 
 // Useful utility routines
-inline int64 GetUsec() {
+int64 GetUsec() {
   struct timeval tv; gettimeofday(&tv, NULL);
   return (tv.tv_sec * CL(1000000)) + tv.tv_usec;
 }
@@ -362,7 +89,7 @@ inline u64 ku_get_cycles(void)
 
 
 // Read time counter and gettimeofday() close together, returning both
-inline void GetTimePair(int64* cycles, int64* usec) {
+void GetTimePair(int64* cycles, int64* usec) {
   int64 startcy, stopcy;
   int64 gtodusec, elapsedcy;
   // Do more than once if we get an interrupt or other big delay in the middle of the loop
@@ -440,21 +167,21 @@ u64 inline DoControl(u64 command, u64 arg)
 //    return retval;
 
 // Sleep for n milliseconds
-inline void msleep(int msec) {
+void msleep(int msec) {
   struct timespec ts;
   ts.tv_sec = msec / 1000;
   ts.tv_nsec = (msec % 1000) * 1000000;
   nanosleep(&ts, NULL);
 }
 
-// Single inline static buffer. In real production code, this would 
+// Single static buffer. In real production code, this would 
 // all be std::string value, or something else at least as safe.
-inline const int kMaxDateTimeBuffer = 32;
-inline static char gTempDateTimeBuffer[kMaxDateTimeBuffer];
+static const int kMaxDateTimeBuffer = 32;
+static char gTempDateTimeBuffer[kMaxDateTimeBuffer];
 
 // Turn seconds since the epoch into yyyymmdd_hhmmss
 // Not valid after January 19, 2038
-inline const char* FormatSecondsDateTime(int32 sec) {
+const char* FormatSecondsDateTime(int32 sec) {
   // if (sec == 0) {return "unknown";}  // Longer spelling: caller expecting date
   time_t tt = sec;
   struct tm* t = localtime(&tt);
@@ -467,7 +194,7 @@ inline const char* FormatSecondsDateTime(int32 sec) {
 // Construct a name for opening a trace file, using name of program from command line
 //   name: program_time_host_pid
 // str should hold at least 256 bytes
-inline const char* MakeTraceFileName(const char* argv0, char* str) {
+const char* MakeTraceFileName(const char* argv0, char* str) {
   const char* slash = strrchr(argv0, '/');
   // Point to first char of image name
   if (slash == NULL) {
@@ -491,7 +218,7 @@ inline const char* MakeTraceFileName(const char* argv0, char* str) {
 }           
 
 // This depends on ~KUTRACE_CMD_INSERTN working even with tracing off. 
-inline void InsertVariableEntry(const char* str, u64 event, u64 arg) {
+void InsertVariableEntry(const char* str, u64 event, u64 arg) {
   u64 temp[8];		// Up to 56 bytes
   u64 bytelen = strlen(str);
   if (bytelen > 56) {bytelen = 56;}	// If too long, truncate
@@ -506,7 +233,7 @@ inline void InsertVariableEntry(const char* str, u64 event, u64 arg) {
 }
 
 // Add a list of names to the trace
-inline void EmitNames(const NumNamePair* ipair, u64 event) {
+void EmitNames(const NumNamePair* ipair, u64 event) {
   u64 temp[9];		// One extra word for strcpy(56 bytes + '\0')
   const NumNamePair* pair = ipair;
   while (pair->name != NULL) {
@@ -518,7 +245,7 @@ inline void EmitNames(const NumNamePair* ipair, u64 event) {
 
 
 // This depends on ~TRACE_INSERTN working even with tracing off. 
-inline void InsertTimePair(int64 cycles, int64 usec) {
+void InsertTimePair(int64 cycles, int64 usec) {
   u64 temp[8];		// Always 8 words for TRACE_INSERTN
   u64 n_with_length = KUTRACE_TIMEPAIR + (3 << 4);
   temp[0] = (CLU(0) << 44) | (n_with_length << 32);
@@ -530,7 +257,7 @@ inline void InsertTimePair(int64 cycles, int64 usec) {
 
 
 // Return false if the module is not loaded or too old. No delay. No side effect on time.
-inline bool TestModule() {
+bool TestModule() {
   // If module is not loaded, syscall 511 returns -1 or -ENOSYS (= -38)
   // Unsigned, these are bigger than the biggest plausible version number, 255
   u64 retval = DoControl(KUTRACE_CMD_VERSION, 0);
@@ -557,7 +284,7 @@ inline bool TestModule() {
 // CMD_TEST returns -ENOSYS (= -38) if not a tracing kernel
 // else returns 0 if tracing is off
 // else returns 1 if tracing is on
-inline bool DoTest() {
+bool DoTest() {
   u64 retval = DoControl(KUTRACE_CMD_TEST, 0);
   if ((int64)retval < 0) {
     // KUtrace module/code is not available
@@ -569,7 +296,7 @@ inline bool DoTest() {
 
 // Turn off tracing
 // Complain and return false if module is not loaded
-inline bool DoOff() {
+bool DoOff() {
   u64 retval = DoControl(KUTRACE_CMD_OFF, 0);
 //fprintf(stderr, "DoOff DoControl = %016lx\n", retval);
 
@@ -587,7 +314,7 @@ inline bool DoOff() {
 
 // Turn on tracing
 // Complain and return false if module is not loaded
-inline bool DoOn() {
+bool DoOn() {
 //fprintf(stderr, "DoOn\n");
   // Get start time pair with tracing off
   if (start_usec == 0) {GetTimePair(&start_cycles, &start_usec);}
@@ -602,7 +329,7 @@ inline bool DoOn() {
   return true;
 }
 
-inline void StripCRLF(char* s) {
+void StripCRLF(char* s) {
   int len = strlen(s);
   if ((0 < len) && s[len - 1] == '\n') {s[len - 1] = '\0'; --len;}
   if ((0 < len) && s[len - 1] == '\r') {s[len - 1] = '\0'; --len;}
@@ -643,7 +370,7 @@ inline void StripCRLF(char* s) {
 //   1:          3          0   IO-APIC   1-edge      i8042
 //   8:          1          0   IO-APIC   8-edge      rtc0
 
-inline bool NextIntr(FILE* procintrfile, int* intrnum, char* intrname) {
+bool NextIntr(FILE* procintrfile, int* intrnum, char* intrname) {
   char buffer[kMaxBufferSize];
   while (ReadLine(procintrfile, buffer, kMaxBufferSize)) {
     int n = sscanf(buffer, "%d:", intrnum);
@@ -663,7 +390,7 @@ inline bool NextIntr(FILE* procintrfile, int* intrnum, char* intrname) {
 //
 // use InsertVariableEntry now 2020.11.12
 //
-inline void EmitLocalIrqNames(u64 n) {
+void EmitLocalIrqNames(u64 n) {
   FILE* procintrfile = fopen("/proc/interrupts", "r");
   if (procintrfile == NULL) {return;}
 
@@ -688,7 +415,7 @@ inline void EmitLocalIrqNames(u64 n) {
 
 
 // Kernel version is the result of command: uname -rv
-inline void GetKernelVersion(char* kernelversion, int len) {
+void GetKernelVersion(char* kernelversion, int len) {
   kernelversion[0] = '\0';
   FILE *fp = popen("uname -rv", "r");
   if (fp == NULL) {return;}
@@ -700,7 +427,7 @@ inline void GetKernelVersion(char* kernelversion, int len) {
 }
 
 // Model number is in /proc/cpuinfo
-inline void GetModelName(char* modelname, int len) {
+void GetModelName(char* modelname, int len) {
   modelname[0] = '\0';
   FILE *cpuinfo = fopen("/proc/cpuinfo", "rb");
   if (cpuinfo == NULL) {return;}
@@ -725,18 +452,18 @@ inline void GetModelName(char* modelname, int len) {
 }
 
 // Inserts result of uname -rv
-inline void InsertKernelVersion(const char* kernelversion) {
+void InsertKernelVersion(const char* kernelversion) {
   InsertVariableEntry(kernelversion, KUTRACE_KERNEL_VER, 0);
 }
 
-inline void InsertModelName(const char* modelname) {
+void InsertModelName(const char* modelname) {
   InsertVariableEntry(modelname, KUTRACE_MODEL_NAME, 0);
 }
 
 // Initialize trace buffer with syscall/irq/trap names
 // and processor model name, uname -rv
 // Module must be loaded. Tracing must be off
-inline void DoInit(const char* process_name) {
+void DoInit(const char* process_name) {
 //fprintf(stderr, "DoInit\n");
   if (!TestModule()) {return;}		// No module loaded
 
@@ -779,7 +506,7 @@ inline void DoInit(const char* process_name) {
 
 // With tracing off, zero out the rest of each partly-used traceblock
 // Module must be loaded. Tracing must be off
-inline void DoFlush() {
+void DoFlush() {
 //fprintf(stderr, "DoFlush\n");
   if (!TestModule()) {return;}		// No module loaded
   DoControl(KUTRACE_CMD_FLUSH, 0);
@@ -788,7 +515,7 @@ inline void DoFlush() {
 
 // Set up for a new tracing run
 // Module must be loaded. Tracing must be off
-inline void DoReset(u64 control_flags) {
+void DoReset(u64 control_flags) {
   if (!TestModule()) {return;}		// No module loaded
   DoControl(KUTRACE_CMD_RESET, control_flags);
 
@@ -802,7 +529,7 @@ inline void DoReset(u64 control_flags) {
 // Module must be loaded. Tracing may well be on
 // If IPC,only 7/8 of the blocks are counted: 
 //  for every 64KB traceblock there is another 8KB IPCblock (and some wasted space)
-inline void DoStat(u64 control_flags) {
+void DoStat(u64 control_flags) {
   u64 retval = DoControl(KUTRACE_CMD_STAT, 0);
   double blocksize = kTraceBufSize * sizeof(u64);
   if ((control_flags & DO_IPC) != 0) {blocksize = (blocksize * 8) / 7;}
@@ -812,7 +539,7 @@ inline void DoStat(u64 control_flags) {
 
 // Called with the very first trace block, moduleversion >= 3
 // This block has 12 words on the front, then a 3-word TimePairNum trace entry
-inline void ExtractTimePair(u64* traceblock, int64* fallback_cycles, int64* fallback_usec) {
+void ExtractTimePair(u64* traceblock, int64* fallback_cycles, int64* fallback_usec) {
   u64 entry0 =       traceblock[12];
   u64 entry0_event = (entry0 >> 32) & 0xFFF;
   if ((entry0_event & 0xF0F) != KUTRACE_TIMEPAIR) {	// take out length nibble
@@ -832,15 +559,15 @@ typedef struct {
   double m_slope;
 } CyclesToUsecParams;
 
-inline void SetParams(int64 start_cycles, int64 start_usec, 
+void SetParams(int64 start_cycles, int64 start_usec, 
                int64 stop_cycles, int64 stop_usec, CyclesToUsecParams* param) {
   param->base_cycles = start_cycles;
   param->base_usec = start_usec;
-  if (stop_cycles <= start_cycles) {stop_cycles = start_cycles + 1;}	// ainline void zdiv
+  if (stop_cycles <= start_cycles) {stop_cycles = start_cycles + 1;}	// avoid zdiv
   param->m_slope = (stop_usec - start_usec) * 1.0 / (stop_cycles - start_cycles);
 }
 
-inline int64 CyclesToUsec(int64 cycles, const CyclesToUsecParams& param) {
+int64 CyclesToUsec(int64 cycles, const CyclesToUsecParams& param) {
   int64 delta_usec = (cycles - param.base_cycles) * param.m_slope;
   return param.base_usec + delta_usec;
 }
@@ -849,7 +576,7 @@ inline int64 CyclesToUsec(int64 cycles, const CyclesToUsecParams& param) {
 
 // Dump the trace buffer to filename
 // Module must be loaded. Tracing must be off
-inline void DoDump(const char* fname) {
+void DoDump(const char* fname) {
   // if (!TestModule()) {return;}		// No module loaded
   DoControl(KUTRACE_CMD_FLUSH, 0);
 
@@ -978,13 +705,13 @@ inline void DoDump(const char* fname) {
 
 // Exit this program
 // Tracing must be off
-inline void DoQuit() {
+void DoQuit() {
   DoOff();
   exit(0);
 }
 
 // Add a name of type n, value number, to the trace
-inline void addname(uint64 eventnum, uint64 number, const char* name) {
+void addname(uint64 eventnum, uint64 number, const char* name) {
   u64 temp[8];		// Buffer for name entry
   u64 bytelen = strlen(name);
   if (bytelen > 55) {bytelen = 55;}
@@ -999,14 +726,14 @@ inline void addname(uint64 eventnum, uint64 number, const char* name) {
 }
 
 // Create a Mark entry
-inline void DoMark(u64 n, u64 arg) {
+void DoMark(u64 n, u64 arg) {
   //         T             N                       ARG
   u64 temp = (CLU(0) << 44) | (n << 32) | (arg &  CLU(0x00000000FFFFFFFF));
   DoControl(KUTRACE_CMD_INSERT1, temp);
 }
 
 // Create an arbitrary entry, returning 1 if tracing is on, <=0 otherwise
-inline u64 DoEvent(u64 eventnum, u64 arg) {
+u64 DoEvent(u64 eventnum, u64 arg) {
   //         T             N                       ARG
   u64 temp = ((eventnum & CLU(0xFFF)) << 32) | (arg & CLU(0x00000000FFFFFFFF));
   return DoControl(KUTRACE_CMD_INSERT1, temp);
@@ -1019,7 +746,7 @@ inline u64 DoEvent(u64 eventnum, u64 arg) {
 //                       0         1         2         3
 //                       0123456789012345678901234567890123456789
 // where the first is NUL.
-inline const char kToBase40[256] = {
+static const char kToBase40[256] = {
    0,38,38,38, 38,38,38,38, 38,38,38,38, 38,38,38,38, 
   38,38,38,38, 38,38,38,38, 38,38,38,38, 38,38,38,38, 
   38,38,38,38, 38,38,38,38, 38,38,38,38, 38,37,38,39, 
@@ -1041,7 +768,7 @@ inline const char kToBase40[256] = {
   38,38,38,38, 38,38,38,38, 38,38,38,38, 38,38,38,38, 
 };
 
-inline const char kFromBase40[40] = {
+static const char kFromBase40[40] = {
   '\0','a','b','c', 'd','e','f','g',  'h','i','j','k',  'l','m','n','o',
   'p','q','r','s',  't','u','v','w',  'x','y','z','0',  '1','2','3','4',
   '5','6','7','8',  '9','-','.','/', 
@@ -1084,49 +811,50 @@ u64 CharToBase40(const char* str) {
 
 }  // End anonymous namespace
 
-inline bool kutrace::test() {return KutraceInternal::TestModule();}
-inline void kutrace::go(const char* process_name) {KutraceInternal::DoReset(0); KutraceInternal::DoInit(process_name); KutraceInternal::DoOn();}
-inline void kutrace::goipc(const char* process_name) {KutraceInternal::DoReset(1); KutraceInternal::DoInit(process_name); KutraceInternal::DoOn();}
-inline void kutrace::stop(const char* fname) {KutraceInternal::DoOff(); KutraceInternal::DoFlush(); KutraceInternal::DoDump(fname); KutraceInternal::DoQuit();}
-inline void kutrace::mark_a(const char* label) {KutraceInternal::DoMark(KUTRACE_MARKA, KutraceInternal::CharToBase40(label));}
-inline void kutrace::mark_b(const char* label) {KutraceInternal::DoMark(KUTRACE_MARKB, KutraceInternal::CharToBase40(label));}
-inline void kutrace::mark_c(const char* label) {KutraceInternal::DoMark(KUTRACE_MARKC, KutraceInternal::CharToBase40(label));}
-inline void kutrace::mark_d(uint64 n) {KutraceInternal::DoMark(KUTRACE_MARKD, n);}
+bool kutrace::test() {return ::TestModule();}
+void kutrace::go(const char* process_name) {::DoReset(0); ::DoInit(process_name); ::DoOn();}
+void kutrace::goipc(const char* process_name) {::DoReset(1); ::DoInit(process_name); ::DoOn();}
+void kutrace::stop(const char* fname) {::DoOff(); ::DoFlush(); ::DoDump(fname); ::DoQuit();}
+void kutrace::mark_a(const char* label) {::DoMark(KUTRACE_MARKA, ::CharToBase40(label));}
+void kutrace::mark_b(const char* label) {::DoMark(KUTRACE_MARKB, ::CharToBase40(label));}
+void kutrace::mark_c(const char* label) {::DoMark(KUTRACE_MARKC, ::CharToBase40(label));}
+void kutrace::mark_d(uint64 n) {::DoMark(KUTRACE_MARKD, n);}
 
 // Returns number of words inserted 1..8, or
 //   0 if tracing is off, negative if module is not not loaded 
-inline u64 kutrace::addevent(uint64 eventnum, uint64 arg) {return KutraceInternal::DoEvent(eventnum, arg);}
+u64 kutrace::addevent(uint64 eventnum, uint64 arg) {return ::DoEvent(eventnum, arg);}
 
-inline void kutrace::addname(uint64 eventnum, uint64 number, const char* name) {KutraceInternal::addname(eventnum, number, name);}
+void kutrace::addname(uint64 eventnum, uint64 number, const char* name) {::addname(eventnum, number, name);}
 
-inline void kutrace::msleep(int msec) {KutraceInternal::msleep(msec);}
-int64 kutrace::readtime() {return KutraceInternal::ku_get_cycles();}
+void kutrace::msleep(int msec) {::msleep(msec);}
+int64 kutrace::readtime() {return ::ku_get_cycles();}
 
 // Go ahead and expose all the routines
-const char* kutrace::Base40ToChar(u64 base40, char* str) {return KutraceInternal::Base40ToChar(base40, str);}
-inline u64 kutrace::CharToBase40(const char* str) {return KutraceInternal::CharToBase40(str);}
+const char* kutrace::Base40ToChar(u64 base40, char* str) {return ::Base40ToChar(base40, str);}
+u64 kutrace::CharToBase40(const char* str) {return ::CharToBase40(str);}
 
-inline u64 kutrace::DoControl(u64 command, u64 arg) {
-  return KutraceInternal::DoControl(command, arg);
+u64 kutrace::DoControl(u64 command, u64 arg) {
+  return ::DoControl(command, arg);
 }
-inline void kutrace::DoDump(const char* fname) {KutraceInternal::DoDump(fname);}
-inline u64 kutrace::DoEvent(u64 eventnum, u64 arg) {return KutraceInternal::DoEvent(eventnum, arg);}
-inline void kutrace::DoFlush() {KutraceInternal::DoFlush();}
-inline void kutrace::DoInit(const char* process_name) {KutraceInternal::DoInit(process_name);}
-inline void kutrace::DoMark(u64 n, u64 arg) {KutraceInternal::DoMark(n, arg);}
-inline bool kutrace::DoTest() {return KutraceInternal::DoTest();}
-inline bool kutrace::DoOff() {return KutraceInternal::DoOff();}
-inline bool kutrace::DoOn() {return KutraceInternal::DoOn();}
-inline void kutrace::DoQuit() {KutraceInternal::DoQuit();}
-inline void kutrace::DoReset(u64 doing_ipc){KutraceInternal::DoReset(doing_ipc);}
-inline void kutrace::DoStat(u64 control_flags) {KutraceInternal::DoStat(control_flags);}
-inline void kutrace::EmitNames(const NumNamePair* ipair, u64 n) {KutraceInternal::EmitNames(ipair, n);}
-inline u64 kutrace::GetUsec() {return KutraceInternal::GetUsec();}
-inline const char* kutrace::MakeTraceFileName(const char* name, char* str) {
-  return KutraceInternal::MakeTraceFileName(name, str);
+void kutrace::DoDump(const char* fname) {::DoDump(fname);}
+u64  kutrace::DoEvent(u64 eventnum, u64 arg) {return ::DoEvent(eventnum, arg);}
+void kutrace::DoFlush() {::DoFlush();}
+void kutrace::DoInit(const char* process_name) {::DoInit(process_name);}
+void kutrace::DoMark(u64 n, u64 arg) {::DoMark(n, arg);}
+bool kutrace::DoTest() {return ::DoTest();}
+bool kutrace::DoOff() {return ::DoOff();}
+bool kutrace::DoOn() {return ::DoOn();}
+void kutrace::DoQuit() {::DoQuit();}
+void kutrace::DoReset(u64 doing_ipc){::DoReset(doing_ipc);}
+void kutrace::DoStat(u64 control_flags) {::DoStat(control_flags);}
+void kutrace::EmitNames(const NumNamePair* ipair, u64 n) {::EmitNames(ipair, n);}
+u64 kutrace::GetUsec() {return ::GetUsec();}
+const char* kutrace::MakeTraceFileName(const char* name, char* str) {
+  return ::MakeTraceFileName(name, str);
 }
-inline bool kutrace::TestModule() {return KutraceInternal::TestModule();}
+bool kutrace::TestModule() {return ::TestModule();}
 
-#endif	// __KUTRACE_LIB_H__
+
+ 
 
 

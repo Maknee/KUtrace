@@ -1,5 +1,6 @@
 // Names for syscall, etc. in KUtrace 
-// dick sites 2021.10.08
+// Copyright 2021 Richard L. Sites
+//
 // These are from linux-5.10.46 x86 RPi4 64-bit. Others will vary.
 //
 

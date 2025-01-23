@@ -1,5 +1,5 @@
 // Base types to use thoughout class
-// dick sites 2020.03.31
+// Copyright 2021 Richard L. Sites
 
 #ifndef __BASETYPES_H__
 #define __BASETYPES_H__

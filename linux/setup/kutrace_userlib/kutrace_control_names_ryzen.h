@@ -1,5 +1,6 @@
 // Names for syscall, etc. in dclab_tracing 
-// dick sites 2019.03.13
+// Copyright 2021 Richard L. Sites
+//
 // These are from linux-4.19.19 x86 AMD 64-bit. Others will vary.
 //
 
