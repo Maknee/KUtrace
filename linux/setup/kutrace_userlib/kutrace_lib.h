@@ -1065,7 +1065,7 @@ inline const char kFromBase40[40] = {
 
 // Unpack six characters from 32 bits.
 // str must be 8 bytes. We somewhat-arbitrarily capitalize the first letter
-char* Base40ToChar(u64 base40, char* str) {
+inline char* Base40ToChar(u64 base40, char* str) {
   base40 &= CLU(0x00000000ffffffff);	// Just low 32 bits
   memset(str, 0, 8);
   bool first_letter = true;
@@ -1085,7 +1085,7 @@ char* Base40ToChar(u64 base40, char* str) {
 }
 
 // Pack six characters into 32 bits. Only use a-zA-Z0-9.-/
-u64 CharToBase40(const char* str) {
+inline u64 CharToBase40(const char* str) {
   int len = strlen(str);
   // If longer than 6 characters, take only the first 6
   if (len > 6) {len = 6;}
