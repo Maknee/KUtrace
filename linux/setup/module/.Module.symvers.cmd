@@ -1,1 +1,0 @@
-savedcmd_/4nvme/code/KUtrace/linux/setup/module/Module.symvers :=  scripts/mod/modpost -M -m -a      -o /4nvme/code/KUtrace/linux/setup/module/Module.symvers -T /4nvme/code/KUtrace/linux/setup/module/modules.order -i Module.symvers -e 
