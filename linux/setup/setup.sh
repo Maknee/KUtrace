@@ -29,7 +29,7 @@ scripts/config --enable HZ_PERIODIC
 scripts/config --enable USB_STORAGE
 scripts/config --enable SCSI
 scripts/config --enable BLK_DEV_SD
-
+scripts/config --enable XFS_FS
 
 yes "" | make localmodconfig
 
@@ -46,17 +46,20 @@ sudo apt-get install -y \
     libnuma-dev \
     libbabeltrace-dev \
     libpfm4-dev \
-    libtraceevent-dev
+    libtraceevent-dev \
+    libbfd-dev \
+    libzstd-dev
 
 cd tools/perf
 make -j
-cp perf ../../../postproc
+sudo make install
+sudo cp perf /usr/bin/perf
 cd ../..
 
 sudo make modules_install
 sudo make install
 
-sudo apt-get install kexec-tools -y
+sudo DEBIAN_FRONTEND=noninteractive apt-get install kexec-tools -y
 # sudo kexec -l arch/x86/boot/bzImage --append="$(cat /proc/cmdline) modulepath=$(pwd)/lib/modules" --reuse-cmdline
 # cat /sys/kernel/kexec_loaded
 sudo kexec -l /boot/vmlinuz-6.6.36 --initrd=/boot/initrd.img-6.6.36 --append="$(cat /proc/cmdline)"
