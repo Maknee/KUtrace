@@ -30,6 +30,7 @@ scripts/config --enable USB_STORAGE
 scripts/config --enable SCSI
 scripts/config --enable BLK_DEV_SD
 scripts/config --enable XFS_FS
+scripts/config --enable CONFIG_X86_MSR
 
 yes "" | make localmodconfig
 
