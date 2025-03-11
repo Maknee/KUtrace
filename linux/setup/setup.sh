@@ -69,20 +69,20 @@ sudo make install
 sudo DEBIAN_FRONTEND=noninteractive apt-get install kexec-tools -y
 # sudo kexec -l arch/x86/boot/bzImage --append="$(cat /proc/cmdline) modulepath=$(pwd)/lib/modules" --reuse-cmdline
 # cat /sys/kernel/kexec_loaded
-sudo kexec -l /boot/vmlinuz-6.6.36 --initrd=/boot/initrd.img-6.6.36 --append="$(cat /proc/cmdline)"
-sudo kexec -e
+# sudo kexec -l /boot/vmlinuz-6.6.36 --initrd=/boot/initrd.img-6.6.36 --append="$(cat /proc/cmdline)"
+# sudo kexec -e
 
-cd module
-make -j
+# cd module
+# make -j
 
-sudo insmod kutrace_mod.ko tracemb=40 check=0
-sudo rmmod kutrace_mod.ko
+# sudo insmod kutrace_mod.ko tracemb=40 check=0
+# sudo rmmod kutrace_mod.ko
 
-cd ../
+# cd ../
 
-cp postproc_changes/* postproc/
+# cp postproc_changes/* postproc/
 
-cd postproc
-./build.sh
+# cd postproc
+# ./build.sh
 
 
