@@ -40,21 +40,43 @@ scripts/config --enable NF_TABLES
 scripts/config --enable NF_TABLES_SET
 scripts/config --enable NF_TABLES_INET
 scripts/config --enable NF_TABLES_NETDEV
+scripts/config --enable NFT_NUMGEN
+scripts/config --enable NFT_HASH
+scripts/config --enable NFT_COUNTER
+scripts/config --enable NFT_OBJREF
 
 # Enable protocol support
 scripts/config --enable NF_TABLES_IPV4
 scripts/config --enable NF_TABLES_IPV6
+scripts/config --enable NF_TABLES_ARP
+scripts/config --enable NF_TABLES_BRIDGE
 
-# Enable additional features
+# Enable NAT and connection tracking
 scripts/config --enable NFT_CT
-scripts/config --enable NFT_LOG
-scripts/config --enable NFT_LIMIT
-scripts/config --enable NFT_MASQ
+scripts/config --enable NFT_FLOW_OFFLOAD
 scripts/config --enable NFT_NAT
-scripts/config --enable NFT_COUNTER
+scripts/config --enable NFT_MASQ
+scripts/config --enable NFT_REDIR
+scripts/config --enable NFT_TPROXY
+
+# Enable filtering and matching
+scripts/config --enable NFT_QUOTA
+scripts/config --enable NFT_LIMIT
+scripts/config --enable NFT_REJECT
+scripts/config --enable NFT_META
+scripts/config --enable NFT_SOCKET
+scripts/config --enable NFT_OSF
+scripts/config --enable NFT_XFRM
+
+# Enable logging
+scripts/config --enable NFT_LOG
 
 # Enable stateful inspection
 scripts/config --enable NF_CONNTRACK
+scripts/config --enable NF_CONNTRACK_EVENTS
+scripts/config --enable NF_CONNTRACK_TIMEOUT
+scripts/config --enable NF_CONNTRACK_TIMESTAMP
+
 yes "" | make localmodconfig
 
 fakeroot make -j$(($(nproc) - 1))
