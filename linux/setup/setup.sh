@@ -31,13 +31,30 @@ scripts/config --enable SCSI
 scripts/config --enable BLK_DEV_SD
 scripts/config --enable XFS_FS
 scripts/config --enable CONFIG_X86_MSR
-scripts/config --enable CONFIG_NETFILTER
-scripts/config --enable CONFIG_NETFILTER_XTABLES
-scripts/config --enable CONFIG_IP_NF_IPTABLES
-scripts/config --enable CONFIG_IP_NF_FILTER
-scripts/config --enable CONFIG_NFT_COMPAT
-scripts/config --enable CONFIG_NF_TABLES
 
+# Enable nftables subsystem
+scripts/config --enable NETFILTER_XTABLES
+scripts/config --enable NF_TABLES
+
+# Enable core nftables features
+scripts/config --enable NF_TABLES_SET
+scripts/config --enable NF_TABLES_INET
+scripts/config --enable NF_TABLES_NETDEV
+
+# Enable protocol support
+scripts/config --enable NF_TABLES_IPV4
+scripts/config --enable NF_TABLES_IPV6
+
+# Enable additional features
+scripts/config --enable NFT_CT
+scripts/config --enable NFT_LOG
+scripts/config --enable NFT_LIMIT
+scripts/config --enable NFT_MASQ
+scripts/config --enable NFT_NAT
+scripts/config --enable NFT_COUNTER
+
+# Enable stateful inspection
+scripts/config --enable NF_CONNTRACK
 yes "" | make localmodconfig
 
 fakeroot make -j$(($(nproc) - 1))
