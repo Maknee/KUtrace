@@ -312,6 +312,7 @@ namespace KutraceInternal {
 /* Outgoing arg to DoReset  */
 #define DO_IPC 1
 #define DO_WRAP 2
+#define DO_LLC 4
 
 /* For the flags byte in traceblock[1] */
 #define IPC_Flag     CLU(0x80)
@@ -1101,7 +1102,8 @@ inline u64 CharToBase40(const char* str) {
 
 inline bool kutrace::test() {return KutraceInternal::TestModule();}
 inline void kutrace::go(const char* process_name) {KutraceInternal::DoReset(0); KutraceInternal::DoInit(process_name); KutraceInternal::DoOn();}
-inline void kutrace::goipc(const char* process_name) {KutraceInternal::DoReset(1); KutraceInternal::DoInit(process_name); KutraceInternal::DoOn();}
+inline void kutrace::goipc(const char* process_name) {KutraceInternal::DoReset(DO_IPC); KutraceInternal::DoInit(process_name); KutraceInternal::DoOn();}
+inline void kutrace::goipcwrap(const char* process_name) {KutraceInternal::DoReset(DO_IPC | DO_WRAP); KutraceInternal::DoInit(process_name); KutraceInternal::DoOn();}
 inline void kutrace::stop(const char* fname) {KutraceInternal::DoOff(); KutraceInternal::DoFlush(); KutraceInternal::DoDump(fname); KutraceInternal::DoQuit();}
 inline void kutrace::mark_a(const char* label) {KutraceInternal::DoMark(KUTRACE_MARKA, KutraceInternal::CharToBase40(label));}
 inline void kutrace::mark_b(const char* label) {KutraceInternal::DoMark(KUTRACE_MARKB, KutraceInternal::CharToBase40(label));}
