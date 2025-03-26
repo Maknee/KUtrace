@@ -1594,7 +1594,7 @@ function is_rpcrxpkt(d)  {return (ev(d) == msgrxbase);}			// KUTRACE_RPCIDRXMSG
 function is_rpctxpkt(d)  {return (ev(d) == msgtxbase);}			// KUTRACE_RPCIDTXMSG 
 function is_mwait(d)   {return (ev(d) == 0x0208);}			// KUTRACE_MWAIT
 function is_pstate(d)  {return (ev(d) == 0x209) || (ev(d) == 0x21C);}	// KUTRACE_PSTATE,PSTATE2 (frequency)
-function is_mark(d)    {return (0x020a <= ev(d)) && (ev(d) <= 0x020d);}	// KUTRACE_MARKA..KUTRACE_MARKD
+function is_mark(d)    {return ((0x020a <= ev(d)) && (ev(d) <= 0x020d)) || is_mark_e(d);}	// KUTRACE_MARKA..KUTRACE_MARKD
 function is_lr_mark(d) {return (ev(d) & ~1) == 0x20E;}  		// KUTRACE_LEFTMARK and KUTRACE_RIGHTMARK
 function is_lock(d)    {return (0x0210 <= ev(d)) && (ev(d) <= 0x0212);}	// KUTRACE_LOCKNOACQUIRE..KUTRACE_LOCKWAKEUP
 function is_pkt(d)     {return (pktrxbase <= ev(d)) && (ev(d) <= pkttxbase);}     // KUTRACE_RX_PKT or KUTRACE_TX_PKT
@@ -1643,6 +1643,7 @@ function is_mark_a(d)    {return (ev(d) == 0x020A);}
 function is_mark_b(d)    {return (ev(d) == 0x020B);}
 function is_mark_c(d)    {return (ev(d) == 0x020C);}
 function is_mark_d(d)    {return (ev(d) == 0x020D);}
+function is_mark_e(d)    {return (ev(d) == 0x0213);}
 
  
 function is_idle_ev(ev)    {return ev == 0x10000;}
@@ -1690,6 +1691,7 @@ function get_mark_type(d) {
   if (is_mark_b(d)) {ty = 2;}
   if (is_mark_c(d)) {ty = 4;}
   if (is_mark_d(d)) {ty = 8;}
+  if (is_mark_e(d)) {ty = 1;}
   // Closing marks get types 16/32/64
   if (!is_mark_d(d) && (is_mark_close(d))) {ty <<= 4;}
   return ty;
@@ -2249,7 +2251,11 @@ function draw_mark_abcd(d, x0, y0, rel_y0, marktext, marktextsize, skiptext) {
     // mark_d comes in numbered centered black 
     markcolor = "#000000";  // black
   }
-        
+  if (is_mark_e(d)) {
+    // mark_d comes in numbered centered black 
+    markcolor = "#008080";  // green blue
+  }
+  
   var txwidth2;
   var txheight2;
   var markpath;
@@ -2315,6 +2321,7 @@ function draw_mark(row, d, x0, y0) {
   else if (is_mark_b(d)) {marktext = Base40ToChar(arg0(d));}
   else if (is_mark_c(d)) {marktext = Base40ToChar(arg0(d));}
   else if (is_mark_d(d)) {marktext = arg0(d).toString();}
+  else if (is_mark_e(d)) {marktext = name(d);}
   var skiptext = false; 
   if (is_mark_d(d)) {
     var txwidth2 = Rnd1((marktext.length) * marktextsize * 0.6 / 2);
@@ -2421,7 +2428,7 @@ function draw_one_mark(row, d, x0, y0) {
   var draw_ac = (state2.marks_value & 2) != 0;
   var is_ac = (ev(d) == 0x20A) || (ev(d) == 0x20C);
   var is_bd = (ev(d) == 0x20B) || (ev(d) == 0x20D);
-  if ((is_ac && draw_ac) || (is_bd && draw_bd)) {
+  if ((is_ac && draw_ac) || (is_bd && draw_bd) || is_mark_e(d)) {
     draw_mark(row, d, x0, y0);
   }
 }
