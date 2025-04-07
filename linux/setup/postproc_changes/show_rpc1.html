@@ -1010,42 +1010,18 @@ function assignSubTracks() {
       return t1(a.event) - t1(b.event);
     });
     
-    // Create an array to track the end time of the last event in each sub-track
-    var subTrackEndTimes = [];
-    
-    // Process each event in chronological order
+    // Assign each event to its own sub-track by order (stairs-like visualization)
     for (var i = 0; i < eventsByRpcId[id].length; i++) {
       var eventObj = eventsByRpcId[id][i];
-      var event = eventObj.event;
       var eventIndex = eventObj.index;
-      var startTime = t1(event);
-      var endTime = t4(event);
       
-      // Find the first available sub-track
-      var subTrackIndex = -1;
-      for (var j = 0; j < subTrackEndTimes.length; j++) {
-        if (startTime >= subTrackEndTimes[j]) {
-          // This sub-track is available
-          subTrackIndex = j;
-          break;
-        }
-      }
-      
-      // If no available sub-track found, create a new one
-      if (subTrackIndex === -1) {
-        subTrackIndex = subTrackEndTimes.length;
-        subTrackEndTimes.push(0); // Initialize with 0 end time
-      }
-      
-      // Assign this event to the sub-track
-      eventToSubTrack[eventIndex] = subTrackIndex;
-      
-      // Update the end time for this sub-track
-      subTrackEndTimes[subTrackIndex] = endTime;
+      // Each event gets its own sub-track based on its position in the time-ordered sequence
+      eventToSubTrack[eventIndex] = i;
     }
     
     // Store the maximum number of sub-tracks for this RPC ID
-    maxSubTracksPerTrack[id] = subTrackEndTimes.length;
+    // In this case, it's simply the number of events
+    maxSubTracksPerTrack[id] = eventsByRpcId[id].length;
   }
   
   // Determine the maximum number of sub-tracks across all RPC IDs
@@ -1439,12 +1415,12 @@ function draw_annotateall() {
 function drawevents() {
   resetevents();
   
-  // Assign sub-tracks for sequential display
+  // Assign sub-tracks for stair-like display
   assignSubTracks();
   
-  // Calculate how much vertical space to allocate per sub-track
-  var subTrackHeight = Math.min(linewidth.k4, ypixpertrack / globalMaxSubTracks);
-  var subTrackSpacing = subTrackHeight * 1.2; // Add some spacing between sub-tracks
+  // Calculate track spacing based on the maximum number of sub-tracks
+  var trackSpacing = ypixpertrack / (globalMaxSubTracks || 1);
+  var subTrackHeight = Math.min(linewidth.k4, trackSpacing * 0.8); // Leave some space between sub-tracks
   
   var notch = Math.max(3, subTrackHeight / 2);
   var drawncount = 0;
@@ -1464,9 +1440,10 @@ function drawevents() {
     // Base Y position for this track
     var y0 = y_zoomed(track);
     
-    // Add offset for sub-track within this track
+    // Add offset for sub-track within this track - create stairs effect
     var subTrack = eventToSubTrack[i];
-    y0 += (subTrack * subTrackSpacing);
+    var subTrackOffset = subTrack * trackSpacing;
+    y0 += subTrackOffset;
     
     var jogdown = " m0," + notch;
     var jogup = " m0,-" + notch;
@@ -1835,71 +1812,90 @@ function doSnap(xy, data) {
 // Snap raw input [x,y] pair to nearest x in data, returning [x',y'] of that data point
 // x is in the time domain, and y is an RPC track number. Just return the nearest track
 function FindNearestEvent(x, y) {
-  // First find the track (RPC ID)
-  var track = Math.min(maxTrack, Math.max(0, Math.round(y)));
+  // Find the track based on the y-coordinate
+  var track = Math.min(maxTrack, Math.max(0, Math.floor(y)));
   
-  // Find all events in this track
+  // Simple array of events in this track
   var eventsInTrack = [];
   for (var i = 0; i < data.events.length; i++) {
     var d = data.events[i];
     if (eventToTrack(d) === track) {
-      eventsInTrack.push({event: d, index: i});
+      // Store the event with index and calculated position
+      var subTrack = eventToSubTrack[i];
+      var trackSpacing = ypixpertrack / (globalMaxSubTracks || 1);
+      var eventY = y_zoomed(track) + (subTrack * trackSpacing);
+      
+      eventsInTrack.push({
+        event: d,
+        index: i,
+        subTrack: subTrack,
+        y: eventY,
+        yDomain: y_zoomed.invert(eventY)
+      });
     }
   }
   
   if (eventsInTrack.length === 0) {
-    return -1; // Return -1 instead of 0 if no events found
+    return -1; // No events found
   }
   
-  // Find nearest event in time
-  var nearest = -1;
-  var nearestDist = Infinity;
-  
-  // First, check if we're directly over any event
+  // First, check if we're clicking directly over any event in time
+  var directHits = [];
   for (var i = 0; i < eventsInTrack.length; i++) {
-    var d = eventsInTrack[i].event;
-    var idx = eventsInTrack[i].index;
+    var item = eventsInTrack[i];
+    var d = item.event;
     
-    // Check if time point is within event duration
     if (t1(d) <= x && x <= t4(d)) {
-      // Get the Y position for this subtrack
-      var baseY = track;
-      var subTrack = eventToSubTrack[idx];
-      var subTrackHeight = Math.min(linewidth.k4, ypixpertrack / globalMaxSubTracks);
-      var subTrackY = baseY + (subTrack * subTrackHeight / ypixpertrack);
-      
-      // Calculate distance to this subtrack (in track coordinate space)
-      var yDist = Math.abs(subTrackY - y);
-      
-      if (yDist < nearestDist) {
-        nearestDist = yDist;
-        nearest = idx;
-      }
+      // This event overlaps with the click time
+      directHits.push(item);
     }
   }
   
-  // If no event directly overlaps the click point in time,
-  // find the closest event by time
-  if (nearest === -1) {
-    for (var i = 0; i < eventsInTrack.length; i++) {
-      var d = eventsInTrack[i].event;
-      var idx = eventsInTrack[i].index;
-      
-      var dist;
-      if (x < t1(d)) {
-        dist = t1(d) - x;
-      } else {
-        dist = x - t4(d);
+  // If we have direct time hits, pick the closest one vertically
+  if (directHits.length > 0) {
+    var closestVertical = directHits[0];
+    var minVerticalDist = Math.abs(y - directHits[0].yDomain);
+    
+    for (var i = 1; i < directHits.length; i++) {
+      var vertDist = Math.abs(y - directHits[i].yDomain);
+      if (vertDist < minVerticalDist) {
+        minVerticalDist = vertDist;
+        closestVertical = directHits[i];
       }
-      
-      if (dist < nearestDist) {
-        nearestDist = dist;
-        nearest = idx;
-      }
+    }
+    
+    return closestVertical.index;
+  }
+  
+  // If no direct hits, find the nearest event considering both time and vertical distance
+  var nearest = eventsInTrack[0];
+  var minDist = Infinity;
+  
+  for (var i = 0; i < eventsInTrack.length; i++) {
+    var item = eventsInTrack[i];
+    var d = item.event;
+    
+    // Calculate time distance
+    var timeDist;
+    if (x < t1(d)) {
+      timeDist = t1(d) - x;
+    } else {
+      timeDist = x - t4(d);
+    }
+    
+    // Calculate vertical distance
+    var vertDist = Math.abs(y - item.yDomain);
+    
+    // Combined distance (time is weighted more)
+    var combinedDist = timeDist * 0.8 + vertDist * 0.2;
+    
+    if (combinedDist < minDist) {
+      minDist = combinedDist;
+      nearest = item;
     }
   }
   
-  return (nearest !== -1) ? nearest : (eventsInTrack.length > 0 ? eventsInTrack[0].index : -1);
+  return nearest.index;
 }
 
 // Create full event name
@@ -1968,12 +1964,12 @@ function annotatespan(d, i, clss, offsety, short, rotate) {
     var track = eventToTrack(d);
     var y0 = y_zoomed(track);
     
-    // Add sub-track offset
+    // Add sub-track offset to match the stair visualization
     if (typeof eventToSubTrack !== 'undefined' && eventToSubTrack[i] !== undefined) {
       var subTrack = eventToSubTrack[i];
-      var subTrackHeight = Math.min(linewidth.k4, ypixpertrack / globalMaxSubTracks);
-      var subTrackSpacing = subTrackHeight * 1.2; // Match the spacing in drawevents
-      y0 += (subTrack * subTrackSpacing);
+      var trackSpacing = ypixpertrack / (globalMaxSubTracks || 1);
+      var subTrackOffset = subTrack * trackSpacing;
+      y0 += subTrackOffset;
     }
     
     return annotatespanvxvy(vx, y0, d, i, clss, offsety, short, rotate);

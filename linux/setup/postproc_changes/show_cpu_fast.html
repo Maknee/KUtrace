@@ -63,6 +63,20 @@
   stroke-width: 2px;
 }
 
+#visualization-container {
+    position: relative; /* Needed for absolute positioning of children */
+}
+#timeline-canvas {
+    position: absolute;
+    z-index: 1; /* Place canvas behind SVG */
+    /* top, left, width, height will be set by JavaScript */
+}
+#anchorsvg {
+    position: relative; /* Keep SVG flow normal, but allow z-index */
+    z-index: 2; /* Place SVG on top of canvas */
+    display: inline-block; /* Or block, ensure it takes space */
+}
+
 </style>
  
  
@@ -1693,7 +1707,7 @@ function get_mark_type(d) {
   if (is_mark_d(d)) {ty = 8;}
   if (is_mark_e(d)) {ty = 1;}
   // Closing marks get types 16/32/64
-  if (!is_mark_d(d) && (is_mark_close(d))) {ty <<= 4;}
+  if (!is_mark_d(d) && !is_mark_e(d) && (is_mark_close(d))) {ty <<= 4;}
   return ty;
 }
 
@@ -2321,13 +2335,7 @@ function draw_mark(row, d, x0, y0) {
   else if (is_mark_b(d)) {marktext = Base40ToChar(arg0(d));}
   else if (is_mark_c(d)) {marktext = Base40ToChar(arg0(d));}
   else if (is_mark_d(d)) {marktext = arg0(d).toString();}
-  else if (is_mark_e(d)) {
-    marktext = name(d);
-    var val = arg0(d);
-    if (val != 0xFFFF) {
-      marktext += val;
-    }
-  }
+  else if (is_mark_e(d)) {marktext = name(d);}
   var skiptext = false; 
   if (is_mark_d(d)) {
     var txwidth2 = Rnd1((marktext.length) * marktextsize * 0.6 / 2);
@@ -2604,6 +2612,144 @@ function xyrotate(xypair, sincospair) {
   xyresult.y = xypair.x * sincospair.sin + xypair.y * sincospair.cos;
   return xyresult;
 }
+
+/**
+ * Draws an arc (wakeup or IPI) on the canvas.
+ *
+ * @param {object} d - The arc event data object.
+ * @param {number} x0_px - Starting X pixel coordinate on canvas.
+ * @param {number} y0_px - Starting Y pixel coordinate on canvas (center of start row).
+ * @param {number} x1_px - Ending X pixel coordinate on canvas.
+ * @param {number} y1_px - Ending Y pixel coordinate on canvas (center of end row).
+ * @param {boolean} is_visible - Flag if this arc type should be drawn based on state2.arcs_value
+ */
+ function draw_arc_canvas(d, x0_px, y0_px, x1_px, y1_px, is_visible) {
+    if (!timelineCtx || !is_visible) return;
+
+    // --- Style based on arc type (wakeup vs IPI) ---
+    let strokeColor = "#0080FF"; // Default: wakeup light blue
+    let lineWidth = 3.0;
+    let dashPattern = [3, 3]; // Default: wakeup dash
+    const isIpi = is_ipi(d);
+    const bold = (state2.arcs_value === 1); // Check if bold style is active
+
+    if (isIpi) {
+        // Style for IPI arcs (only draw if bold is set, as per original logic)
+        if (!bold) return;
+        // strokeColor = "#C0C0C0"; // light gray
+        strokeColor = "#F0F0F0"
+        dashPattern = [9, 3];
+        lineWidth = 3.0; // IPI uses fixed width
+    } else {
+        // Style for wakeup arcs
+        if (bold) {
+            strokeColor = "#0055AA"; // dark blue-green
+            dashPattern = [4, 4];
+            lineWidth = 4.0;
+        }
+    }
+
+    // --- Calculate Curve Control Point (similar to SVG logic) ---
+    const mid_x = (x0_px + x1_px) / 2;
+    const mid_y = (y0_px + y1_px) / 2;
+
+    const arc_run = x1_px - x0_px;
+    const arc_rise = y1_px - y0_px;
+    let arc_hypot = Math.sqrt(arc_run * arc_run + arc_rise * arc_rise);
+    if (arc_hypot < 1) arc_hypot = 1; // Avoid division by zero
+
+    const cos_a = arc_run / arc_hypot;
+    const sin_a = arc_rise / arc_hypot;
+
+    // Control point offset vector (e.g., 30px perpendicular upwards)
+    const ctl_offset_x = 0;
+    const ctl_offset_y = -30; // Negative Y is upwards in canvas
+
+    // Rotate the offset vector
+    const ctl_rot_x = ctl_offset_x * cos_a - ctl_offset_y * sin_a;
+    const ctl_rot_y = ctl_offset_x * sin_a + ctl_offset_y * cos_a;
+
+    // Calculate the actual control point coordinates
+    const cpX = mid_x + ctl_rot_x;
+    const cpY = mid_y + ctl_rot_y;
+
+    // // --- Calculate Arrowhead ---
+    // // Need tangent at the end point. For quadratic bezier P0, P1 (control), P2 (end):
+    // // Tangent vector T = P2 - P1 (approximately, points towards control point from end)
+    // const tangent_dx = cpX - x1_px;
+    // const tangent_dy = cpY - y1_px;
+    // let tangent_len = Math.sqrt(tangent_dx * tangent_dx + tangent_dy * tangent_dy);
+    // if (tangent_len < 1) tangent_len = 1;
+
+    // // Normalize tangent
+    // const tangent_norm_dx = tangent_dx / tangent_len;
+    // const tangent_norm_dy = tangent_dy / tangent_len;
+
+    // // Arrowhead size
+    // const arrowLength = 8;
+    // const arrowWidth = 8; // Half-width perpendicular to tangent
+
+    // // Calculate points for arrowhead lines (rotated +/- 45 deg or similar from tangent)
+    // // Point 1: Rotate tangent vector slightly (~135 deg) and scale
+    // const angle1 = Math.PI * 0.75; // Approx 135 deg adjustment
+    // const arrow1_dx = (tangent_norm_dx * Math.cos(angle1) - tangent_norm_dy * Math.sin(angle1)) * arrowLength;
+    // const arrow1_dy = (tangent_norm_dx * Math.sin(angle1) + tangent_norm_dy * Math.cos(angle1)) * arrowLength;
+
+    // // Point 2: Rotate tangent vector the other way (~-135 deg / 225 deg) and scale
+    // const angle2 = -Math.PI * 0.75; // Approx -135 deg adjustment
+    // const arrow2_dx = (tangent_norm_dx * Math.cos(angle2) - tangent_norm_dy * Math.sin(angle2)) * arrowLength;
+    // const arrow2_dy = (tangent_norm_dx * Math.sin(angle2) + tangent_norm_dy * Math.cos(angle2)) * arrowLength;
+
+    // // Alternative simpler arrowhead (just lines back along tangent)
+    // // const arrow1_dx = -tangent_norm_dx * arrowLength - tangent_norm_dy * (arrowWidth / 2);
+    // // const arrow1_dy = -tangent_norm_dy * arrowLength + tangent_norm_dx * (arrowWidth / 2);
+    // // const arrow2_dx = -tangent_norm_dx * arrowLength + tangent_norm_dy * (arrowWidth / 2);
+    // // const arrow2_dy = -tangent_norm_dy * arrowLength - tangent_norm_dx * (arrowWidth / 2);
+
+
+    // Angle of the curve's end segment (Control Point -> End Point)
+    const endSegmentDx = x1_px - cpX;
+    const endSegmentDy = y1_px - cpY;
+    const endAngle = Math.atan2(endSegmentDy, endSegmentDx); // Angle in radians
+
+    const arrowLength = 8; // Make arrow slightly bigger?
+    const arrowAngle = Math.PI / 6; // Angle of arrowhead wings (e.g., 30 degrees)
+
+    // Calculate the points for the arrowhead wings relative to the end point (x1_px, y1_px)
+    // Point 1: Rotate end angle by +arrowAngle
+    const arrowX1 = x1_px - arrowLength * Math.cos(endAngle + arrowAngle);
+    const arrowY1 = y1_px - arrowLength * Math.sin(endAngle + arrowAngle);
+
+    // Point 2: Rotate end angle by -arrowAngle
+    const arrowX2 = x1_px - arrowLength * Math.cos(endAngle - arrowAngle);
+    const arrowY2 = y1_px - arrowLength * Math.sin(endAngle - arrowAngle);
+
+    // --- Draw on Canvas ---
+    timelineCtx.beginPath();
+    timelineCtx.lineWidth = lineWidth;
+    timelineCtx.strokeStyle = strokeColor;
+    timelineCtx.setLineDash(dashPattern);
+    timelineCtx.lineDashOffset = 0;
+
+    timelineCtx.moveTo(x0_px, y0_px);
+    timelineCtx.quadraticCurveTo(cpX, cpY, x1_px, y1_px);
+    timelineCtx.stroke(); // Draw the main curve
+
+    // Draw arrowhead (as separate lines, ensure solid)
+    timelineCtx.beginPath();
+    timelineCtx.setLineDash([]); // Solid lines for arrowhead
+    timelineCtx.lineWidth = 1.5; // Arrowhead line width
+    // Ensure arrowhead color matches line color if different widths used
+    timelineCtx.strokeStyle = strokeColor;
+
+    timelineCtx.moveTo(arrowX1, arrowY1);
+    timelineCtx.lineTo(x1_px, y1_px);
+    timelineCtx.lineTo(arrowX2, arrowY2);
+    timelineCtx.stroke();
+
+    // Reset dash
+    timelineCtx.setLineDash([]);
+}
  
 // Set up arc path without drawing it yet
 function make_arc_path(x0, y0, x1, y1) {
@@ -2685,8 +2831,10 @@ function draw_arc_ipi(x0, y0, x1, y1) {
 }
 
 function draw_arc(d, x0, y0, x1, y1) {
-  if      (is_arc(d)) {draw_arc_wake(x0, y0, x1, y1);}
-  else if (is_ipi(d)) {draw_arc_ipi(x0, y0, x1, y1);}
+  // if      (is_arc(d)) {draw_arc_wake(x0, y0, x1, y1);}
+  // else if (is_ipi(d)) {draw_arc_ipi(x0, y0, x1, y1);}
+  if      (is_arc(d)) {draw_arc_canvas(d, x0, y0, x1, y1, true);}
+  else if (is_ipi(d)) {draw_arc_canvas(d, x0, y0, x1, y1, true);}
 }
 
 // Names for things...
@@ -3401,8 +3549,10 @@ function slowDrawOnRow(row, d, gray) {
   var e_height = perTracksize[t_height].eventheight;
 
   if (e_height < 7) {
-    // Too small to see well -- draw as single line
-    fastDrawOnRow(row, d, gray);
+  // if (e_height < 8) {
+      // Too small to see well -- draw as single line
+    // fastDrawOnRow(row, d, gray);
+    fastDrawOnRowCanvas(row, d, gray);
     return;
   }
 
@@ -3416,104 +3566,115 @@ function slowDrawOnRow(row, d, gray) {
   // Do early
   if (is_queued(d)) {
     // Draw a queued waiting line, offset up from centerline
-    draw_queue(d, x0, y0 - e_height / 4, x1, gray, l1width(d, e_height));
+    // draw_queue(d, x0, y0 - e_height / 4, x1, gray, l1width(d, e_height));
+    draw_queue_canvas(d, x0, y0 - e_height / 4, x1, gray, l1width(d, e_height), e_height);
   } else 
 
   if (is_kernel(d)) {
 //console.log("kernel", path);
-    if (0 < fade_value) {fastDrawOnRow(row, d, gray); return;}
-    // Draw the syscall/irq/fault four lines
-    innersvgdotg.append("path")
-      .attr("class", "graphlinex")
-      .attr("d",  path)
-      .attr("fill", "none")
-      .attr("stroke-width", l4width(d, e_height))
-      .attr("stroke", l4color(d, gray));
-    innersvgdotg.append("path")
-      .attr("class", "graphlinex")
-      .attr("d",  path)
-      .attr("fill", "none")
-      .attr("stroke-width", l3width(d, e_height))
-      .attr("stroke", l3color(d, gray));
-    innersvgdotg.append("path")
-      .attr("class", "graphlinex")
-      .attr("d",  path)
-      .attr("fill", "none")
-      .attr("stroke-width", l2width(d, e_height))
-      .attr("stroke", l1color(d, gray));
-    innersvgdotg.append("path")
-      .attr("class", "graphlinex")
-      .attr("d",  path)
-      .attr("fill", "none")
-      .attr("stroke-width", l1width(d, e_height))
-      .attr("stroke", l2color(d, gray));
+    // if (0 < fade_value) {fastDrawOnRow(row, d, gray); return;}
+    // // Draw the syscall/irq/fault four lines
+    // innersvgdotg.append("path")
+    //   .attr("class", "graphlinex")
+    //   .attr("d",  path)
+    //   .attr("fill", "none")
+    //   .attr("stroke-width", l4width(d, e_height))
+    //   .attr("stroke", l4color(d, gray));
+    // innersvgdotg.append("path")
+    //   .attr("class", "graphlinex")
+    //   .attr("d",  path)
+    //   .attr("fill", "none")
+    //   .attr("stroke-width", l3width(d, e_height))
+    //   .attr("stroke", l3color(d, gray));
+    // innersvgdotg.append("path")
+    //   .attr("class", "graphlinex")
+    //   .attr("d",  path)
+    //   .attr("fill", "none")
+    //   .attr("stroke-width", l2width(d, e_height))
+    //   .attr("stroke", l1color(d, gray));
+    // innersvgdotg.append("path")
+    //   .attr("class", "graphlinex")
+    //   .attr("d",  path)
+    //   .attr("fill", "none")
+    //   .attr("stroke-width", l1width(d, e_height))
+    //   .attr("stroke", l2color(d, gray));
+    if (0 < fade_value) { fastDrawOnRowCanvas(row, d, gray); }
+    else { draw_kernel_canvas(d, x0, y0, x1, gray, e_height); }
 
   } else if (is_user(d)) {
-    if (0 < fade_value) {fastDrawOnRow(row, d, gray); return;}
+    // if (0 < fade_value) {fastDrawOnRow(row, d, gray); return;}
 
-    // Draw stacked user colors
-    var path1 = "M" + Rnd1(x0) + "," + Rnd1(y0 - (l1width(d, e_height) / 2)) + 
-      " H" + Rnd1(x1);
-    var path2 = "M" + Rnd1(x0) + "," + Rnd1(y0 + (l2width(d, e_height) / 2)) + 
-      " H" + Rnd1(x1);
-//console.log("user", path1, path2);
-    innersvgdotg.append("path")
-      .attr("class", "graphlinex")
-      .attr("d",  path1)
-      .attr("fill", "none")
-      .attr("stroke-width", l2width(d, e_height))
-      .attr("stroke", l2color(d, gray));
-    innersvgdotg.append("path")
-      .attr("class", "graphlinex")
-      .attr("d",  path2)
-      .attr("fill", "none")
-      .attr("stroke-width", l1width(d, e_height))
-      .attr("stroke", l1color(d, gray));
-
+//     // Draw stacked user colors
+//     var path1 = "M" + Rnd1(x0) + "," + Rnd1(y0 - (l1width(d, e_height) / 2)) + 
+//       " H" + Rnd1(x1);
+//     var path2 = "M" + Rnd1(x0) + "," + Rnd1(y0 + (l2width(d, e_height) / 2)) + 
+//       " H" + Rnd1(x1);
+// //console.log("user", path1, path2);
+//     innersvgdotg.append("path")
+//       .attr("class", "graphlinex")
+//       .attr("d",  path1)
+//       .attr("fill", "none")
+//       .attr("stroke-width", l2width(d, e_height))
+//       .attr("stroke", l2color(d, gray));
+//     innersvgdotg.append("path")
+//       .attr("class", "graphlinex")
+//       .attr("d",  path2)
+//       .attr("fill", "none")
+//       .attr("stroke-width", l1width(d, e_height))
+//       .attr("stroke", l1color(d, gray));
+    if (0 < fade_value) { fastDrawOnRowCanvas(row, d, gray); }
+    else { draw_user_canvas(d, x0, y0, x1, gray, e_height); }
   } else if (is_idle(d)) {
-//console.log("idle", path);
-    if (0 < fade_value) {fastDrawOnRow(row, d, gray); return;}
+// //console.log("idle", path);
+//     if (0 < fade_value) {fastDrawOnRow(row, d, gray); return;}
 
-    // Draw the idle line; dashed if low-power
-    if (arg0(d) == 1) {
-      innersvgdotg.append("path")
-        .attr("class", "graphlinex")
-        .attr("d",  path)
-        .attr("fill", "none")
-        .attr("stroke-dasharray", [8,1])
-        .attr("stroke-width", l1width(d, e_height))
-        .attr("stroke", l1color(d, gray));	// Black dashes 
-    } else {
-      innersvgdotg.append("path")
-        .attr("class", "graphlinex")
-        .attr("d",  path)
-        .attr("fill", "none")
-        .attr("stroke-width", l1width(d, e_height * 1.5))
-        .attr("stroke", l1color(d, gray));
-    }
-
+//     // Draw the idle line; dashed if low-power
+//     if (arg0(d) == 1) {
+//       innersvgdotg.append("path")
+//         .attr("class", "graphlinex")
+//         .attr("d",  path)
+//         .attr("fill", "none")
+//         .attr("stroke-dasharray", [8,1])
+//         .attr("stroke-width", l1width(d, e_height))
+//         .attr("stroke", l1color(d, gray));	// Black dashes 
+//     } else {
+//       innersvgdotg.append("path")
+//         .attr("class", "graphlinex")
+//         .attr("d",  path)
+//         .attr("fill", "none")
+//         .attr("stroke-width", l1width(d, e_height * 1.5))
+//         .attr("stroke", l1color(d, gray));
+//     }
+    if (0 < fade_value) { fastDrawOnRowCanvas(row, d, gray); }
+    else { draw_idle_canvas(d, x0, y0, x1, gray, e_height); }
   } else if (is_pstate(d)) {
     // Draw a possible slow-clock overlay
-    draw_pstate(d, x0, y0, x1, gray, e_height);
+    // draw_pstate(d, x0, y0, x1, gray, e_height);
+    draw_pstate_canvas(d, x0, y0, x1, gray, e_height);
 
   } else if (is_pc_samp(d)) {
     // Draw a PC sample line
-    draw_pc_samp(d, x0, y0 - e_height * 0.55, x1, gray, l1width(d, e_height) / 2);
+    // draw_pc_samp(d, x0, y0 - e_height * 0.55, x1, gray, l1width(d, e_height) / 2);
+    draw_pc_samp_canvas(d, x0, y0, x1, gray, l1width(d, e_height) / 2, e_height);
 
   } else if (is_lock_line(d)) {
     // Draw a lock-held line
-    draw_lock_line(d, x0, y0 - e_height * 0.55, x1, gray, l1width(d, e_height) / 2, row);
+    // draw_lock_line(d, x0, y0 - e_height * 0.55, x1, gray, l1width(d, e_height) / 2, row);
+    draw_lock_line_canvas(d, x0, y0, x1, gray, l1width(d, e_height) / 2, e_height, row);
 
   } else if (is_c_exit(d)) {
-     draw_c_exit(d, x0, y0, x1, gray, e_height);
+    //  draw_c_exit(d, x0, y0, x1, gray, e_height);
+     draw_c_exit_canvas(d, x0, y0, x1, gray, e_height);
 
   } else if (is_rpcpkt(d)) {	// Represents an entire multi-packet message
     // Draw thin line(s) showing approx network occupation
-    draw_rpc_msg(d, x0, y0, x1, gray, l1width(d, e_height) / 2);
+    // draw_rpc_msg(d, x0, y0, x1, gray, l1width(d, e_height) / 2);
+    draw_rpc_msg_canvas(d, x0, y0, x1, gray, l1width(d, e_height) / 2);
 
   } else if (is_pkt(d)) {	// Represents just a single packet
     // Draw thin like showing approx network occupation
-    draw_pkt(d, x0, y0, x1, gray, l1width(d, e_height) / 2);
+    // draw_pkt(d, x0, y0, x1, gray, l1width(d, e_height) / 2);
+    draw_pkt_canvas(d, x0, y0, x1, gray, l1width(d, e_height) / 2);
 
   } else if (is_special(d) && !is_mark(d)) {
     // Mostly IPIsend, RPCmarkers; duration is non-zero
@@ -3530,7 +3691,8 @@ function slowDrawOnRow(row, d, gray) {
 
   } else if (is_wait(d)) {
     // Draw the Morse code for why we are waiting, offset up from centerline
-    draw_wait(d, x0, y0 - e_height / 4, x1, gray, l1width(d, e_height) / 2);
+    // draw_wait(d, x0, y0 - e_height / 4, x1, gray, l1width(d, e_height) / 2);
+    draw_wait_canvas(d, x0, y0 - e_height / 4, x1, gray, l1width(d, e_height) / 2);
 
   } else if (!gray && is_mark(d)) {
     draw_one_mark(row, d, x0, y0);
@@ -3544,8 +3706,12 @@ function slowDrawOnRow(row, d, gray) {
     // Draw diagonal white lines to show overhead; 20ns if noipc, 50ns if IPC (approx measurements)
     var ovhd = NsToTs((state2.ipc_value < 0) ? gOverheadNs : gOverheadIpcNs);
     var x2 = x_zoomed(ts(d) + ovhd);
-    draw_ovhd(d, x0, y0, x2, e_height);
- }
+    // draw_ovhd(d, x0, y0, x2, e_height);
+    x2 = Math.min(x1, x2);
+    if (x2 > x0) {
+          draw_ovhd(d, x0, y0, x2, e_height); // Keep SVG
+    }
+  }
 
   // Layer on top the IPC triangle
   if (!gray && (0 < state2.ipc_value)) {
@@ -3556,6 +3722,8 @@ function slowDrawOnRow(row, d, gray) {
 
 // Draw one small entry on given track, using just one line and color. Skip marks and IPC
 function fastDrawOnRow(row, d2, gray) {
+  fastDrawOnRowCanvas(row, d2, gray);
+  return;
   var track = rowToTrack[row];
   var t_height = rowToHeight[row];
   var x0 = x_zoomed(ts(d2));
@@ -3802,10 +3970,31 @@ function fastdrawevents() {
   // Draw everything on screen, except overlays and extras
   d3.selectAll(".brackettext").remove() ;
 
+  // *** Pre-filtering by time ***
+  let startIndex = 0;
+  let endIndex = data.events.length;
+
+  // if (data.events.length > 0) {
+  //   // Use d3.bisector to find the potential start index
+  //   // Find first event whose start time is >= realxleft (or slightly before for safety)
+  //   const bisectStart = d3.bisector(d => d[0]).left;
+  //   // Look slightly before realxleft to catch events starting just off-screen but extending on
+  //   const safeStartSearchTime = realxleft - xsecperpix * 50; // Example buffer: 50 pixels
+  //   startIndex = Math.max(0, bisectStart(data.events, safeStartSearchTime) - 1); // -1 for safety
+
+  //   // Find first event whose start time is > realxright
+  //   const bisectEnd = d3.bisector(d => d[0]).left;
+  //     // Look slightly after realxright for safety buffer if needed, but usually just > realxright is ok
+  //   endIndex = bisectEnd(data.events, realxright, startIndex); // Start search from startIndex
+  //   // endIndex is the insertion point, so it's one *past* the last relevant item
+  //   endIndex = Math.min(data.events.length, endIndex + 1); // +1 for safety margin
+  // }
+
   // Draw everything on screen except overlays
   var row = 0;
   var overlay_set = new Set();
-  for (var i = 0; i < data.events.length; ++i) {
+  // for (var i = 0; i < data.events.length; ++i) {
+  for (var i = startIndex; i < endIndex; ++i) {
     var d = data.events[i];
     if (is_lr_mark(d)) {continue;}
     if (!onscreen_x(d)) {continue;}
@@ -6208,6 +6397,7 @@ function initializeDrawingState() {
 function redrawEvents() {
   //console.log("redrawEvents");
   InitMatchcount();
+  clearCanvas();
   fastdrawevents();
   if (state.hilite_evnum != 0) {
     ShowMatchcount();
@@ -6285,8 +6475,9 @@ function delayed_redraw_events_axes() {
 }
 
 function redraw_events_axes() {
-  clearTimeout(timerHandle);
-  timerHandle = setTimeout(delayed_redraw_events_axes, 50);  // msec
+  delayed_redraw_events_axes();
+  // clearTimeout(timerHandle);
+  // timerHandle = setTimeout(delayed_redraw_events_axes, 50);  // msec
 }
 
  
@@ -8745,6 +8936,414 @@ function DrawOverallLegendV() {
 
 // ---------- End OVerall HTML legend ----------------------------------------
 
+function getCanvasRectGeometry(y0_center, total_event_height, line_component_height) {
+    // Calculate the top y-coordinate for this specific bar component
+    // Assumes y0_center is the middle of the *total* event height area
+    // And line_component_height is the height of the bar we want to draw
+    const y_top = y0_center - (total_event_height / 2) + (total_event_height - line_component_height) / 2;
+     return { y: Rnd1(y_top), h: Rnd1(line_component_height) };
+    // Simpler alternative if bars stack from top:
+    // const y_top = y0_center - (total_event_height / 2); // Align to top of total event space
+    // return { y: Rnd1(y_top + offset_within_stack), h: Rnd1(line_component_height) };
+}
+
+
+function draw_kernel_canvas(d, x0, y0_center, x1, gray, e_height) {
+    if (!timelineCtx) return;
+    const width = x1 - x0;
+    if (width < 0.1) return; // Don't draw if less than 0.1 pixel wide
+
+    const w_l4 = l4width(d, e_height);
+    const w_l3 = l3width(d, e_height);
+    const w_l2 = l2width(d, e_height);
+    const w_l1 = l1width(d, e_height);
+
+    const c_l4 = l4color(d, gray);
+    const c_l3 = l3color(d, gray);
+    const c_l2 = l1color(d, gray); // Note: SVG used l1color for l2 width band
+    const c_l1 = l2color(d, gray); // Note: SVG used l2color for l1 width band
+
+    let current_y = y0_center - e_height / 2; // Start from top of total height
+
+    // Draw bands from outside in (or top to bottom)
+    if (w_l4 > 0) {
+        timelineCtx.fillStyle = c_l4;
+        timelineCtx.fillRect(Rnd1(x0), Rnd1(current_y), Rnd1(width), Rnd1( (e_height - w_l3) / 2 ) ); // Top part of outer band
+        timelineCtx.fillRect(Rnd1(x0), Rnd1(current_y + w_l3 + (e_height - w_l3) / 2), Rnd1(width), Rnd1( (e_height - w_l3) / 2 ) ); // Bottom part
+    }
+    current_y += (e_height - w_l3) / 2;
+
+    if (w_l3 > 0) {
+       timelineCtx.fillStyle = c_l3;
+       timelineCtx.fillRect(Rnd1(x0), Rnd1(current_y), Rnd1(width), Rnd1( (w_l3 - w_l2) / 2 ) ); // Top part of next band
+       timelineCtx.fillRect(Rnd1(x0), Rnd1(current_y + w_l2 + (w_l3-w_l2)/2), Rnd1(width), Rnd1( (w_l3 - w_l2) / 2 ) ); // Bottom part
+    }
+     current_y += (w_l3 - w_l2) / 2;
+
+     if (w_l2 > 0) {
+       timelineCtx.fillStyle = c_l2;
+       timelineCtx.fillRect(Rnd1(x0), Rnd1(current_y), Rnd1(width), Rnd1( (w_l2 - w_l1) / 2 ) ); // Top part of next band
+       timelineCtx.fillRect(Rnd1(x0), Rnd1(current_y + w_l1 + (w_l2-w_l1)/2), Rnd1(width), Rnd1( (w_l2 - w_l1) / 2 ) ); // Bottom part
+    }
+    current_y += (w_l2 - w_l1) / 2;
+
+    if (w_l1 > 0) { // Innermost band
+       timelineCtx.fillStyle = c_l1;
+       timelineCtx.fillRect(Rnd1(x0), Rnd1(current_y), Rnd1(width), Rnd1(w_l1));
+    }
+}
+
+function draw_user_canvas(d, x0, y0_center, x1, gray, e_height) {
+    if (!timelineCtx) return;
+    const width = x1 - x0;
+    if (width < 0.1) return;
+
+    const w_l2 = l2width(d, e_height);
+    const w_l1 = l1width(d, e_height);
+    const total_h = w_l1 + w_l2; // User mode only uses these two
+
+    const c_l2 = l2color(d, gray);
+    const c_l1 = l1color(d, gray);
+
+    // Draw top bar (l2 color, l2 width)
+    let current_y = y0_center - total_h / 2;
+    timelineCtx.fillStyle = c_l2;
+    timelineCtx.fillRect(Rnd1(x0), Rnd1(current_y), Rnd1(width), Rnd1(w_l2));
+
+    // Draw bottom bar (l1 color, l1 width)
+    current_y += w_l2;
+    timelineCtx.fillStyle = c_l1;
+    timelineCtx.fillRect(Rnd1(x0), Rnd1(current_y), Rnd1(width), Rnd1(w_l1));
+}
+
+
+function draw_idle_canvas(d, x0, y0_center, x1, gray, e_height) {
+    if (!timelineCtx) return;
+    const width = x1 - x0;
+    if (width < 0.1) return;
+
+    const w_l1 = l1width(d, e_height);
+    const c_l1 = l1color(d, gray);
+    const isLowPower = arg0(d) == 1;
+
+    const rect = getCanvasRectGeometry(y0_center, e_height, w_l1);
+
+    timelineCtx.fillStyle = c_l1;
+    if (isLowPower) {
+        // Simulate dash with multiple rects if width is large enough
+        const dashLen = 8;
+        const gapLen = 2;
+        const patternLen = dashLen + gapLen;
+        if (width > patternLen) {
+            for (let curX = x0; curX < x1; curX += patternLen) {
+                const drawW = Math.min(dashLen, x1 - curX);
+                if (drawW > 0) {
+                    timelineCtx.fillRect(Rnd1(curX), rect.y, Rnd1(drawW), rect.h);
+                }
+            }
+        } else { // Draw solid if too small for dashes
+             timelineCtx.fillRect(Rnd1(x0), rect.y, Rnd1(width), rect.h);
+        }
+    } else {
+        // Solid rect
+        timelineCtx.fillRect(Rnd1(x0), rect.y, Rnd1(width), rect.h);
+    }
+}
+
+
+function draw_queue_canvas(d, x0, y0_center, x1, gray, height, e_height) {
+    if (!timelineCtx || state2.waits_value == 0) return;
+    const width = x1 - x0;
+    if (width < 1) return; // Avoid tiny clutter
+
+    const lineWidth = Rnd1(height * 1.25); // Slightly thicker
+    if (lineWidth < 0.5) return; // Avoid invisible lines
+
+    const color = (0 < fade_value) ? fadecolor : (l1color_arg_dark(arg0(d), gray));
+    const y_pos = Rnd1(y0_center - e_height / 4); // Offset up slightly
+
+    timelineCtx.beginPath();
+    timelineCtx.lineWidth = lineWidth;
+    timelineCtx.strokeStyle = color;
+    timelineCtx.setLineDash([3, 5]); // Dash pattern
+
+    timelineCtx.moveTo(Rnd1(x0), y_pos);
+    timelineCtx.lineTo(Rnd1(x1), y_pos);
+    timelineCtx.stroke();
+
+    timelineCtx.setLineDash([]); // Reset dash
+}
+
+function draw_pstate_canvas(d, x0, y0_center, x1, gray, e_height) {
+    if (!timelineCtx || state2.freq_value == 0) return;
+    const width = x1 - x0;
+    if (width < 1 && state2.freq_value !== 1) return; // Draw bold even if tiny
+
+    const freq = arg0(d);
+    let opacity = 0.0;
+    const freq_fraction = Math.max(0, Math.min(15, Math.floor((freq - freq_min) / freq_divisor))); // Clamp index
+
+    if (state2.freq_value == 1) { // Bold
+        opacity = freq_bold_opacity_range[freq_fraction];
+    } else { // Gradient
+        opacity = freq_opacity_range[freq_fraction];
+    }
+
+    if (opacity <= 0.01) return; // Draw nothing if effectively clear
+
+    const color = freq_color_range[freq_fraction];
+    const rect_h = Rnd1(e_height); // Use full event height for overlay
+    const rect_y = Rnd1(y0_center - rect_h / 2);
+
+    // timelineCtx.save(); // Save context state
+    timelineCtx.globalAlpha = opacity;
+    timelineCtx.fillStyle = color;
+    timelineCtx.fillRect(Rnd1(x0), rect_y, Rnd1(width), rect_h);
+    // timelineCtx.restore(); // Restore original alpha
+}
+
+function draw_pc_samp_canvas(d, x0, y0_center, x1, gray, height, e_height) {
+    // Simplified Canvas version: just a vertical tic mark
+     if (!timelineCtx || state2.samp_value <= 0) return;
+     if ((state2.samp_value == 2) && (pid(d) == 0)) return;
+     if ((state2.samp_value == 1) && (pid(d) != 0)) return;
+
+     const ticX = Rnd1(x1); // Position tic at the end time
+     const ticHeight = Rnd1(e_height * 0.6); // Make tic reasonably visible
+     const ticY_top = Rnd1(y0_center - ticHeight / 2);
+     const ticY_bottom = Rnd1(y0_center + ticHeight / 2);
+     const color = l1color_arg(arg0(d), gray); // Use primary color
+
+     timelineCtx.beginPath();
+     timelineCtx.lineWidth = 1.5; // Make tic reasonably thick
+     timelineCtx.strokeStyle = color; // Black might be clearer: "#333333";
+     timelineCtx.setLineDash([]);
+
+     timelineCtx.moveTo(ticX, ticY_top);
+     timelineCtx.lineTo(ticX, ticY_bottom);
+     timelineCtx.stroke();
+}
+
+function draw_lock_line_canvas(d, x0, y0_center, x1, gray, height, e_height, row) {
+    if (!timelineCtx || state2.lock_value <= 0) return;
+    const width = x1 - x0;
+    if (width < 3) return; // Need some width
+
+    const lineWidth = Rnd1(height); // Base line width
+    if (lineWidth < 0.5) return;
+
+    // Stacking logic (same as before)
+    const lockstack = pending_locks[row];
+    while ((lockstack.length > 0) && (lockstack[lockstack.length - 1] <= x0)) {
+        lockstack.pop();
+    }
+    const stackLevel = lockstack.length;
+    lockstack.push(x1); // Remember end time for stacking
+
+    // Calculate vertical position based on stacking
+    const bold = (state2.lock_value == 1);
+    const effectiveHeight = (bold && !is_lock_dots(d)) ? lineWidth * 1.5 : lineWidth;
+    const y_offset = stackLevel * (effectiveHeight * 1.5); // Stack above centerline
+    const y_pos = Rnd1(y0_center - e_height * 0.55 - y_offset); // Position similar to SVG version
+
+    const color = l1color_arg_dark(arg0(d), gray);
+
+    timelineCtx.beginPath();
+    timelineCtx.lineWidth = effectiveHeight; // Use potentially bolder width
+    timelineCtx.strokeStyle = color;
+
+    if (is_lock_dots(d)) {
+        timelineCtx.setLineDash([3, 3]); // Dashed for 'trying'
+    } else {
+        timelineCtx.setLineDash([]); // Solid for 'held'
+    }
+
+    timelineCtx.moveTo(Rnd1(x0), y_pos);
+    timelineCtx.lineTo(Rnd1(x1), y_pos);
+    timelineCtx.stroke();
+
+    // Simple end caps (vertical lines) instead of arcs for canvas performance
+    const capHeight = effectiveHeight * 1.5; // Make caps slightly taller
+    timelineCtx.setLineDash([]); // Ensure caps are solid
+    timelineCtx.lineWidth = 1; // Thin caps
+    timelineCtx.moveTo(Rnd1(x0), y_pos - capHeight / 2);
+    timelineCtx.lineTo(Rnd1(x0), y_pos + capHeight / 2);
+    timelineCtx.moveTo(Rnd1(x1), y_pos - capHeight / 2);
+    timelineCtx.lineTo(Rnd1(x1), y_pos + capHeight / 2);
+    timelineCtx.stroke();
+
+
+    timelineCtx.setLineDash([]); // Reset dash
+}
+
+function draw_c_exit_canvas(d, x0, y0_center, x1, gray, e_height) {
+    // Simplified Canvas version: just a wiggly line, not a smooth sine
+     if (!timelineCtx) return;
+     const width = x1 - x0;
+     if (width < 3) return; // Need some width for the wiggle
+
+     const amplitude = Rnd1(e_height * 0.3);
+     const color = (0 < fade_value) ? fadecolor : (gray ? fadecolor : "#C00000");
+
+     timelineCtx.beginPath();
+     timelineCtx.lineWidth = 1; // Thin line
+     timelineCtx.strokeStyle = color;
+     timelineCtx.setLineDash([]);
+
+     timelineCtx.moveTo(Rnd1(x0), y0_center);
+     timelineCtx.lineTo(Rnd1(x0 + width * 0.25), y0_center - amplitude);
+     timelineCtx.lineTo(Rnd1(x0 + width * 0.50), y0_center);
+     timelineCtx.lineTo(Rnd1(x0 + width * 0.75), y0_center + amplitude);
+     timelineCtx.lineTo(Rnd1(x1), y0_center);
+     timelineCtx.stroke();
+}
+
+function draw_wait_canvas(d, x0, y0_center, x1, gray, height, e_height) {
+    if (!timelineCtx || state2.waits_value == 0) return;
+    const width = x1 - x0;
+    if (width < 1) return;
+
+    const lineWidth = Rnd1(height); // Morse line base width
+    if (lineWidth < 0.5) return;
+
+    const letternum = ev(d) - waitbase;
+    if (letternum < 0 || letternum >= waitdash.length) return; // Invalid wait code
+
+    const char_width_px = arraysum(waitdash[letternum]); // Width of one Morse char pattern
+    let charcount = 0;
+    let linelen = width; // Default to full width if no chars fit
+
+    if (char_width_px > 0 && width > char_width_px * 0.5) { // Only draw chars if space permits
+         charcount = Math.floor((width / char_width_px) - 0.5);
+         if (charcount < 0) charcount = 0;
+         if (charcount > 3) charcount = 3; // Max 3 chars
+         const charlen = charcount * char_width_px;
+         linelen = width - charlen;
+         if (linelen < 0) linelen = 0; // Ensure non-negative
+    }
+
+    const color = (0 < fade_value) ? fadecolor : (gray ? fadecolor : waitcolor[letternum]);
+    const y_pos = Rnd1(y0_center - e_height / 4); // Offset up slightly
+
+    timelineCtx.beginPath();
+    timelineCtx.lineWidth = lineWidth; // Thin base line
+    timelineCtx.strokeStyle = color;
+    timelineCtx.setLineDash([]);
+
+    // Draw base line part
+    if (linelen > 0) {
+        timelineCtx.moveTo(Rnd1(x0), y_pos);
+        timelineCtx.lineTo(Rnd1(x0 + linelen), y_pos);
+        timelineCtx.stroke(); // Stroke the base line part
+    }
+
+    // Draw Morse code part
+    if (charcount > 0 && char_width_px > 0) {
+        timelineCtx.beginPath(); // Start new path for potentially different style
+        timelineCtx.lineWidth = lineWidth * 2; // Thicker for Morse symbols
+        timelineCtx.strokeStyle = color;
+        timelineCtx.setLineDash(waitdash[letternum]);
+        timelineCtx.lineDashOffset = -2; // Start slightly into the pattern
+
+        timelineCtx.moveTo(Rnd1(x0 + linelen), y_pos);
+        timelineCtx.lineTo(Rnd1(x1), y_pos); // Draw line covering the char space
+        timelineCtx.stroke(); // Stroke the dashed Morse part
+    }
+
+    timelineCtx.setLineDash([]); // Reset dash
+    timelineCtx.lineDashOffset = 0;
+}
+
+
+function draw_rx_tx_canvas(d, x0, y0_center, x1, gray, height, e_height) {
+    // Simplified Canvas version: slanted line, no text/ticks for performance
+     if (!timelineCtx) return;
+     const width = x1 - x0;
+     if (width < 1) return;
+
+     const lineWidth = Rnd1(height);
+     if (lineWidth < 0.5) return;
+
+     const is_rx = is_rpcrxpkt(d) || is_pktrx(d);
+     const y_base = y0_center; // Draw centered for simplicity on canvas
+     const x_off = is_rx ? -3 : 3;
+     const y_off = is_rx ? 2 : -2;
+     const color = is_rx ? "#800000" : "#008080"; // dark red / dark cyan
+
+     timelineCtx.beginPath();
+     timelineCtx.lineWidth = lineWidth;
+     timelineCtx.strokeStyle = color;
+     timelineCtx.setLineDash([]); // Solid line
+
+     timelineCtx.moveTo(Rnd1(x0 + x_off), Rnd1(y_base - y_off));
+     timelineCtx.lineTo(Rnd1(x1 + x_off), Rnd1(y_base + y_off));
+     timelineCtx.stroke();
+}
+
+// Add this function near the other _canvas drawing functions
+
+/**
+ * Draws a simplified representation of an event on the canvas,
+ * used for events that are too small vertically for detailed drawing.
+ * Typically draws a single colored rectangle.
+ *
+ * @param {number} row - The row index.
+ * @param {object} d - The event data object.
+ * @param {boolean} gray - Whether the event should be drawn in grayscale (highlighting).
+ */
+ function fastDrawOnRowCanvas(row, d, gray) {
+    if (!timelineCtx) return; // Ensure context exists
+
+    const track = rowToTrack[row];
+    const t_height = rowToHeight[row]; // Note: This t_height might be small, triggering this function
+
+    // Calculate geometry - use the same logic as slowDrawOnRow
+    const x0 = x_zoomed(ts(d));
+    const x1 = x_zoomed(tsend(d));
+    const y0_center = y_zoomed(rowToTrack[row]) + perTracksize[t_height].eventoffset;
+    const e_height = perTracksize[t_height].eventheight; // This is the *intended* height from layout
+
+    const width = x1 - x0;
+    if (width < 0.1) return; // Don't draw if less than 0.1 pixel wide
+
+    // --- Determine Representative Color and Height ---
+    let color = fadecolor; // Default to fade/gray color
+    let rect_h = Rnd1(e_height); // Default to the calculated (small) event height
+    if (rect_h < 1) rect_h = 1; // Ensure at least 1 pixel height if drawing at all
+
+    if (!gray && fade_value === 0) { // Only use specific colors if not grayed out or faded
+        if (is_kernel(d)) {
+            // Use the kernel background color (often most informative for type)
+            color = l3color(d, false); // Get the non-gray version
+        } else if (is_user(d)) {
+            // Use the visually dominant top user color
+            color = l2color(d, false); // Get the non-gray version
+        } else if (is_idle(d)) {
+            // Use the standard idle color
+            color = l1color(d, false); // Get the non-gray version
+        } else {
+            // For other types (wait, queue, etc.) when drawn small,
+            // maybe use a default neutral color or skip drawing them entirely here?
+            // Let's use a neutral dark gray for visibility.
+            color = "#888888";
+             // Or simply return if we don't want to draw tiny waits etc.
+             // return;
+        }
+    } else if (gray) { // Explicitly gray due to highlighting
+        if (is_kernel(d)) color = kernelgray[ev(d) >> 8]; // Use specific grays if defined
+        else if (is_user(d)) color = currentcolor.gray1[(ev(d) * 4) % currentcolor.mod1];
+        else if (is_idle(d)) color = "#CCCCCC"; // Light gray for idle
+        else color = "#DDDDDD"; // Very light gray for other types
+    }
+    // If fade_value > 0, color remains fadecolor (handled by initial assignment)
+
+
+    // --- Draw the Rectangle ---
+    const rect_y = Rnd1(y0_center - rect_h / 2); // Center the rectangle vertically
+
+    timelineCtx.fillStyle = color;
+    timelineCtx.fillRect(Rnd1(x0), rect_y, Rnd1(width), rect_h);
+}
 
 // Re-allocate outer SVG as function of browser window, and 
 // redraw everything inside as function of state, data
@@ -8766,6 +9365,7 @@ console.log("allocOuterSvgEtc");
   }
 
   allocOuterSvg();
+  resizeCanvas();
   fillOuterSvg();
   redrawUI();
 		
@@ -8816,9 +9416,192 @@ function decompress(compressedBytes) {
         .then(buffer => new TextDecoder().decode(buffer));
 }
 
+var timelineCanvas = null;
+var timelineCtx = null;
+var canvasDPR = 1; // Device Pixel Ratio for High-DPI
+
+// Function to clear the canvas
+function clearCanvas() {
+    if (!timelineCtx || !timelineCanvas) return;
+    // Use canvas attribute width/height, potentially scaled by DPR
+    // The context is already scaled, so clear using 0,0 to logical width/height
+    timelineCtx.clearRect(0, 0, timelineCanvas.width / canvasDPR, timelineCanvas.height / canvasDPR);
+}
+
+// Function to resize and position the canvas (handles High-DPI)
+function resizeCanvas() {
+    if (!timelineCanvas || !timelineCtx) return;
+
+    canvasDPR = window.devicePixelRatio || 1;
+    const rect = { width: region3width, height: region234height }; // Use calculated SVG region size
+
+    // Set the canvas *attribute* size scaled by DPR for sharp rendering
+    timelineCanvas.width = rect.width * canvasDPR;
+    timelineCanvas.height = rect.height * canvasDPR;
+
+    // Set the *CSS style* size to the original intended size
+    timelineCanvas.style.width = rect.width + 'px';
+    timelineCanvas.style.height = rect.height + 'px';
+
+    // Position the canvas using CSS based on SVG layout calculations
+    timelineCanvas.style.left = region2width + 'px';
+    timelineCanvas.style.top = region1height + 'px';
+
+    // Scale the canvas context so we can draw using logical pixels
+    timelineCtx.resetTransform(); // Reset previous scaling
+    timelineCtx.scale(canvasDPR, canvasDPR);
+
+    console.log(`Canvas resized: ${timelineCanvas.width}x${timelineCanvas.height} (CSS: ${rect.width}x${rect.height}), DPR: ${canvasDPR}`);
+}
+
+
+function handleCanvasMouseMove(event) {
+    if (isDraggingOnCanvas) { // Basic check if panning/zooming on SVG layer
+        // Potentially add rubber band logic here if desired on canvas layer
+        return;
+    }
+    const rect = timelineCanvas.getBoundingClientRect();
+    // Calculate logical canvas coordinates (handling DPR)
+    const canvasX = (event.clientX - rect.left) / canvasDPR;
+    const canvasY = (event.clientY - rect.top) / canvasDPR;
+
+    // Use existing hover logic, but pass canvas coords to find event
+    // Debounce this call
+    clearTimeout(timerHandle); // Assuming timerHandle is used for hover debounce
+    timerHandle = setTimeout(delayed_mousemove_event_canvas, 50, canvasX, canvasY);
+}
+
+function delayed_mousemove_event_canvas(canvasX, canvasY) {
+    // Find nearest event using canvas coordinates
+    var i = FindNearestEvent(canvasX, canvasY, true); // Use hilo for potential detail hover
+    if (i < 0) {
+        d3.selectAll(".movetext").remove(); // Clear previous hover text
+        return;
+    }
+    var d = data.events[i];
+    var dtext = complete_text(d);
+
+    // Display using the existing SVG text overlay method
+    var xmid = 10; // Position relative to SVG top-left
+    var ymid = region234height - 10; // Position relative to SVG top-left
+    var aheight = 18;
+    var textwidth = Rnd1((dtext.length + 1) * aheight * 0.5);
+    d3.selectAll(".movetext").remove();
+
+    // Use svgdotg (the SVG layer) to display hover text
+    svgdotg.append("rect") // Background rect on SVG layer
+      .attr("class", "movetext noselect ")
+      .attr("x", (xmid - 2) + "px")
+      .attr("y", (ymid - (aheight - 2)) + "px")
+      .attr("width", textwidth + "px")
+      .attr("height", (aheight - 2) + "px")
+      .attr("style", "fill:rgb(255,255,255); opacity:0.875; pointer-events: none;"); // Ensure it doesn't block mouse
+
+    svgdotg.append("text")	// Text on SVG layer
+      .attr("class", "movetext noselect ")
+      .attr("transform", "translate(" + (xmid) + "," + (ymid) + ")scale(1,1)")
+      .attr("font-size", aheight + "px")
+      .attr("font-family", "sans-serif")
+      .attr("style", "pointer-events: none;") // Ensure it doesn't block mouse
+      .text(dtext);
+}
+
+
+function handleCanvasMouseDown(event) {
+     // Check if this click should be handled by SVG zoom/pan first
+     if (!event.shiftKey) {
+        isDraggingOnCanvas = true; // Assume potential SVG pan start
+        return; // Let D3 zoom handle non-shift clicks
+    }
+    event.stopPropagation(); // Prevent D3 zoom from pan/zoom on shift-click
+    isDraggingOnCanvas = false;
+
+    const rect = timelineCanvas.getBoundingClientRect();
+    const canvasX = (event.clientX - rect.left) / canvasDPR;
+    const canvasY = (event.clientY - rect.top) / canvasDPR;
+
+    // Find nearest data object using canvas coordinates
+    var i = FindNearestEvent(canvasX, canvasY, true); // Use hilo
+    if (i < 0) { return; }
+
+    d1 = data.events[i]; // Store globally like before for potential drag measure
+
+    // Draw annotation (which uses SVG)
+    var short = false;
+    var rotate = true;
+    // Pass canvasY to annotatespan so it can find the correct row
+    vx1 = annotatespan(d1, "first", short, canvasY, rotate); // vx1 used for drag measure
+
+    // Handle Shift-RIGHT-click highlighting (logic remains the same)
+    if (0 < event.button) { // Right-click check might vary by browser/OS
+        state.hilite_evnum2 = state.hilite_evnum;
+        state.hilite_evnum = ev(d1);
+        resetText(document.getElementById("SearchText"), name(d1));
+        // Redraw canvas and SVG overlays
+        redrawEventsEtc(); // Need combined redraw
+        redrawXaxis();     // Redraw axes etc.
+        redrawYlabels();
+    }
+
+    state.annotated_d.push(i);
+    state2.annotated_one_d = i;
+
+    // Optional: Set up for drag-measure on canvas? More complex.
+    // Might be easier to keep drag-measure attached to the SVG layer.
+}
+
+function handleCanvasMouseUp(event) {
+    isDraggingOnCanvas = false;
+    // Handle annotation persistence/clearing based on shift key
+    if (event.shiftKey) {
+        // Remove annotations (which are SVG) if shift is still held
+        resetlines();
+        state.annotated_d = [];
+        state2.annotated_one_d = -1;
+        if (state.hilite_evnum != 0) {
+             state.hilite_evnum = 0;
+             state.hilite_evnum2 = 0;
+             // Need full redraw
+             redrawEventsEtc();
+             redrawXaxis();
+             redrawYlabels();
+        }
+    }
+     // Clear any drag measurement visuals if implemented on canvas
+}
+
+function handleCanvasMouseOut(event) {
+    // Clear hover text when mouse leaves canvas
+     clearTimeout(timerHandle);
+     d3.selectAll(".movetext").remove();
+     isDraggingOnCanvas = false; // Reset drag state
+}
+
+
 function initAll() {
   // Initialize button values and other state
   initializeState();
+
+  timelineCanvas = document.getElementById('timeline-canvas');
+  if (timelineCanvas) {
+      timelineCtx = timelineCanvas.getContext('2d');
+      if (!timelineCtx) {
+          console.error("Failed to get 2D context for canvas");
+      }
+  } else {
+      console.error("Canvas element #timeline-canvas not found");
+  }
+
+  if (timelineCanvas) {
+      timelineCanvas.addEventListener('mousemove', handleCanvasMouseMove);
+      timelineCanvas.addEventListener('mousedown', handleCanvasMouseDown);
+      timelineCanvas.addEventListener('mouseup', handleCanvasMouseUp);
+      timelineCanvas.addEventListener('mouseout', handleCanvasMouseOut); // Clear hover on exit
+        // Prevent context menu on canvas shift-right-click
+      timelineCanvas.addEventListener('contextmenu', (e) => {
+          if (e.shiftKey) e.preventDefault();
+      });
+  }
 
   // Set listeners for buttons
   document.getElementById("annottype").onclick = doToggleAnnottype;
@@ -8972,7 +9755,14 @@ function unloadSaveState() {
 
 
 <!-- All the drawing is done in an SVG element allocated inside here -->
-<span id="anchorsvg"></span>
+<!-- <span id="anchorsvg"></span> -->
+<div id="visualization-container">
+  <!-- Canvas Layer (Initially empty) -->
+  <canvas id="timeline-canvas"></canvas>
+
+  <!-- SVG Layer (Existing content goes here) -->
+  <span id="anchorsvg"></span>
+</div>
 
 
 <!--  

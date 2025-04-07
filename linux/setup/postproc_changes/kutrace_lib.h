@@ -262,43 +262,43 @@ static const char* const kErrnoName[128] = {
 };
 
 namespace kutrace {
-  inline bool test();
-  inline void go(const char* process_name);
-  inline void goipc(const char* process_name);
-  inline void goipcwrap(const char* process_name);
-  inline void stop(const char* fname);
-  inline void mark_a(const char* label);
-  inline void mark_b(const char* label);
-  inline void mark_c(const char* label);
-  inline void mark_d(u64 n);
+  bool test();
+  void go(const char* process_name);
+  void goipc(const char* process_name);
+  void goipcwrap(const char* process_name);
+  void stop(const char* fname);
+  void mark_a(const char* label);
+  void mark_b(const char* label);
+  void mark_c(const char* label);
+  void mark_d(u64 n);
 
   // Returns number of words inserted 1..8, or
   //   0 if tracing is off, negative if module is not not loaded 
-  inline u64 addevent(u64 eventnum, u64 arg);
-  inline void addname(u64 eventnum, u64 number, const char* name);
+  u64 addevent(u64 eventnum, u64 arg);
+  void addname(u64 eventnum, u64 number, const char* name);
 
-  inline void msleep(int msec);
-  inline int64 readtime();
+  void msleep(int msec);
+  int64 readtime();
 
-  inline const char* Base40ToChar(u64 base40, char* str);
-  inline u64 CharToBase40(const char* str);
+  const char* Base40ToChar(u64 base40, char* str);
+  u64 CharToBase40(const char* str);
 
-  inline u64 DoControl(u64 command, u64 arg);
-  inline void DoDump(const char* fname);
-  inline u64 DoEvent(u64 eventnum, u64 arg);
-  inline void DoFlush();
-  inline void DoInit(const char* process_name);
-  inline void DoMark(u64 n, u64 arg);
-  inline bool DoTest();
-  inline bool DoOff();
-  inline bool DoOn();
-  inline void DoQuit();
-  inline void DoReset(u64 doing_ipc);
-  inline void DoStat(u64 control_flags);
-  inline void EmitNames(const NumNamePair* ipair, u64 n);
-  inline u64 GetUsec();
-  inline const char* MakeTraceFileName(const char* name, char* str);
-  inline bool TestModule();
+  u64 DoControl(u64 command, u64 arg);
+  void DoDump(const char* fname);
+  u64 DoEvent(u64 eventnum, u64 arg);
+  void DoFlush();
+  void DoInit(const char* process_name);
+  void DoMark(u64 n, u64 arg);
+  bool DoTest();
+  bool DoOff();
+  bool DoOn();
+  void DoQuit();
+  void DoReset(u64 doing_ipc);
+  void DoStat(u64 control_flags);
+  void EmitNames(const NumNamePair* ipair, u64 n);
+  u64 GetUsec();
+  const char* MakeTraceFileName(const char* name, char* str);
+  bool TestModule();
 }
 
 #endif	// __KUTRACE_LIB_H__

@@ -77,6 +77,10 @@ scripts/config --enable NF_CONNTRACK_EVENTS
 scripts/config --enable NF_CONNTRACK_TIMEOUT
 scripts/config --enable NF_CONNTRACK_TIMESTAMP
 
+scripts/config --enable BRIDGE
+scripts/config --enable BRIDGE_NETFILTER
+scripts/config --enable OVERLAY_FS
+
 yes "" | make localmodconfig
 
 fakeroot make -j$(($(nproc) - 1))

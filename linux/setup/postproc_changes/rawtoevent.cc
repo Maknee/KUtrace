@@ -1203,7 +1203,7 @@ int main (int argc, const char** argv) {
           name = ReduceSpaces(name);
           name = MakeSafeAscii(name);
           if (is_mark_e(n)) {
-            name += std::to_string(arg);
+            // name += std::to_string(arg);
             OutputEvent(stdout, nsec10, duration, KUTRACE_MARKE, current_cpu, 
               current_pid[current_cpu], current_rpc[current_cpu], 
               arg, retval, ipc, name.c_str());
