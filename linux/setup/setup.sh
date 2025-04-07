@@ -81,6 +81,13 @@ scripts/config --enable BRIDGE
 scripts/config --enable BRIDGE_NETFILTER
 scripts/config --enable OVERLAY_FS
 
+scripts/config --enable IP_NF_IPTABLES
+scripts/config --enable IP_NF_FILTER
+scripts/config --enable IP_NF_NAT
+scripts/config --enable IP_NF_MANGLE
+scripts/config --enable IP_NF_TARGET_MASQUERADE
+scripts/config --enable IP_NF_TARGET_REDIRECT
+
 yes "" | make localmodconfig
 
 fakeroot make -j$(($(nproc) - 1))
