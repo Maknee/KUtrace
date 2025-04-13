@@ -243,30 +243,30 @@ bool ParseCSVLine(const std::string& line, CSVLogRecord& record) {
         record.method = tokens[idx++];
         record.status = std::stoul(tokens[idx++]);
         
-        // Parse data length and calculate lglen values
-        if (idx < tokens.size()) {
-            record.datalength = std::stoul(tokens[idx++]);
+        // // Parse data length and calculate lglen values
+        // if (idx < tokens.size()) {
+        //     record.datalength = std::stoul(tokens[idx++]);
             
-            // Calculate lglen from actual data length
-            // lglen = 10 * log2(length)
-            double log2_len = 0;
-            if (record.datalength > 0) {
-                log2_len = log2(record.datalength);
-            }
-            record.lglen1 = static_cast<uint8_t>(log2_len * 10);
-            record.lglen2 = record.lglen1;  // Use same value for response if not specified
-        } else {
-            record.datalength = 0;
-            record.lglen1 = 0;
-            record.lglen2 = 0;
-        }
+        //     // Calculate lglen from actual data length
+        //     // lglen = 10 * log2(length)
+        //     double log2_len = 0;
+        //     if (record.datalength > 0) {
+        //         log2_len = log2(record.datalength);
+        //     }
+        //     record.lglen1 = static_cast<uint8_t>(log2_len * 10);
+        //     record.lglen2 = record.lglen1;  // Use same value for response if not specified
+        // } else {
+        //     record.datalength = 0;
+        //     record.lglen1 = 0;
+        //     record.lglen2 = 0;
+        // }
         
-        // Get data if available
-        if (idx < tokens.size()) {
-            record.data = tokens[idx++];
-        } else {
-            record.data = "";
-        }
+        // // Get data if available
+        // if (idx < tokens.size()) {
+        //     record.data = tokens[idx++];
+        // } else {
+        //     record.data = "";
+        // }
         
         return true;
     } catch (const std::exception& e) {
