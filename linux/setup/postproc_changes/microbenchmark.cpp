@@ -27,7 +27,7 @@
 #include "../kutrace_userlib/kutrace_rpc_logger.h"
 
 // Include optimized implementation with Quill
-#include "temp.h"
+#include "csv_rpc_logger.h"
 
 // Simple benchmarking class
 class Benchmark {

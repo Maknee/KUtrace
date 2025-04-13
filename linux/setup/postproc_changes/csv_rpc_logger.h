@@ -23,8 +23,11 @@
 
 namespace kutrace {
 
+#ifndef KUTRACE_RPC_TYPES_DEFINED
+#define KUTRACE_RPC_TYPES_DEFINED
+
 // RPC types
-enum class CSVRPCType : uint16_t {
+enum class RPCType : uint16_t {
     ReqSend = 0,
     ReqRcv,
     RespSend,
@@ -34,7 +37,7 @@ enum class CSVRPCType : uint16_t {
 };
 
 // RPC status
-enum class CSVRPCStatus : uint32_t {
+enum class RPCStatus : uint32_t {
     Success = 0,
     Fail,
     TooBusy,
@@ -42,15 +45,15 @@ enum class CSVRPCStatus : uint32_t {
 };
 
 // Simple structure to represent an IP address and port
-struct CSVNetworkAddress {
+struct NetworkAddress {
     uint32_t ip;   // IPv4 address in network byte order
     uint16_t port; // Port number
     
-    CSVNetworkAddress() : ip(0), port(0) {}
+    NetworkAddress() : ip(0), port(0) {}
     
-    CSVNetworkAddress(uint32_t ip_addr, uint16_t port_num) : ip(ip_addr), port(port_num) {}
+    NetworkAddress(uint32_t ip_addr, uint16_t port_num) : ip(ip_addr), port(port_num) {}
     
-    CSVNetworkAddress(const std::string& ip_str, uint16_t port_num) : port(port_num) {
+    NetworkAddress(const std::string& ip_str, uint16_t port_num) : port(port_num) {
         struct in_addr addr;
         inet_aton(ip_str.c_str(), &addr);
         ip = addr.s_addr;
@@ -73,23 +76,24 @@ struct CSVNetworkAddress {
 };
 
 // Message data structure for simplifying API calls
-struct CSVRPCMessage {
+struct RPCMessage {
     const uint8_t* data;
     uint32_t length;
     
-    CSVRPCMessage() : data(nullptr), length(0) {}
+    RPCMessage() : data(nullptr), length(0) {}
     
-    CSVRPCMessage(const uint8_t* data_ptr, uint32_t data_len) : data(data_ptr), length(data_len) {}
+    RPCMessage(const uint8_t* data_ptr, uint32_t data_len) : data(data_ptr), length(data_len) {}
     
-    CSVRPCMessage(std::string_view str) 
+    RPCMessage(std::string_view str) 
         : data(reinterpret_cast<const uint8_t*>(str.data())), length(str.length()) {}
     
-    CSVRPCMessage(const std::string& str) 
+    RPCMessage(const std::string& str) 
         : data(reinterpret_cast<const uint8_t*>(str.data())), length(str.length()) {}
     
-    CSVRPCMessage(const char* str) 
+    RPCMessage(const char* str) 
         : data(reinterpret_cast<const uint8_t*>(str)), length(strlen(str)) {}
 };
+#endif
 
 // Define our CSV schema for RPC logging
 struct RPCCsvSchema {
@@ -147,10 +151,10 @@ public:
     // Client-side logging
     uint64_t log_client_send(
         uint32_t rpc_id,
-        const CSVNetworkAddress& client,
-        const CSVNetworkAddress& server,
+        const NetworkAddress& client,
+        const NetworkAddress& server,
         std::string_view method,
-        const CSVRPCMessage& message
+        const RPCMessage& message
     ) {
         int64_t timestamp = get_current_usec();
         
@@ -163,7 +167,7 @@ public:
                 client.port,
                 server.port,
                 message.length, 0,
-                static_cast<uint16_t>(CSVRPCType::ReqSend),
+                static_cast<uint16_t>(RPCType::ReqSend),
                 method
             );
         }
@@ -173,11 +177,11 @@ public:
     
     void log_client_recv(
         uint32_t rpc_id,
-        const CSVNetworkAddress& client,
-        const CSVNetworkAddress& server,
+        const NetworkAddress& client,
+        const NetworkAddress& server,
         std::string_view method,
-        CSVRPCStatus status,
-        const CSVRPCMessage& message,
+        RPCStatus status,
+        const RPCMessage& message,
         int64_t req_send_time,
         int64_t req_rcv_time,
         int64_t resp_send_time
@@ -196,7 +200,7 @@ public:
                 client.port,
                 server.port,
                 0, message.length,
-                static_cast<uint16_t>(CSVRPCType::RespRcv),
+                static_cast<uint16_t>(RPCType::RespRcv),
                 method
             );
         }
@@ -205,10 +209,10 @@ public:
     // Server-side logging
     void log_server_recv(
         uint32_t rpc_id,
-        const CSVNetworkAddress& client,
-        const CSVNetworkAddress& server,
+        const NetworkAddress& client,
+        const NetworkAddress& server,
         std::string_view method,
-        const CSVRPCMessage& message,
+        const RPCMessage& message,
         int64_t req_send_time
     ) {
         int64_t timestamp = get_current_usec();
@@ -223,7 +227,7 @@ public:
                 client.port,
                 server.port,
                 message.length, 0,
-                static_cast<uint16_t>(CSVRPCType::ReqRcv),
+                static_cast<uint16_t>(RPCType::ReqRcv),
                 method
             );
         }
@@ -231,11 +235,11 @@ public:
 
     void log_server_send(
         uint32_t rpc_id,
-        const CSVNetworkAddress& client,
-        const CSVNetworkAddress& server,
+        const NetworkAddress& client,
+        const NetworkAddress& server,
         std::string_view method,
-        CSVRPCStatus status,
-        const CSVRPCMessage& message,
+        RPCStatus status,
+        const RPCMessage& message,
         int64_t req_send_time,
         int64_t req_rcv_time
     ) {
@@ -252,7 +256,7 @@ public:
                 client.port,
                 server.port,
                 0, message.length,
-                static_cast<uint16_t>(CSVRPCType::RespSend),
+                static_cast<uint16_t>(RPCType::RespSend),
                 method
             );
         }
