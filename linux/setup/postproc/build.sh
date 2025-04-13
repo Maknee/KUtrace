@@ -15,4 +15,6 @@ g++ -O2 time_getpid.cc kutrace_lib.cc -o time_getpid
 g++ -O2 unmakeself.cc -o unmakeself
 g++ -O2 makeself_rpc.cc -o makeself_rpc
 g++ -O2 dumplogfile4.cc -o dumplogfile4
+g++ -O2 microbenchmark.cpp -o microbenchmark
+g++ -O2 csv_rpc_dump.cc -o csv_rpc_dump
 
