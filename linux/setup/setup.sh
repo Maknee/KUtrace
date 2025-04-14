@@ -93,12 +93,12 @@ scripts/config --enable NETFILTER_XT_MATCH_ADDRTYPE
 scripts/config --enable NETFILTER_XT_MATCH_CONNTRACK
 scripts/config --enable NETFILTER_XT_MATCH_STATE
 
-# Enable additional modules that Docker might use
-scripts/config --enable NETFILTER_XT_MATCH_IPVS
-scripts/config --enable IP_VS
-scripts/config --enable VXLAN
-scripts/config --enable IPVLAN
-scripts/config --enable MACVLAN
+# # Enable additional modules that Docker might use
+# scripts/config --enable NETFILTER_XT_MATCH_IPVS
+# scripts/config --enable IP_VS
+# scripts/config --enable VXLAN
+# scripts/config --enable IPVLAN
+# scripts/config --enable MACVLAN
 
 yes "" | make localmodconfig
 
