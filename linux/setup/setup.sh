@@ -88,6 +88,18 @@ scripts/config --enable IP_NF_MANGLE
 scripts/config --enable IP_NF_TARGET_MASQUERADE
 scripts/config --enable IP_NF_TARGET_REDIRECT
 
+# Enable iptables match modules needed by Docker
+scripts/config --enable NETFILTER_XT_MATCH_ADDRTYPE
+scripts/config --enable NETFILTER_XT_MATCH_CONNTRACK
+scripts/config --enable NETFILTER_XT_MATCH_STATE
+
+# Enable additional modules that Docker might use
+scripts/config --enable NETFILTER_XT_MATCH_IPVS
+scripts/config --enable IP_VS
+scripts/config --enable VXLAN
+scripts/config --enable IPVLAN
+scripts/config --enable MACVLAN
+
 yes "" | make localmodconfig
 
 fakeroot make -j$(($(nproc) - 1))
