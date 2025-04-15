@@ -107,11 +107,51 @@ scripts/config --enable CEPH_LIB_USE_DNS_RESOLVER
 # scripts/config --enable IPVLAN
 # scripts/config --enable MACVLAN
 
-scripts/config --module NETFILTER_XT_MATCH_ADDRTYPE
-scripts/config --module IP_NF_IPTABLES
-scripts/config --module IP_NF_FILTER
-scripts/config --module IP_NF_NAT
-scripts/config --module IP_NF_MANGLE
+scripts/config --enable VETH
+scripts/config --enable IP_NF_FILTER
+scripts/config --enable IP_NF_MANGLE
+scripts/config --enable IP_NF_TARGET_MASQUERADE
+scripts/config --enable IP6_NF_FILTER
+scripts/config --enable IP6_NF_MANGLE
+scripts/config --enable IP6_NF_TARGET_MASQUERADE
+scripts/config --enable NETFILTER_XT_MATCH_ADDRTYPE
+scripts/config --enable NETFILTER_XT_MATCH_IPVS
+scripts/config --enable NETFILTER_XT_MARK
+scripts/config --enable IP_NF_RAW
+scripts/config --enable IP_NF_NAT
+scripts/config --enable IP6_NF_RAW
+scripts/config --enable IP6_NF_NAT
+scripts/config --enable MEMCG_SWAP
+scripts/config --enable NET_CLS_CGROUP
+scripts/config --enable IP_NF_TARGET_REDIRECT
+scripts/config --enable BRIDGE_VLAN_FILTERING
+
+# Additional components for features like IPv6, IPVS, network namespaces
+scripts/config --enable IP_VS
+scripts/config --enable IP_VS_NFCT
+scripts/config --enable IP_VS_PROTO_TCP
+scripts/config --enable IP_VS_PROTO_UDP
+scripts/config --enable IP_VS_RR
+scripts/config --enable IPVLAN
+scripts/config --enable MACVLAN
+scripts/config --enable DUMMY
+
+# Components for encrypted networks
+scripts/config --enable XFRM
+scripts/config --enable XFRM_USER
+scripts/config --enable XFRM_ALGO
+scripts/config --enable INET_ESP
+scripts/config --enable NETFILTER_XT_MATCH_BPF
+
+# FTP/TFTP support for containers
+scripts/config --enable NF_NAT_FTP
+scripts/config --enable NF_CONNTRACK_FTP
+scripts/config --enable NF_NAT_TFTP
+scripts/config --enable NF_CONNTRACK_TFTP
+
+# Additional storage drivers if needed
+scripts/config --enable BTRFS_FS
+scripts/config --enable BTRFS_FS_POSIX_ACL
 
 yes "" | make localmodconfig
 
