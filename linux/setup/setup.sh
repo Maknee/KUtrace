@@ -107,6 +107,12 @@ scripts/config --enable CEPH_LIB_USE_DNS_RESOLVER
 # scripts/config --enable IPVLAN
 # scripts/config --enable MACVLAN
 
+scripts/config --module NETFILTER_XT_MATCH_ADDRTYPE
+scripts/config --module IP_NF_IPTABLES
+scripts/config --module IP_NF_FILTER
+scripts/config --module IP_NF_NAT
+scripts/config --module IP_NF_MANGLE
+
 yes "" | make localmodconfig
 
 fakeroot make -j$(($(nproc) - 1))
