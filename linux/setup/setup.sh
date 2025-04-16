@@ -93,12 +93,12 @@ scripts/config --enable NETFILTER_XT_MATCH_ADDRTYPE
 scripts/config --enable NETFILTER_XT_MATCH_CONNTRACK
 scripts/config --enable NETFILTER_XT_MATCH_STATE
 
-scripts/config --enable CEPH_FS
-scripts/config --enable CEPH_FSCACHE
-scripts/config --enable CEPH_FS_POSIX_ACL
-scripts/config --enable LIBCEPH
-scripts/config --enable CEPH_LIB
-scripts/config --enable CEPH_LIB_USE_DNS_RESOLVER
+scripts/config --module CEPH_FS
+scripts/config --module CEPH_FSCACHE
+scripts/config --module CEPH_FS_POSIX_ACL
+scripts/config --module LIBCEPH
+scripts/config --module CEPH_LIB
+scripts/config --module CEPH_LIB_USE_DNS_RESOLVER
 
 # # Enable additional modules that Docker might use
 # scripts/config --enable NETFILTER_XT_MATCH_IPVS
@@ -150,8 +150,8 @@ scripts/config --enable NF_NAT_TFTP
 scripts/config --enable NF_CONNTRACK_TFTP
 
 # Additional storage drivers if needed
-scripts/config --enable BTRFS_FS
-scripts/config --enable BTRFS_FS_POSIX_ACL
+scripts/config --module BTRFS_FS
+scripts/config --module BTRFS_FS_POSIX_ACL
 
 yes "" | make localmodconfig
 
