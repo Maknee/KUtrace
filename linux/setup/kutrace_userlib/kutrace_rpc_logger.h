@@ -199,7 +199,7 @@ public:
                     m_logFile.flush();
                     index = 0;
                     start = end;
-                    should_flush.store(std::memory_order_relaxed);
+                    should_flush.store(true, std::memory_order_relaxed);
                 }
             }
         });
