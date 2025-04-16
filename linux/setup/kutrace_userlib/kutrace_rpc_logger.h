@@ -166,7 +166,7 @@ public:
     // Check if logger is ready (file opened successfully)
     bool is_ready() const { return m_ready; }
 
-    void open(const std::string& filename, int batch_size = 10000, int timeout_ms = 10) {
+    void open(const std::string& filename, std::size_t batch_size = 10000, std::size_t timeout_ms = 10) {
         std::lock_guard<std::mutex> l(m);
         m_logFile.open(filename, std::ios::out | std::ios::binary | std::ios::trunc);
         if (m_logFile.is_open()) {
@@ -194,7 +194,7 @@ public:
                 auto end = std::chrono::steady_clock::now();
                 auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(end - start);
                 // Flush
-                if (should_flush || index == batch_size || elapsed.count() > timeout_ms) {
+                if (should_flush || index == batch_size || elapsed.count() > static_cast<long>(timeout_ms)) {
                     m_logFile.write(reinterpret_cast<const char*>(batch_records.data()), index * sizeof(BinaryLogRecord));
                     m_logFile.flush();
                     index = 0;
