@@ -24,6 +24,13 @@
 #include <algorithm>
 // #include <signal.h>
 
+// Fetch it
+// wget https://raw.githubusercontent.com/cameron314/concurrentqueue/refs/heads/master/concurrentqueue.h
+#define KUTRACE_RPC_USE_BACKGROUND_THREAD
+#ifdef KUTRACE_RPC_USE_BACKGROUND_THREAD
+#include "concurrentqueue.h"
+#endif
+
 #define KUTRACE_RPC_ENABLE
 
 namespace kutrace {
@@ -147,6 +154,10 @@ public:
     
     // Destructor - closes log file
     ~RPCLogger() {
+        m_ready = false;
+        if (worker_thread.joinable()) {
+            worker_thread.join();
+        }
         if (m_logFile.is_open()) {
             m_logFile.close();
         }
@@ -155,7 +166,7 @@ public:
     // Check if logger is ready (file opened successfully)
     bool is_ready() const { return m_ready; }
 
-    void open(const std::string& filename) {
+    void open(const std::string& filename, int batch_size = 10000, int timeout_ms = 10) {
         std::lock_guard<std::mutex> l(m);
         m_logFile.open(filename, std::ios::out | std::ios::binary | std::ios::trunc);
         if (m_logFile.is_open()) {
@@ -163,6 +174,36 @@ public:
         } else {
             std::cerr << "Failed to open log file: " << filename << std::endl;
         }
+
+#ifdef KUTRACE_RPC_USE_BACKGROUND_THREAD
+        worker_thread = std::thread([this, batch_size, timeout_ms]() {
+#if defined(__linux__) || defined(__unix__)
+            pthread_setname_np(pthread_self(), "RPCLoggerWorker");
+#endif
+            std::vector<BinaryLogRecord> batch_records;
+            batch_records.resize(batch_size);
+            std::size_t index = 0;
+            auto start = std::chrono::steady_clock::now();
+            while (m_ready) {
+                if (queue.try_dequeue(batch_records[index])) {
+                    index++;
+                } else {
+                    // Sleep for a bit
+                    std::this_thread::sleep_for(std::chrono::nanoseconds(500));
+                }
+                auto end = std::chrono::steady_clock::now();
+                auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(end - start);
+                // Flush
+                if (should_flush || index == batch_size || elapsed.count() > timeout_ms) {
+                    m_logFile.write(reinterpret_cast<const char*>(batch_records.data()), index * sizeof(BinaryLogRecord));
+                    m_logFile.flush();
+                    index = 0;
+                    start = end;
+                    should_flush.store(std::memory_order_relaxed);
+                }
+            }
+        });
+#endif        
     }
 
     // Client-side logging
@@ -508,7 +549,12 @@ private:
     std::fstream m_logFile;
     std::atomic<bool> m_ready = false;
     inline static std::mutex m;
-    
+#ifdef KUTRACE_RPC_USE_BACKGROUND_THREAD
+    std::atomic<bool> should_flush = false;
+    moodycamel::ConcurrentQueue<BinaryLogRecord> queue;
+    std::thread worker_thread;
+#endif
+
     // 2**0.0 through 2**0.9
     static constexpr double kPowerTwoTenths[10] = {
         1.0000, 1.0718, 1.1487, 1.2311, 1.3195, 
@@ -557,9 +603,13 @@ private:
     // Write record to file
     void write_record(const BinaryLogRecord& record) {
         if (m_ready) {
+#ifdef KUTRACE_RPC_USE_BACKGROUND_THREAD
+            queue.enqueue(record);
+#else
             std::lock_guard<std::mutex> l(m);
             m_logFile.write(reinterpret_cast<const char*>(&record), sizeof(BinaryLogRecord));
             m_logFile.flush();
+#endif
         }
     }
     
