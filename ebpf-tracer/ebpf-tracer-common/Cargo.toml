@@ -1,0 +1,10 @@
+[package]
+name = "ebpf-tracer-common"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+
+[features]
+default = []
+user-space = []

@@ -1,0 +1,28 @@
+[workspace]
+members = ["ebpf-tracer-ebpf", "ebpf-tracer-common"]
+resolver = "2"
+
+[package]
+name = "ebpf-tracer"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+aya = { version = "0.12", features = ["async_tokio"] }
+aya-log = "0.2"
+ebpf-tracer-common = { path = "ebpf-tracer-common" }
+anyhow = "1.0"
+tokio = { version = "1.25", features = ["full"] }
+log = "0.4"
+env_logger = "0.11"
+clap = { version = "4.0", features = ["derive"] }
+libc = "0.2"
+chrono = "0.4"
+
+[[bin]]
+name = "ebpf-tracer"
+path = "src/main.rs"
+
+[profile.release]
+opt-level = 3
+lto = true
