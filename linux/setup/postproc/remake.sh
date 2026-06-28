@@ -4,6 +4,6 @@
 # dick sites 2022.06.28
 
 fname=$1
-cat $1 |./unmakeself |sed 's/\], /\],\n/g' |./makeself show_cpu.html > ${fname%.html}_2.html
+cat $1 |./unmakeself |sed 's/\], /\],\n/g' |./makeself show_cpu_fast.html > ${fname%.html}_2.html
 echo "  ${fname%.html}_2.html written"
 

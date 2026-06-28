@@ -9,11 +9,15 @@ export LC_ALL=C
 # Strip trailing .trace if it is there
 var1=${1%.trace}
 
-cat $var1.trace  |./rawtoevent |sort -n |./eventtospan3 "$2" |sort >$var1.json 
+cat $var1.trace  |./rawtoevent |sort -n |./eventtospan3 "$2" |sort >$var1.json
 echo "  $var1.json written"
 
 # sudo cat /proc/kallsyms | sort > kallsyms.txt
-# cat $var1.json | ./samptoname_k kallsyms.txt > $var1.json 
+# cat $var1.json | ./samptoname_k ${var1}.kallsyms > $var1.json
+# sudo ls /proc/self/maps |xargs -I % sh -c 'echo \"\\n====\" %; sudo cat %' > symbols.txt
+# cat $var1.json | ./samptoname_u ${var1}.procmaps > $var1.json
+cat $var1.json | ./samptoname_k ${var1}.kallsyms | ./samptoname_u ${var1}.procmaps > ${var1}_sym.json
+mv ${var1}_sym.json $var1.json
 
 trim_arg='0'
 if [ -n "$3" ]
@@ -37,3 +41,4 @@ elif [ -n "$DISPLAY" ] && command -v xdg-open >/dev/null 2>&1; then
 else
   echo "  (headless: copy $var1.html to a desktop and open in Chrome to view)"
 fi
+
