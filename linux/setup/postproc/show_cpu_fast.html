@@ -412,7 +412,7 @@ const kNetworkMbPerSec = 1000;	// Default: 1 Gb/s
 
 // Little usage hints to display 
 const kUsageText = "Scroll wheel to zoom. Click-drag to pan. " + 
-  "Keys A/D pan, Up/Down pan rows, W/S zoom time, Q/E zoom tracks. " +
+  "Keys A/D or Left/Right pan time, Up/Down or R/Z pan rows, W/S zoom time, Q/E zoom tracks. " +
   "Shift-click-unclick to annotate. " +
   "Shift-click-unshift to annotate and keep. " + 
   "Shift-click-drag to measure. Red dot resets.";
@@ -4312,6 +4312,11 @@ function wasdNav(e) {
   if (tag === "INPUT" || tag === "TEXTAREA" || tgt.isContentEditable) {return;}
   if (e.ctrlKey || e.metaKey || e.altKey) {return;}
   var key = (e.key || "").toLowerCase();
+  // Key aliases: Left/Right arrows mirror A/D (pan time); R/Z mirror Up/Down (pan rows).
+  if      (key === "arrowleft")  {key = "a";}
+  else if (key === "arrowright") {key = "d";}
+  else if (key === "r")          {key = "arrowup";}
+  else if (key === "z")          {key = "arrowdown";}
   // Up/Down arrows: pan vertically through the track rows (translate Y).
   if (key === "arrowup" || key === "arrowdown") {
     if (panzoomrect_y && myZoom_y) {
