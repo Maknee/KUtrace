@@ -20,7 +20,6 @@ typedef struct {
   const char* name; 
 } NumNamePair;
 
-
 /* This is the definitive list of raw trace 12-bit event numbers */
 // These user-mode declarations need to exactly match 
 // source pool kutrace.h kernel-mode ones 
@@ -102,6 +101,7 @@ typedef struct {
 #define KUTRACE_HOST_NAME       0x104 	/* CPU host name */
 #define KUTRACE_QUEUE_NAME      0x105 	/* Queue name */
 #define KUTRACE_RES_NAME        0x106 	/* Arbitrary resource name */
+#define KUTRACE_MARKE_NAME      0x107
 
 // Specials are point events. Hex 200-220 currently. PC sample is outside this range
 #define KUTRACE_USERPID         0x200	/* Context switch */
@@ -131,8 +131,8 @@ typedef struct {
 #define KUTRACE_LOCKNOACQUIRE   0x210
 #define KUTRACE_LOCKACQUIRE     0x211
 #define KUTRACE_LOCKWAKEUP      0x212
-        // unused               0x213
-        
+#define KUTRACE_MARKE           0x213
+
 // Added 2020.10.29
 #define KUTRACE_RX_PKT          0x214 	/* Raw packet received w/32-byte payload hash */ 
 #define KUTRACE_TX_PKT          0x215 	/* Raw packet sent w/32-byte payload hash */
@@ -222,7 +222,7 @@ static const char* const kSpecialName[32] = {
   "rxmsg", "txmsg", "runnable", "sendipi",
   "mwait", "-freq-", "mark_a", "mark_b", 
   "mark_c", "mark_d", "-20e-", "-20f-", 
-  "try_", "acq_", "rel_", "-213-",		// Locks
+  "try_", "acq_", "rel_", "mark_e",		// Locks
   "rx", "tx", "urx", "utx",
   "mbs", "res", "enq", "deq",
   "-21c-", "tsdelta", "mon_st", "mon_ex",
@@ -261,16 +261,17 @@ static const char* const kErrnoName[128] = {
   "", "", "", "", "", "", "", "", 
 };
 
-
 namespace kutrace {
   bool test();
   void go(const char* process_name);
   void goipc(const char* process_name);
+  void goipcwrap(const char* process_name);
   void stop(const char* fname);
   void mark_a(const char* label);
   void mark_b(const char* label);
   void mark_c(const char* label);
   void mark_d(u64 n);
+  void mark_e(const char* label, u64 num = 0xFFFFFFFF);	// up to 56 bytes, any ASCII (not chopped at 6 like a/b/c)
 
   // Returns number of words inserted 1..8, or
   //   0 if tracing is off, negative if module is not not loaded 

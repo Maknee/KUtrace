@@ -95,6 +95,7 @@ typedef struct {
 #define KUTRACE_HOST_NAME     0x104 	/* CPU host name */
 #define KUTRACE_QUEUE_NAME    0x105 	/* Queue name */
 #define KUTRACE_RES_NAME      0x106 	/* Arbitrary resource name */
+#define KUTRACE_MARKE_NAME    0x107 	/* mark_e variable-length label (up to 56 bytes) */
 
 // Specials are point events. Hex 200-220 currently. PC sample is outside this range
 #define KUTRACE_USERPID       0x200	/* Context switch */
@@ -247,6 +248,7 @@ namespace kutrace {
   void mark_b(const char* label);
   void mark_c(const char* label);
   void mark_d(u64 n);
+  void mark_e(const char* label, u64 num = 0xFFFFFFFF);	// up to 56 bytes, any ASCII (not chopped at 6 like a/b/c)
 
   // Returns number of words inserted 1..8, or
   //   0 if tracing is off, negative if module is not not loaded 

@@ -18,7 +18,7 @@ static const int64 kMAX_MB = 7500;	//  7.5 GB
 static const int64 k40_MB = 40 * 1024 * 1024;
 
 int main (int argc, const char** argv) {
-  int64z max_mb = kMAX_MB;
+  int64 max_mb = kMAX_MB;
   // Optional parameter gives max size in MB
   if (1 < argc) {
     max_mb = atoi(argv[1]);    
