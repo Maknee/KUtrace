@@ -741,6 +741,10 @@ const prefixCpu = 0;
 const prefixPid = 1;
 const prefixRpc = 2;
 const prefixRes = 3;
+// Experimental: pseudo-group for PIDs "associated" with the cores view.
+// Its rows mirror the PID values but are displayed directly under the CPU
+// group and populated only by the currently-highlighted PIDs. See assoc_value.
+const prefixAssoc = 4;
 
 ////const textmultiplier_tbl = [1.0, 0.75, 1.5, 1.25];
 
@@ -785,6 +789,7 @@ const compress_value_max = 2;		// 0: none, 1: coloronly, 2: all
 const minmax_units_max = 2;		// 0: nsec, 1: usec, 2: msec
 const annottype_max = 1;		// 0: normal, 1: notched line
 const hack_value_max = 1;		// For random trials. Toggled by CB button shift-click
+const assoc_value_max = 1;		// Experimental: 0 off, 1 show "Assoc" band under cores
 
 // Secondary menu
 const legend_max = 2;			// 0: off, 1: vertical, 2: horizontal
@@ -996,7 +1001,7 @@ var data = null;
 // Set by getDataMetadata after data is loaded, and then constant
 // function of data.events
 //
-var eventToRow = [];	// Map events to sorted rows. Will be 4 x 64K
+var eventToRow = [];	// Map events to sorted rows. Will be 5 x 64K (4 groups + Assoc)
 
 // All these will be number of rows in size
 var sortNum = [];		// Gives grouped event number for each row
@@ -1008,6 +1013,7 @@ var dataTsLo, dataTsHi;
 var dataBaseDate, dataBaseSecond;
 
 var sortNum_cpu_start = 0;
+var sortNum_assoc_start = 0;	// Experimental Assoc band; == sortNum_pid_start when off
 var sortNum_pid_start = 0;
 var sortNum_rpc_start = 0;
 var sortNum_res_start = 0;
@@ -1169,11 +1175,12 @@ var state2 = {
   ybot_track: 0,		// Bottommost track on screen now
 
   // For the four groups: Cpu, Pid, Rpc, Res(ource)
-  grouplength: [0, 0, 0, 0],
-  groupcompress: [2, 0, 0, 0], 		// Show CPUs, collapse others
-  grouplabelypos: [0, 0, 0, 0],		// In pixels, for expand/compress place 
-  groupfirsttrack: [0, 0, 0, 0], 	// Label track number for expand/compress place
-  grouphashilite: [0, 0, 0, 0],		// One if any row in group is highlighted
+  // Five slots: Cpu, Pid, Rpc, Res, Assoc (experimental)
+  grouplength: [0, 0, 0, 0, 0],
+  groupcompress: [2, 0, 0, 0, 0], 	// Show CPUs, collapse others
+  grouplabelypos: [0, 0, 0, 0, 0],	// In pixels, for expand/compress place
+  groupfirsttrack: [0, 0, 0, 0, 0], 	// Label track number for expand/compress place
+  grouphashilite: [0, 0, 0, 0, 0],	// One if any row in group is highlighted
 
   //  Buttons
   annottype_value : 0, 		// Normal
@@ -1195,6 +1202,7 @@ var state2 = {
   usec_hi_time: 0,		//  see state2.minmax_units_value 
   basetime0_value: 0,
   hack_value: 0,		// For random trials
+  assoc_value: 0,		// Experimental: PID-to-cores association band, off by default
 
   // Last single item annotated, even across pan/zoom
   annotated_one_d: -1,		// subscript of nearest previously-annotated highlited item
@@ -1440,6 +1448,7 @@ console.log("initializeState");
   if (state2.lock_value != -1) {state2.lock_value = 2;}
   state2.cb_value = 0;
   state2.hack_value = 0;
+  state2.assoc_value = 0;	// Experimental association band off on reset
   aspecth = 0;
   aspectv = 0;
   state2.samp_value = 0;
@@ -1455,10 +1464,10 @@ console.log("initializeState");
   state2.ytop_track = 0;
   state2.ybot_track = 0;
 
-  state2.groupcompress = [2, 0, 0, 0];	// Show CPUs, collapse others
-  state2.grouplabelypos = [0, 0, 0, 0],	// In pixels 
-  state2.groupfirsttrack = [0, 0, 0, 0],	// Label track number  
-  state2.grouphashilite = [0, 0, 0, 0];
+  state2.groupcompress = [2, 0, 0, 0, 0];	// Show CPUs, collapse others
+  state2.grouplabelypos = [0, 0, 0, 0, 0],	// In pixels
+  state2.groupfirsttrack = [0, 0, 0, 0, 0],	// Label track number
+  state2.grouphashilite = [0, 0, 0, 0, 0];
 
   state2.savedtransformX = d3.zoomIdentity;
   state2.rangeX = 10;				// Arbitrary. Updated in setInitialRangeDomain
@@ -1927,6 +1936,15 @@ function onscreen_all_y(d) {
     track = rowToTrack[row];
     t_height = rowToHeight[row];
     if ((0 < t_height) && onscreen_ytrack(track + t_height / 4, 0)) {return true;}
+  }
+
+  if ((0 < pid(d)) && (state2.assoc_value != 0)) {	// Experimental Assoc band
+    row = eventToRow[prefixAssoc * 65536 + low16of(pid(d))];
+    if (0 <= row) {
+      track = rowToTrack[row];
+      t_height = rowToHeight[row];
+      if ((0 < t_height) && onscreen_ytrack(track + t_height / 4, 0)) {return true;}
+    }
   }
 
   if (0 < rpc(d)) {
@@ -3730,6 +3748,13 @@ function drawoneevent(d, gray) {
       if (0 <= row) {draw_on_row(row , d, gray);}
     }
 
+    // Experimental Assoc band under the cores. draw_on_row is a no-op when the
+    // row height is 0 (unselected PID or band collapsed), so this is cheap.
+    if ((0 < pid_d) && (state2.assoc_value != 0)) {
+      row = eventToRow[prefixAssoc * 65536 + low16of(pid_d)];
+      if (0 <= row) {draw_on_row(row , d, gray);}
+    }
+
     var rpc_d = rpc(d);
     if (0 < rpc_d) {		// Do not draw rpc=0: not inside an RPC
       row = eventToRow[prefixRpc * 65536 + low16of(rpc_d)]; 
@@ -4068,7 +4093,7 @@ function RecalcEventHilites() {
 
 // Update group has-highlights bits from rowToHilite
 function RecalcGroupHilites() {
-  state2.grouphashilite = [0, 0, 0, 0];
+  state2.grouphashilite = [0, 0, 0, 0, 0];
   for (var row = 0; row < sortNumSize; ++row) {
     state2.grouphashilite[getGroup(row)] |= state2.rowToHilite[row];
   }
@@ -4178,10 +4203,25 @@ function packupState() {
   return CompressStringify(state2);
 }
 
+// Older saved views (and files) predate the 5th "Assoc" group slot and the
+// assoc_value field. Backfill so 5-element group logic never sees undefined.
+function padAssocState(st) {
+  if (typeof st.assoc_value === 'undefined') {st.assoc_value = 0;}
+  var arrs = ['grouplength', 'groupcompress', 'grouplabelypos',
+              'groupfirsttrack', 'grouphashilite'];
+  for (var a = 0; a < arrs.length; ++a) {
+    var arr = st[arrs[a]];
+    if (Array.isArray(arr)) {
+      while (arr.length <= prefixAssoc) {arr.push(0);}
+    }
+  }
+  return st;
+}
+
 // After restoring state, put Sets and derived main state variables back
 function unpackState(savedstr) {
 //console.log("unpackState", savedstr);
-  state2 = DecompressUnstringify(savedstr);
+  state2 = padAssocState(DecompressUnstringify(savedstr));
   CheckHilites("Unpack", state2.rowToHilite);
   RecalcDerivedState();
 }
@@ -4204,7 +4244,7 @@ function resetzoom() {
   decorateSave(document.getElementById("view0"), true);
 
   // Reset parts of state
-  state2.groupcompress = [2, 0, 0, 0];	// Show CPUs, collapse others
+  state2.groupcompress = [2, 0, 0, 0, 0];	// Show CPUs, collapse others
   hilite_event_set.clear();
   state.just_reset = true;
   initializeState();
@@ -4682,8 +4722,17 @@ var ff_res = function(d) {
   return -1;
 }
 
+// Experimental Assoc band is keyed by PID, same value as ff_pid
+var ff_assoc = function(d) {
+  if (0 < pid(d)) {
+    return pid(d);
+  }
+  return -1;
+}
+
 function getAccessor(row) {
-  if (row < sortNum_pid_start) return (ff_cpu);
+  if (row < sortNum_assoc_start) return (ff_cpu);
+  if (row < sortNum_pid_start) return (ff_assoc);
   if (row < sortNum_rpc_start) return (ff_pid);
   if (row < sortNum_res_start) return (ff_rpc);
   return (ff_res);
@@ -4724,9 +4773,19 @@ var rr_res = function(i) {
   return -1;
 }
 
+// Experimental Assoc band row for an event, keyed by PID
+var rr_assoc = function(i) {
+  var d = data.events[i];
+  if (0 < pid(d)) {
+    return eventToRow[prefixAssoc * 65536 + low16of(pid(d))];
+  }
+  return -1;
+}
+
 // Return an accessor that maps an entry to a row within the right group
 function getAccessorRR(row) {
-  if (row < sortNum_pid_start) return (rr_cpu);
+  if (row < sortNum_assoc_start) return (rr_cpu);
+  if (row < sortNum_pid_start) return (rr_assoc);
   if (row < sortNum_rpc_start) return (rr_pid);
   if (row < sortNum_res_start) return (rr_rpc);
   return (rr_res);
@@ -5474,6 +5533,9 @@ function getrow(d, prefix) {
   if ((prefix == prefixRes) && (0 <= res(d))) {
     return eventToRow[prefix * 65536 + low16of(res(d))];
   }
+  if ((prefix == prefixAssoc) && (0 < pid(d))) {
+    return eventToRow[prefix * 65536 + low16of(pid(d))];
+  }
   return -1;
 }
 
@@ -5506,6 +5568,7 @@ function setEventHilites(hilite_row, newhilite) {
     var pidrow = getrow(d, prefixPid);
     var rpcrow = getrow(d, prefixRpc);
     var resrow = getrow(d, prefixRes);
+    var assocrow = getrow(d, prefixAssoc);	// Experimental Assoc band
     // Highlight arc if either end's CPU or PID is highlighted
     // We overload rpcrow and resrow
     if (is_arc(d)) {
@@ -5513,10 +5576,11 @@ function setEventHilites(hilite_row, newhilite) {
       resrow = getrow_pid2(d, prefixPid);
     }
 
-    if ((cpurow == hilite_row) || 
-        (pidrow == hilite_row) || 
-        (rpcrow == hilite_row) || 
-        (resrow == hilite_row)) {
+    if ((cpurow == hilite_row) ||
+        (pidrow == hilite_row) ||
+        (rpcrow == hilite_row) ||
+        (resrow == hilite_row) ||
+        (assocrow == hilite_row)) {
       if (newhilite) {hilite_event_set.add(i);}
       else {hilite_event_set.delete(i);}
     }
@@ -6103,6 +6167,7 @@ function redrawYlabels() {
   d3.selectAll("#labeltext1").remove();
   d3.selectAll("#labeltext2").remove();
   d3.selectAll("#labeltext3").remove();
+  d3.selectAll("#labeltext4").remove();		// Experimental Assoc band label
   d3.selectAll(".labeltick").remove();
 
   // The labels
@@ -6122,6 +6187,9 @@ function redrawYlabels() {
   }
   if (state2.grouplength[prefixRes] > 0) {
     document.getElementById("labeltext3").addEventListener("click", doToggleCompress3);
+  }
+  if (state2.grouplength[prefixAssoc] > 0) {
+    document.getElementById("labeltext4").addEventListener("click", doToggleCompress4);
   }
 }
 
@@ -6662,6 +6730,7 @@ function redrawUI() {
   decorateButton4(document.getElementById("showipc"), state2.ipc_value);
   decorateButton3(document.getElementById("showsamp"), state2.samp_value);
   decorateButton(document.getElementById("showcb"), state2.cb_value);
+  decorateButton(document.getElementById("showassoc"), state2.assoc_value);
 
   ////decorateButton(document.getElementById("AddAnnot"), 0);
 
@@ -6786,6 +6855,19 @@ function doToggleLock(e) {
   state2.lock_value = doToggle(true, state2.lock_value, lock_value_max);
   redrawUI();
   redrawEvents();
+}
+
+// Experimental: toggle the "Assoc" band of selected PIDs under the cores.
+// Turning it on/off changes the row model, so we rebuild the metadata and do a
+// full re-layout (which resets pan/zoom to the whole trace and clears
+// highlights). The intended flow is: enable, then shift-click PID labels.
+function doToggleAssoc(e) {
+  state2.assoc_value = doToggle(e.shiftKey, state2.assoc_value, assoc_value_max);
+  // Show the band expanded when enabling so selected PIDs appear at once
+  state2.groupcompress[prefixAssoc] = (state2.assoc_value != 0) ? compress_value_max : 0;
+  getDataMetadata(data);	// Insert/remove the Assoc rows in sortNum/eventToRow
+  redrawUI();
+  allocOuterSvgEtc();		// Full, correct re-layout with the new row model
 }
 
 // If shift-click, toggle hack_value instead
@@ -7041,9 +7123,16 @@ function doToggleCompress2(e) {
 
 // Resource group
 function doToggleCompress3(e) {
-  state2.groupcompress[3] = 
+  state2.groupcompress[3] =
     doToggleCmp(state2.grouphashilite[3], state2.groupcompress[3], compress_value_max);
   updateCompressEtc(3);
+}
+
+// Experimental Assoc band
+function doToggleCompress4(e) {
+  state2.groupcompress[prefixAssoc] =
+    doToggleCmp(state2.grouphashilite[prefixAssoc], state2.groupcompress[prefixAssoc], compress_value_max);
+  updateCompressEtc(prefixAssoc);
 }
 
 
@@ -7317,7 +7406,8 @@ function fillOuterSvg() {
 
 // row is sortNum subscript
 function getGroup(row) {
-  if (row < sortNum_pid_start)      {return prefixCpu;}
+  if (row < sortNum_assoc_start)    {return prefixCpu;}
+  else if (row < sortNum_pid_start) {return prefixAssoc;}
   else if (row < sortNum_rpc_start) {return prefixPid;}
   else if (row < sortNum_res_start) {return prefixRpc;}
   else                              {return prefixRes;}
@@ -7359,6 +7449,18 @@ function updateTracks() {
       rowToHeight[row] = maxTrackHeight / 2;  	// group labels are short
     } else if (groupcmpr == 0) {
       rowToHeight[row] = 0;			// Group is not expanded
+    } else if (getGroup(row) == prefixAssoc) {
+      // Experimental Assoc band: show a row only when its PID is selected
+      // (highlighted in the PID group, or the Assoc row itself)
+      var pidRow = eventToRow[prefixPid * 65536 + low16of(sortNum[row])];
+      var sel = (pidRow >= 0 && state2.rowToHilite[pidRow]) || state2.rowToHilite[row];
+      if (!sel) {
+        rowToHeight[row] = 0;			// PID not selected: hide
+      } else if (!rangeonscreen_x(rowToMinT[row], rowToMaxT[row])) {
+        rowToHeight[row] = 0;			// Auto-prune if not onscreen
+      } else {
+        rowToHeight[row] = maxTrackHeight;	// Selected: full height
+      }
     } else if (rowFullsize(row)) {
       rowToHeight[row] = maxTrackHeight;	// Row has highlighted events
     } else if (!rangeonscreen_x(rowToMinT[row], rowToMaxT[row])) {
@@ -7527,11 +7629,16 @@ function getDataMetadata(data) {
 //console.log(sortPidNum);
 //console.log(sortPidName);
 
+  // Experimental: when on, an "Assoc" band of the same PID rows is inserted
+  // directly after the CPU group so selected PIDs sit next to the cores.
+  var assocOn = (state2.assoc_value != 0) && (sortPidNum.length > 0);
+
   // Build sortNum list of every row we can ever display
   // Negative values are rows for group names
   // If the size of a group is zero, delete it entirely
   sortNum = [];
   if (sortCpuNum.length > 0) {sortNum = sortNum.concat([-prefixCpu-1, ...sortCpuNum]);}
+  if (assocOn)               {sortNum = sortNum.concat([-prefixAssoc-1, ...sortPidNum]);}
   if (sortPidNum.length > 0) {sortNum = sortNum.concat([-prefixPid-1, ...sortPidNum]);}
   if (sortRpcNum.length > 0) {sortNum = sortNum.concat([-prefixRpc-1, ...sortRpcNum]);}
   if (sortResNum.length > 0) {sortNum = sortNum.concat([-prefixRes-1, ...sortResNum]);}
@@ -7550,6 +7657,7 @@ function getDataMetadata(data) {
   // MAYBE separation is not needed
   sortName = [];
   if (sortCpuName.length > 0) {sortName = sortName.concat(["CPU", ...sortCpuName]);}
+  if (assocOn)                {sortName = sortName.concat(["Assoc", ...sortPidName]);}
   if (sortPidName.length > 0) {sortName = sortName.concat(["PID", ...sortPidName]);}
   if (sortRpcName.length > 0) {sortName = sortName.concat(["RPC", ...sortRpcName]);}
   if (sortResName.length > 0) {sortName = sortName.concat(["RES", ...sortResName]);}
@@ -7560,22 +7668,32 @@ function getDataMetadata(data) {
   //             "RES", ...sortResName];
 //console.log("sortName ", sortName);
 
-  // NEXT: make one 256K-entry array mapping (prefixCpu * 65536) + low16of(cpu), etc. 
-  //   to sortNum subscript 
-  eventToRow = new Array(256 * 1024).fill(-1);
+  // NEXT: make one array mapping (prefixCpu * 65536) + low16of(cpu), etc.
+  //   to sortNum subscript. Five prefixes now (4 groups + experimental Assoc).
+  eventToRow = new Array(5 * 65536).fill(-1);
 
-  // Group names at sortNum[0] and three later, so the +1's
+  // Group names at sortNum[0] and later, so the +1's. When the Assoc band is
+  // on, it inserts (sortPid.length + 1) rows between the CPU and PID groups.
+  var assocBlock = assocOn ? (sortPid.length + 1) : 0;
   sortNum_cpu_start = 1;
-  sortNum_pid_start = 1 + sortCpu.length + 1;
-  sortNum_rpc_start = 1 + sortCpu.length + 1 + sortPid.length + 1;
-  sortNum_res_start = 1 + sortCpu.length + 1 + sortPid.length + 1 + sortRpc.length + 1;
+  // When off, assoc_start == pid_start so getGroup's Assoc branch is empty.
+  sortNum_assoc_start = 1 + sortCpu.length + 1;
+  sortNum_pid_start = 1 + sortCpu.length + 1 + assocBlock;
+  sortNum_rpc_start = sortNum_pid_start + sortPid.length + 1;
+  sortNum_res_start = sortNum_rpc_start + sortRpc.length + 1;
+  if (!assocOn) {sortNum_assoc_start = sortNum_pid_start;}
   state2.grouplength[prefixCpu] = sortCpu.length;
+  state2.grouplength[prefixAssoc] = assocOn ? sortPid.length : 0;
   state2.grouplength[prefixPid] = sortPid.length;
   state2.grouplength[prefixRpc] = sortRpc.length;
   state2.grouplength[prefixRes] = sortRes.length;
 
   sortCpuNum.forEach(function(d, i) {
     eventToRow[prefixCpu * 65536 + d] = sortNum_cpu_start + i;});
+  if (assocOn) {
+    sortPidNum.forEach(function(d, i) {
+      eventToRow[prefixAssoc * 65536 + d] = sortNum_assoc_start + i;});
+  }
   sortPidNum.forEach(function(d, i) {
     eventToRow[prefixPid * 65536 + d] = sortNum_pid_start + i;});
   sortRpcNum.forEach(function(d, i) {
@@ -7609,6 +7727,13 @@ function getDataMetadata(data) {
       if (row >= 0) {
         rowToMinT[row] = Math.min(rowToMinT[row], ts(d));
         rowToMaxT[row] = Math.max(rowToMaxT[row], tsend(d));
+      }
+      if (assocOn) {		// Experimental Assoc band shares PID timespans
+        row  = eventToRow[prefixAssoc * 65536 +low16of(pid(d))];
+        if (row >= 0) {
+          rowToMinT[row] = Math.min(rowToMinT[row], ts(d));
+          rowToMaxT[row] = Math.max(rowToMaxT[row], tsend(d));
+        }
       }
     }
     if (0 < rpc(d)) {		// Do not draw rpc=0, not inside an RPC
@@ -8809,6 +8934,7 @@ function initAll() {
   document.getElementById("showipc").onclick = doToggleIpc;
   document.getElementById("showsamp").onclick = doToggleSamp;
   document.getElementById("showcb").onclick = doToggleCb;
+  document.getElementById("showassoc").onclick = doToggleAssoc;
 
   document.getElementById("searchnot").onclick = doToggleSearchnot;
   document.getElementById("minmax_units").onclick = doToggleUnits;
@@ -8920,6 +9046,7 @@ function unloadSaveState() {
 <button id="showipc"  style="border-radius:6px";>IPC</button>
 <button id="showsamp"  style="border-radius:6px";>Samp</button>
 <button id="showcb"  style="border-radius:6px";>CB</button>
+<button id="showassoc"  style="border-radius:6px";>Assoc</button>
 
 &nbsp;&nbsp;&nbsp;Search: 
 <button id="searchnot"; 
