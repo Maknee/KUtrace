@@ -155,6 +155,13 @@ scripts/config --module BTRFS_FS_POSIX_ACL
 
 yes "" | make localmodconfig
 
+# Keep host networking and config introspection support after localmodconfig.
+scripts/config --enable IP6_NF_FILTER
+scripts/config --enable BRIDGE_VLAN_FILTERING
+scripts/config --enable IKCONFIG
+scripts/config --enable IKCONFIG_PROC
+yes "" | make olddefconfig
+
 fakeroot make -j$(($(nproc) - 1))
 
 sudo apt-get install -y \
@@ -199,5 +206,4 @@ sudo DEBIAN_FRONTEND=noninteractive apt-get install kexec-tools -y
 
 # cd postproc
 # ./build.sh
-
 
