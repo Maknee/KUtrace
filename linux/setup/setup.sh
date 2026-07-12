@@ -14,8 +14,6 @@ patch -p1 < ../kutrace_patch_file_6.6.36.txt
 cp -v /boot/config-$(uname -r) .config
 yes "" | make localmodconfig
 
-scripts/config --set-str LOCALVERSION "-kutrace-ui-20260628"
-scripts/config --disable LOCALVERSION_AUTO
 scripts/config --disable SYSTEM_TRUSTED_KEYS
 scripts/config --disable SYSTEM_REVOCATION_KEYS
 scripts/config --set-str CONFIG_SYSTEM_TRUSTED_KEYS ""
