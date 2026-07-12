@@ -2225,6 +2225,31 @@ function HexBox(txwidth2, txheight2) {
 }
 
 
+var markEColorCache = new Map();
+
+// Match Perfetto's stable string hash. Mark labels are capped at 56 bytes, so
+// computing and caching a color is bounded and subsequent lookups are O(1).
+function hashString(seed, max) {
+  var hash = 0x811c9dc5 & 0x0fffffff;
+  for (var i = 0; i < seed.length; ++i) {
+    hash ^= seed.charCodeAt(i);
+    hash = Math.imul(hash, 16777619);
+  }
+  return (hash >>> 0) % max;
+}
+
+function markEColor(label) {
+  var seed = label.replace(/^\//, "");
+  var cached = markEColorCache.get(seed);
+  if (cached !== undefined) {return cached;}
+
+  var hue = hashString(seed, 360);
+  var lightness = hashString(seed + "x", 24) + 34;
+  var color = "hsl(" + hue + ", 80%, " + lightness + "%)";
+  markEColorCache.set(seed, color);
+  return color;
+}
+
 function draw_mark_abcd(d, x0, y0, rel_y0, marktext, marktextsize, skiptext) {
   var markcolor;
   var marktext;
@@ -2253,8 +2278,7 @@ function draw_mark_abcd(d, x0, y0, rel_y0, marktext, marktextsize, skiptext) {
     markcolor = "#000000";  // black
   }
   if (is_mark_e(d)) {
-    // mark_d comes in numbered centered black 
-    markcolor = "#008080";  // green blue
+    markcolor = markEColor(name(d));
   }
   
   var txwidth2;
@@ -2325,7 +2349,7 @@ function draw_mark(row, d, x0, y0) {
   else if (is_mark_e(d)) {
     marktext = name(d);
     var val = arg0(d);
-    if (val != 0xFFFF) {
+    if ((val != -1) && (val != 0xFFFF) && (val != 0xFFFFFFFF)) {
       marktext += val;
     }
   }
@@ -8898,7 +8922,9 @@ function initAll() {
   // Load initial data, if any
   if (typeof(myString) !== 'undefined') {
     // const compressedData = Uint8Array.from(myString, c => c.charCodeAt(0));
-    decompress(myString).then(decompressed => {
+    const compressedData = Uint8Array.from(
+        myString.split(',').filter(Boolean), value => Number(value));
+    decompress(compressedData).then(decompressed => {
       var data2 = JSON.parse(decompressed);
       newdata2(data2);
 
@@ -9170,4 +9196,3 @@ y:
  
 </body> 
 </html>
-

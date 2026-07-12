@@ -719,7 +719,9 @@ bool IsAnMwaitExit(const OneSpan& event) {
 
 // (2) mark point event
 bool IsAMark(const OneSpan& event) {
-  return ((KUTRACE_MARKA <= event.eventnum) && (event.eventnum <= KUTRACE_MARKD));
+  return ((KUTRACE_MARKA <= event.eventnum) &&
+          (event.eventnum <= KUTRACE_MARKD)) ||
+         (event.eventnum == KUTRACE_MARKE);
 }
 // (2) lock point event 0x210 ..0x212
 bool IsALockOneSpan(const OneSpan& event) {

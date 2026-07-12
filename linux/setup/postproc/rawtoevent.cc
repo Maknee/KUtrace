@@ -1200,9 +1200,15 @@ int main (int argc, const char** argv) {
           name = ReduceSpaces(name);
           name = MakeSafeAscii(name);
           if (!name.empty()) {
-            names[nameinsert] = name;
-            ////OutputName(stdout, nsec10, nameinsert, argall, name.c_str());
-            OutputName(stdout, nsec10, n, argall, name.c_str());
+            if ((n & 0xF0F) == KUTRACE_MARKE_NAME) {
+              OutputEvent(stdout, nsec10, 1, KUTRACE_MARKE, current_cpu,
+                          current_pid[current_cpu], current_rpc[current_cpu],
+                          argall, 0, 0, name.c_str());
+            } else {
+              names[nameinsert] = name;
+              ////OutputName(stdout, nsec10, nameinsert, argall, name.c_str());
+              OutputName(stdout, nsec10, n, argall, name.c_str());
+            }
           }
           // Remember which event number is local_timer (or local_timer_vector) and which is -sched-
           // (these vary in different historical traces)
