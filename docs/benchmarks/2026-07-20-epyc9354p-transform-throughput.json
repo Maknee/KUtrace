@@ -1,0 +1,30 @@
+{
+  "date_utc": "2026-07-20T22:10:00Z",
+  "host": {
+    "cpu": "AMD EPYC 9354P 32-Core Processor",
+    "kernel": "6.6.36",
+    "architecture": "x86_64"
+  },
+  "input": {
+    "source": "whole-host live KUEBPF01 capture",
+    "capture_bytes": 589634592,
+    "records": 5264594,
+    "record_bytes": 112
+  },
+  "command": "LC_ALL=C kutrace-transform events CAPTURE --output /dev/null",
+  "results": {
+    "elapsed_seconds_samples": [2.67, 2.68, 2.82, 2.65, 2.71],
+    "median_elapsed_seconds": 2.68,
+    "slowest_elapsed_seconds": 2.82,
+    "median_records_per_second": 1964400.7463,
+    "slowest_records_per_second": 1866877.305,
+    "median_input_megabytes_per_second": 220.013,
+    "max_rss_kib_samples": [1118240, 1118316, 1117804, 1118056, 1118048],
+    "peak_max_rss_kib": 1118316,
+    "cpu_percent_samples": [99, 100, 100, 99, 100]
+  },
+  "assessment": {
+    "transform_gt_1m_records_per_second": "pass",
+    "notes": "Output was parsed and formatted through the real transformer but discarded at /dev/null to exclude output storage. Input remained in the page cache after the first separately observed 2.82-second run; the five retained samples therefore measure steady-state transform throughput. Peak RSS is reported explicitly rather than hidden."
+  }
+}

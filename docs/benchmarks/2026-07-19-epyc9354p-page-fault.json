@@ -1,0 +1,82 @@
+{
+  "date_utc": "2026-07-20T02:37:55Z",
+  "host": {
+    "cpu": "AMD EPYC 9354P 32-Core Processor",
+    "logical_cpus": 64,
+    "kernel": "6.6.36",
+    "architecture": "x86_64"
+  },
+  "configuration": {
+    "iterations_per_sample": 10000,
+    "samples": 20,
+    "ring_bytes": 16777216,
+    "syscall_ring_payload_bytes": 48,
+    "scope": "benchmark PID",
+    "attached_program_count": 13,
+    "page_fault_entry_tracepoints": [
+      "exceptions/page_fault_user",
+      "exceptions/page_fault_kernel"
+    ],
+    "duration_return_probe": "handle_mm_fault",
+    "bpf_dropped_events": 0
+  },
+  "live_fault_validation": {
+    "duration_seconds": 0.2,
+    "paired_faults": 3323,
+    "user_faults": 3254,
+    "kernel_faults": 69,
+    "minimum_duration_ns": 740,
+    "mean_duration_ns": 1739.13,
+    "maximum_duration_ns": 76660,
+    "strict_v3_json": true,
+    "bpf_dropped_events": 0
+  },
+  "results": [
+    {
+      "mode": "getpid",
+      "baseline": {
+        "min_ns": 138.1696,
+        "median_ns": 138.4336,
+        "p95_ns": 139.7726,
+        "mean_ns": 138.58361
+      },
+      "loaded_filtered": {
+        "min_ns": 328.0105,
+        "median_ns": 333.3495,
+        "p95_ns": 335.7705,
+        "mean_ns": 331.91397
+      },
+      "traced": {
+        "min_ns": 1003.9224,
+        "median_ns": 1022.1394,
+        "p95_ns": 1047.8376,
+        "mean_ns": 1020.63134
+      },
+      "filter_added_median_ns": 194.9159,
+      "traced_added_median_ns": 883.7058,
+      "traced_ratio": 7.383608,
+      "capture_bytes": 45028432
+    },
+    {
+      "mode": "client_span_shared_memory",
+      "baseline_median_ns": 4.739,
+      "traced": {
+        "min_ns": 626.1078,
+        "median_ns": 641.1708,
+        "p95_ns": 653.3248,
+        "mean_ns": 639.68456
+      },
+      "traced_added_median_ns": 636.4318,
+      "client_events_attempted_including_warmup": 402002,
+      "client_events_received": 402002,
+      "client_events_dropped": 0,
+      "capture_bytes": 46438400
+    }
+  ],
+  "assessment": {
+    "getpid_gate_lt_500ns": "fail",
+    "client_span_gate_lt_2us": "pass",
+    "loss_gate": "pass",
+    "notes": "Short thirteen-program run, not a publication-grade confidence interval. Client latency varies between runs but remains below its gate with zero loss."
+  }
+}

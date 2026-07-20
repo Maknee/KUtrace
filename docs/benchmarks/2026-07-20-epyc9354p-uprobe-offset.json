@@ -1,0 +1,42 @@
+{
+  "date_utc": "2026-07-20T09:25:03Z",
+  "host": {
+    "cpu": "AMD EPYC 9354P 32-Core Processor",
+    "logical_cpus": 64,
+    "kernel": "6.6.36",
+    "architecture": "x86_64"
+  },
+  "configuration": {
+    "attachment": "absolute ELF file offset",
+    "file_offset": "0x775d0",
+    "benchmark_cpu": 0,
+    "recursion_depth": 3,
+    "iterations_per_sample": 5000,
+    "samples": 9,
+    "semantic_spans": 180000,
+    "sample_hz": 0,
+    "ipc": false
+  },
+  "results": {
+    "baseline": {
+      "minimum_ns_per_span": 1.535,
+      "median_ns_per_span": 1.5385,
+      "p95_ns_per_span": 1.5445,
+      "mean_ns_per_span": 1.5393944444444445
+    },
+    "active_capture": {
+      "minimum_ns_per_span": 3207.23255,
+      "median_ns_per_span": 3272.74235,
+      "p95_ns_per_span": 3341.29765,
+      "mean_ns_per_span": 3271.454938888889,
+      "median_added_ns_per_span": 3271.20385,
+      "p95_added_ns_per_span": 3339.75315,
+      "paired_agent_spans": 180000,
+      "strict_v3_json": true,
+      "bpf_dropped_events": 0,
+      "probe_dropped_events": 0
+    }
+  },
+  "status": "pass",
+  "notes": "The target was pinned to CPU 0. Each semantic span includes one entry uprobe and one return uprobe, cookie-indexed nesting state, two ring records, collection, transform, and exact legacy pairing. The live stripped-binary verifier separately removed all symbols and produced 400 offset-attached spans with exact 100-root/300-child nesting. The baseline measures the same recursive calls without a collector. This is an engineering regression benchmark, not a publication-grade confidence interval."
+}

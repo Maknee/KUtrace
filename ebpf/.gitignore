@@ -1,0 +1,10 @@
+/target/
+/kutrace-ebpf/target/
+/kutrace-ebpf/target-*/
+/benchmark-results/
+*.kuevents
+*.events
+/kutrace-ui/browser/node_modules/
+/kutrace-ui/browser/test-results/
+/kutrace-ui/browser/tests/output/
+/kutrace-ui/browser/tests/fixtures/*.sqlite*

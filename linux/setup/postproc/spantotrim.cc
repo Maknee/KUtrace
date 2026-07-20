@@ -82,8 +82,8 @@ void Usage() {
 int main (int argc, const char** argv) {
   double start_sec = 0.0;
   double stop_sec = 999.0;
-  char label[8];
-  char notlabel[8];
+  char label[8] = { 0 };
+  char notlabel[8] = { 0 };
   // Default: label filter is a nop
   bool inside_label_span = true;
   bool next_inside_label_span = true;

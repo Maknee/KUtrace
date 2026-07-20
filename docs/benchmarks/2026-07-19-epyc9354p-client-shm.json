@@ -1,0 +1,40 @@
+{
+  "date_utc": "2026-07-19",
+  "host": {
+    "cpu": "AMD EPYC 9354P 32-Core Processor",
+    "logical_cpus": 64,
+    "kernel": "6.6.36",
+    "architecture": "x86_64"
+  },
+  "configuration": {
+    "iterations_per_sample": 10000,
+    "samples": 20,
+    "client_ring_slots": 524288,
+    "client_ring_bytes": 67108928,
+    "client_event_bytes": 96,
+    "client_slot_bytes": 128,
+    "scope": "benchmark PID"
+  },
+  "result": {
+    "mode": "client_span_shared_memory",
+    "baseline_median_ns": 4.739,
+    "min_ns": 475.4552,
+    "median_ns": 486.2591,
+    "p95_ns": 493.5801,
+    "mean_ns": 485.60025,
+    "added_ns": 481.5201,
+    "ratio": 102.60796,
+    "span_operations_measured": 200000,
+    "client_events_attempted_including_warmup": 402002,
+    "client_events_received": 402002,
+    "client_events_dropped": 0,
+    "bpf_events_dropped": 0,
+    "paired_agent_spans_transformed": 201001,
+    "capture_bytes": 45028992
+  },
+  "assessment": {
+    "client_span_gate_lt_2us": "pass",
+    "loss_gate": "pass",
+    "notes": "The shared-memory path emits a begin and end record per span. The operation distribution excludes warmup; attempted/received and transformed counts include 10001 warmup spans. This is a short microbenchmark, not a publication-grade confidence interval."
+  }
+}

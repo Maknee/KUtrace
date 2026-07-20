@@ -1,0 +1,68 @@
+{
+  "date_utc": "2026-07-20T03:41:22Z",
+  "host": {
+    "cpu": "AMD EPYC 9354P 32-Core Processor",
+    "logical_cpus": 64,
+    "kernel": "6.6.36",
+    "architecture": "x86_64"
+  },
+  "configuration": {
+    "scope": "benchmark PID",
+    "sample_hz": 0,
+    "cycle_source": "PERF_COUNT_HW_CPU_CYCLES",
+    "instruction_source": "PERF_COUNT_HW_INSTRUCTIONS",
+    "counter_groups": 64,
+    "counter_scheduling": "pinned cycle leader with grouped retired-instruction member",
+    "stable_event_bytes": 112,
+    "ring_bytes": 16777216,
+    "bpf_dropped_events": 0
+  },
+  "getpid_results": {
+    "iterations_per_sample": 200000,
+    "samples": 10,
+    "total_operations": 2000000,
+    "baseline": {
+      "min_ns": 138.30885,
+      "median_ns": 138.3753,
+      "p95_ns": 138.4212,
+      "mean_ns": 138.355234
+    },
+    "ipc_traced": {
+      "min_ns": 823.55842,
+      "median_ns": 1347.814645,
+      "p95_ns": 1357.42768,
+      "mean_ns": 1239.4273615
+    },
+    "ipc_added_median_ns": 1209.439345,
+    "ipc_ratio_to_baseline": 9.740283,
+    "reference_standard_trace_median_ns": 1019.1594,
+    "ipc_increment_over_reference_trace_ns": 328.655245,
+    "notes": "The standard-trace reference is the separate 99 Hz PC-sampling run on the same host, so its difference is directional rather than a paired confidence interval. IPC remains opt-in."
+  },
+  "raw_counter_validation": {
+    "capture_bytes": 358014000,
+    "records": 3196553,
+    "syscall_enter_records": 1598194,
+    "syscall_exit_records": 1598194,
+    "ipc_valid_records": 3196552,
+    "ipc_valid_percent": 99.99997,
+    "ipc_code_counts": [38, 22, 1111, 154146, 27559, 178270, 239299, 2063750, 532312, 0, 1, 2, 12, 23, 3, 4],
+    "bpf_dropped_events": 0
+  },
+  "live_pipeline_validation": {
+    "capture_bytes": 22851536,
+    "raw_records": 204031,
+    "legacy_json_spans": 204035,
+    "legacy_json_nonzero_ipc_spans": 204028,
+    "observed_ipc_codes": [0, 1, 2, 3, 4, 5, 6, 7, 8, 10, 11, 13],
+    "strict_v3_json": true,
+    "bpf_dropped_events": 0
+  },
+  "assessment": {
+    "getpid_gate_lt_500ns": "fail",
+    "loss_gate": "pass",
+    "counter_validity": "pass",
+    "legacy_pipeline": "pass",
+    "notes": "The first event on each CPU initializes its prior-counter state and intentionally has no valid IPC code. Hardware groups are pinned so the collector fails explicitly instead of publishing distorted IPC from multiplexed counters."
+  }
+}

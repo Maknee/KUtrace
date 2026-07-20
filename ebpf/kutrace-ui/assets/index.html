@@ -1,0 +1,107 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>KUtrace Workspace</title>
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+  <section class="print-summary print-only" aria-label="Printed trace summary">
+    <h1>KUtrace workspace</h1>
+    <p id="print-trace-title"></p>
+    <p id="print-range"></p>
+    <p id="print-filters"></p>
+  </section>
+  <header>
+    <div><span class="mark">KU</span><strong>trace workspace</strong><span id="trace-title"></span></div>
+    <nav><button id="save-workspace">Save</button><button id="export-workspace">Export</button><button id="import-workspace">Import</button><input id="workspace-file" type="file" accept="application/json,.json" hidden><a href="/legacy" target="_blank">Exact KUtrace view ↗</a></nav>
+  </header>
+  <main>
+    <aside>
+      <section>
+        <h2>Composable filters</h2>
+        <div class="filter-form">
+          <select id="filter-field"><option>category</option><option>cpu</option><option>pid</option><option>event</option><option>rpc</option><option>name</option></select>
+          <select id="filter-op"><option value="=">is</option><option value="!=">is not</option><option value="contains">contains</option><option value=">=">≥</option><option value="<=">≤</option></select>
+          <input id="filter-value" placeholder="agent">
+          <button id="add-filter">Add</button>
+        </div>
+        <div id="filter-chips" class="chips"></div>
+      </section>
+      <section>
+        <h2>Agent call tree</h2>
+        <div id="agent-tree" class="tree muted">No agent spans in this range.</div>
+      </section>
+      <section>
+        <h2>RPC flows</h2>
+        <div id="rpc-flows" class="tree muted">No RPC activity in this range.</div>
+      </section>
+      <section>
+        <h2>Resources &amp; queues</h2>
+        <div id="resource-activity" class="tree muted">No resource activity in this range.</div>
+      </section>
+      <section>
+        <h2>Schema</h2>
+        <button id="show-schema">Inspect SQL schema</button>
+      </section>
+      <section>
+        <h2>Saved SQL views</h2>
+        <div class="saved-view-form">
+          <input id="view-name" maxlength="80" placeholder="Agent read latency">
+          <button id="save-view">Save current query</button>
+        </div>
+        <div id="saved-views" class="saved-views muted">No saved SQL views.</div>
+      </section>
+    </aside>
+    <div class="workspace">
+      <section class="timeline-card">
+        <div class="section-head">
+          <div><h2>Query-backed CPU tracks</h2><span id="range-label"></span></div>
+          <div class="range-tools">
+            <div class="range-controls">
+              <button id="pan-left" title="Pan left ([ or ←)" aria-label="Pan left">←</button>
+              <button id="zoom-out" title="Zoom out (−)" aria-label="Zoom out">−</button>
+              <button id="reset-range" title="Reset range (0 or Home)">Reset</button>
+              <button id="zoom-in" title="Zoom in (+)" aria-label="Zoom in">+</button>
+              <button id="pan-right" title="Pan right (] or →)" aria-label="Pan right">→</button>
+            </div>
+            <div id="cpu-controls" class="cpu-controls" hidden>
+              <button id="previous-cpus" title="Previous CPU tracks" aria-label="Previous CPU tracks">CPU ↑</button>
+              <span id="cpu-window"></span>
+              <button id="next-cpus" title="Next CPU tracks" aria-label="Next CPU tracks">CPU ↓</button>
+            </div>
+            <span class="shortcut-help">drag select · Ctrl+wheel zoom · ←/→ pan · 0 reset</span>
+          </div>
+        </div>
+        <div class="timeline-shell">
+          <canvas id="timeline" height="340" tabindex="0" aria-label="CPU timeline; drag to select a range, use Ctrl plus wheel to zoom, or use the range keyboard shortcuts"></canvas>
+          <div id="time-selection" aria-hidden="true"></div>
+        </div>
+        <div class="legend"><i class="agent"></i>agent <i class="syscall"></i>syscall <i class="kernel"></i>kernel <i class="user"></i>user <i class="special"></i>other <span id="perf-legend"></span></div>
+      </section>
+      <section class="agent-context-card">
+        <div class="section-head"><div><h2>Selected agent context</h2><span id="agent-context-title">Select an agent span</span></div><div class="context-actions"><span id="agent-context-count"></span><button id="open-agent-context" disabled>Open in notebook</button></div></div>
+        <div id="agent-annotations" class="annotation-list muted">No linked query, observation, decision, or result annotations.</div>
+        <details><summary>Bounded context SQL</summary><pre id="agent-context-sql"></pre></details>
+        <div class="table-wrap"><table id="agent-context-table"></table></div>
+      </section>
+      <section class="event-card">
+        <div class="section-head"><h2>Events</h2><span id="event-count"></span></div>
+        <div class="table-wrap"><table id="event-table"></table></div>
+      </section>
+      <section class="sql-card">
+        <div class="section-head"><div><h2>SQL notebook</h2><span>Read-only · result limit 10,000</span></div><button id="run-sql">Run query</button></div>
+        <textarea id="sql">SELECT category, name, COUNT(*) AS count, ROUND(SUM(dur) * 1000, 3) AS total_ms
+FROM events
+GROUP BY category, name
+ORDER BY total_ms DESC
+LIMIT 50</textarea>
+        <div id="query-status" class="muted"></div>
+        <div class="table-wrap"><table id="query-table"></table></div>
+      </section>
+    </div>
+  </main>
+  <script src="/app.js"></script>
+</body>
+</html>

@@ -1,0 +1,14 @@
+{
+  "name": "kutrace-ui-browser-tests",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "playwright test",
+    "test:chromium": "playwright test --project=chromium",
+    "test:firefox": "playwright test --project=firefox",
+    "test:update": "playwright test --project=chromium --update-snapshots"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.61.1"
+  }
+}

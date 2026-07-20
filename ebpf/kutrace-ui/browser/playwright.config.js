@@ -1,0 +1,30 @@
+import {defineConfig} from '@playwright/test';
+
+export default defineConfig({
+  testDir: './tests',
+  outputDir: './test-results',
+  timeout: 30_000,
+  expect: {timeout: 8_000},
+  fullyParallel: false,
+  workers: 1,
+  snapshotPathTemplate: '{testDir}/{testFilePath}-snapshots/{arg}-{platform}{ext}',
+  projects: [
+    {name: 'chromium', use: {browserName: 'chromium'}},
+    {name: 'firefox', use: {browserName: 'firefox'}},
+  ],
+  use: {
+    baseURL: 'http://127.0.0.1:38126',
+    viewport: {width: 1440, height: 1000},
+    colorScheme: 'dark',
+    locale: 'en-US',
+    timezoneId: 'UTC',
+    reducedMotion: 'reduce'
+  },
+  webServer: {
+    command: '../../target/release/kutrace-ui tests/fixtures/agent_trace.json --database tests/fixtures/agent.sqlite --legacy-html ../../../hello_world_demo_live.html --listen 127.0.0.1:38126 --rebuild',
+    cwd: '.',
+    url: 'http://127.0.0.1:38126/',
+    reuseExistingServer: false,
+    timeout: 30_000
+  }
+});

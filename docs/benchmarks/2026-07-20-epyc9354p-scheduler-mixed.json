@@ -1,0 +1,91 @@
+{
+  "date_utc": "2026-07-20T22:04:53Z",
+  "host": {
+    "cpu": "AMD EPYC 9354P 32-Core Processor",
+    "logical_cpus": 64,
+    "kernel": "6.6.36",
+    "architecture": "x86_64",
+    "benchmark_cpu": 0,
+    "collector_cpu": 1,
+    "frequency_governor": "not exposed by this host"
+  },
+  "configuration": {
+    "iterations_per_sample": 10000,
+    "samples": 20,
+    "sample_hz": 0,
+    "ring_bytes": 16777216,
+    "scope": "benchmark PID including future threads",
+    "benchmark_and_collector_cpu_isolated": true,
+    "scheduler_operation": "one zero-capacity-channel round trip between two threads pinned to one CPU",
+    "mixed_operation": "scheduler round trip plus one getpid and one client span in each thread",
+    "bootstrap": {
+      "resamples": 100000,
+      "seed": "0x5343484544554c45",
+      "method": "independent resampling; difference of resampled medians"
+    }
+  },
+  "results": [
+    {
+      "mode": "scheduler",
+      "baseline_median_ns": 8664.262,
+      "baseline_p95_ns": 9481.7006,
+      "loaded_filtered_median_ns": 9967.7747,
+      "loaded_filtered_p95_ns": 11111.4917,
+      "filter_added_median_ns": 1303.5127,
+      "filter_added_median_bootstrap_95pct_ci_ns": [626.84375, 2319.31565],
+      "traced_median_ns": 15714.5198,
+      "traced_p95_ns": 15972.4191,
+      "traced_added_median_ns": 7050.2578,
+      "traced_added_median_bootstrap_95pct_ci_ns": [6780.1207, 7929.88865],
+      "ratio_to_baseline": 1.813717,
+      "baseline_samples_ns": [6642.3891, 6925.3733, 6930.6744, 6996.0707, 7157.8794, 7770.2921, 7833.1794, 7848.8163, 7865.5435, 8117.2977, 8664.262, 8774.0705, 8833.4568, 8855.1658, 8979.9633, 8980.8294, 9049.1716, 9200.5373, 9350.7779, 9481.7006],
+      "traced_samples_ns": [14587.542, 15425.1437, 15519.596, 15560.2363, 15569.9482, 15619.2944, 15666.2917, 15673.0647, 15688.6277, 15710.6149, 15714.5198, 15728.641, 15744.976, 15746.685, 15781.1601, 15783.5682, 15805.4853, 15830.1583, 15902.2987, 15972.4191]
+    },
+    {
+      "mode": "mixed",
+      "baseline_median_ns": 8316.8484,
+      "baseline_p95_ns": 9389.1381,
+      "loaded_filtered_median_ns": 10552.2453,
+      "loaded_filtered_p95_ns": 12208.2695,
+      "filter_added_median_ns": 2235.3969,
+      "filter_added_median_bootstrap_95pct_ci_ns": [2001.6868, 3408.434],
+      "traced_median_ns": 16759.7874,
+      "traced_p95_ns": 16989.4674,
+      "traced_added_median_ns": 8442.939,
+      "traced_added_median_bootstrap_95pct_ci_ns": [7129.6128, 9020.795],
+      "ratio_to_baseline": 2.015161,
+      "baseline_samples_ns": [6519.0846, 6739.6045, 7147.3594, 7473.5167, 7478.7288, 7617.7843, 7828.3723, 8145.3167, 8165.1488, 8244.8851, 8316.8484, 8338.6516, 8390.9957, 8431.615, 8432.79, 8503.8314, 8529.9644, 8627.9198, 9003.9215, 9389.1381],
+      "traced_samples_ns": [15236.2098, 15236.6128, 15290.847, 15311.1441, 15325.0732, 15370.6114, 15464.0248, 16252.9562, 16743.8733, 16758.1204, 16759.7874, 16774.5696, 16783.9855, 16803.1378, 16818.1787, 16838.8138, 16872.034, 16885.2301, 16898.2152, 16989.4674]
+    }
+  ],
+  "validation": {
+    "scheduler_capture": {
+      "disk_records": 3246720,
+      "syscall_entries": 1010493,
+      "syscall_exits": 1010493,
+      "scheduler_switches": 811856,
+      "scheduler_wakeups": 413207,
+      "paired_transport_records": 1558,
+      "fallback_compact_records": 2017870
+    },
+    "mixed_capture": {
+      "disk_records": 4646768,
+      "syscall_entries": 1369489,
+      "syscall_exits": 1369489,
+      "scheduler_switches": 669408,
+      "scheduler_wakeups": 417348,
+      "client_span_begins": 402002,
+      "client_span_ends": 402002,
+      "paired_transport_records": 431766,
+      "fallback_compact_records": 1875446
+    },
+    "bpf_dropped_events": 0,
+    "probe_dropped_events": 0,
+    "client_shm_dropped": 0,
+    "strict_scheduler_legacy_json_gate": true,
+    "strict_client_legacy_json_gate": true
+  },
+  "assessment": {
+    "notes": "Scheduler cost is per full two-thread handoff, not per individual switch. Mixed cost includes two explicit getpid calls, two semantic span pairs, channel/futex syscalls, wakeups, and switches per operation. The wide baseline confidence intervals reflect real futex/scheduler variability; raw samples are retained."
+  }
+}

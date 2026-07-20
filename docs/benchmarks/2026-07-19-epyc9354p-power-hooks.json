@@ -1,0 +1,70 @@
+{
+  "date_utc": "2026-07-20T02:26:24Z",
+  "host": {
+    "cpu": "AMD EPYC 9354P 32-Core Processor",
+    "logical_cpus": 64,
+    "kernel": "6.6.36",
+    "architecture": "x86_64"
+  },
+  "configuration": {
+    "iterations_per_sample": 10000,
+    "samples": 20,
+    "ring_bytes": 16777216,
+    "syscall_ring_payload_bytes": 48,
+    "scope": "benchmark PID",
+    "attached_tracepoint_count": 10,
+    "new_tracepoints": [
+      "power/cpu_idle",
+      "power/cpu_frequency"
+    ],
+    "bpf_dropped_events": 0
+  },
+  "results": [
+    {
+      "mode": "getpid",
+      "baseline": {
+        "min_ns": 138.1696,
+        "median_ns": 138.2026,
+        "p95_ns": 141.9646,
+        "mean_ns": 138.57951
+      },
+      "loaded_filtered": {
+        "min_ns": 321.1494,
+        "median_ns": 322.1804,
+        "p95_ns": 329.9784,
+        "mean_ns": 324.042325
+      },
+      "traced": {
+        "min_ns": 878.0098,
+        "median_ns": 892.3749,
+        "p95_ns": 1007.1115,
+        "mean_ns": 899.82373
+      },
+      "filter_added_median_ns": 183.9778,
+      "traced_added_median_ns": 754.1723,
+      "traced_ratio": 6.457005,
+      "capture_bytes": 45027984
+    },
+    {
+      "mode": "client_span_shared_memory",
+      "baseline_median_ns": 4.739,
+      "traced": {
+        "min_ns": 443.1519,
+        "median_ns": 461.6131,
+        "p95_ns": 485.0582,
+        "mean_ns": 464.772545
+      },
+      "traced_added_median_ns": 456.8741,
+      "client_events_attempted_including_warmup": 402002,
+      "client_events_received": 402002,
+      "client_events_dropped": 0,
+      "capture_bytes": 45035152
+    }
+  ],
+  "assessment": {
+    "getpid_gate_lt_500ns": "fail",
+    "client_span_gate_lt_2us": "pass",
+    "loss_gate": "pass",
+    "notes": "Short ten-tracepoint run, not a publication-grade confidence interval. The lower syscall median than the preceding compact-record run is normal run-to-run variation and is not attributed to adding power hooks."
+  }
+}

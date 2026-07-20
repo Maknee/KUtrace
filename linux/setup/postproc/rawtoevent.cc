@@ -60,7 +60,7 @@ bool keep_idle = false;
 static const uint64 FINDME = 0;
 
 static const bool TRACEWRAP = false;
-static const int kMAX_CPUS = 80;
+static const int kMAX_CPUS = 144;
 static const int mhz_32bit_counts = 54;
 static const int kNetworkMbPerSec = 1000;	// Default: 1 Gb/s
 static const int kDefaultLowResNsec10 = 35;	// Low-res riscv: 0 dur => 350 nsec instead 
@@ -360,6 +360,7 @@ inline bool is_queuenamedef(uint64 event) {return (event & 0xf0f) == KUTRACE_QUE
 // Return true if the name event is the CPU model name
 inline bool is_resnamedef(uint64 event) {return (event & 0xf0f) == KUTRACE_RES_NAME;}
 
+inline bool is_mark_e(uint64 event) { return (event & 0xf0f) == KUTRACE_MARKE_NAME; }
 
 // Return true if the event is a special marker (but not UserPidNum)
 inline bool is_special(uint64 event) {return (0x0200 < event) && (event <= KUTRACE_MAX_SPECIAL);}
@@ -1173,6 +1174,8 @@ int main (int argc, const char** argv) {
           nameinsert = arg | 0x70000;		  // Queue name
         } else if (is_resnamedef(n)) {
           nameinsert = arg | 0x80000;		  // Resource name
+        } else if (is_mark_e(n)) {
+          nameinsert = arg | 0x90000;		  // Resource name
         } else {
           nameinsert = ((n & 0x00f) << 8) | arg;  // Syscall, etc. Include type of name
         }
@@ -1199,6 +1202,13 @@ int main (int argc, const char** argv) {
           }
           name = ReduceSpaces(name);
           name = MakeSafeAscii(name);
+          if (is_mark_e(n)) {
+            // name += std::to_string(arg);
+            OutputEvent(stdout, nsec10, duration, KUTRACE_MARKE, current_cpu, 
+              current_pid[current_cpu], current_rpc[current_cpu], 
+              arg, retval, ipc, name.c_str());
+          }
+          
           if (!name.empty()) {
             names[nameinsert] = name;
             ////OutputName(stdout, nsec10, nameinsert, argall, name.c_str());

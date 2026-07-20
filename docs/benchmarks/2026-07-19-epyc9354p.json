@@ -1,0 +1,50 @@
+{
+  "date_utc": "2026-07-20T00:29:00Z",
+  "host": {
+    "cpu": "AMD EPYC 9354P 32-Core Processor",
+    "logical_cpus": 64,
+    "kernel": "6.6.36",
+    "architecture": "x86_64",
+    "spectre_v2": "Enhanced / Automatic IBRS; conditional IBPB; always-on STIBP; RSB filling",
+    "speculative_store_bypass": "disabled via prctl"
+  },
+  "configuration": {
+    "iterations_per_sample": 10000,
+    "samples": 20,
+    "ring_bytes": 16777216,
+    "record_bytes": 112,
+    "scope": "benchmark PID",
+    "bpf_dropped_events": 0
+  },
+  "results": [
+    {
+      "mode": "getpid",
+      "baseline_median_ns": 138.1736,
+      "loaded_filtered_median_ns": 326.8234,
+      "filter_added_ns": 188.6498,
+      "traced_median_ns": 789.3995,
+      "added_ns": 651.2259,
+      "ratio": 5.7131,
+      "capture_bytes": 45025856,
+      "client_events_dropped": 0
+    },
+    {
+      "mode": "client_span",
+      "baseline_median_ns": 4.739,
+      "traced_median_ns": 6622.2147,
+      "added_ns": 6617.4757,
+      "ratio": 1397.3865,
+      "client_events_attempted": 402002,
+      "client_events_received": 401736,
+      "client_events_dropped": 266,
+      "client_event_loss_rate": 0.00066169,
+      "capture_bytes": 135047200
+    }
+  ],
+  "assessment": {
+    "getpid_gate_lt_500ns": "fail",
+    "client_span_gate_lt_2us": "fail",
+    "ring_loss_gate": "pass",
+    "notes": "This is a short microbenchmark, not a publication-grade confidence interval. The client path uses two Unix datagrams per span and needs a shared-memory transport to meet the target."
+  }
+}

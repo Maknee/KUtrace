@@ -123,7 +123,7 @@
 
 static const char* kIdleName = "-idle-";
 static const char* kIdlelpName = "-idlelp-";
-static const int kMAX_CPUS = 80;
+static const int kMAX_CPUS = 144;
 static const int kNetworkMbitSec = 1000;	// Default: 1 Gb/s if not in trace
 
 static const uint64 kMIN_CEXIT_DURATION = 10LL;	//  0.100 usec in multiples of 10 nsec
@@ -719,7 +719,7 @@ bool IsAnMwaitExit(const OneSpan& event) {
 
 // (2) mark point event
 bool IsAMark(const OneSpan& event) {
-  return ((KUTRACE_MARKA <= event.eventnum) && (event.eventnum <= KUTRACE_MARKD));
+  return ((KUTRACE_MARKA <= event.eventnum) && (event.eventnum <= KUTRACE_MARKD)) || event.eventnum == KUTRACE_MARKE;
 }
 // (2) lock point event 0x210 ..0x212
 bool IsALockOneSpan(const OneSpan& event) {
@@ -1375,7 +1375,9 @@ void InitialJson(FILE* f, const char* label, const char* basetime) {
 // Add dummy entry that sorts last, then close the events array and top-level json
 void FinalJson(FILE* f) {
   fprintf(f, "[999.0, 0.0, 0, 0, 0, 0, 0, 0, 0, \"\"]\n");	// no comma
-  fprintf(f, "]}\n");
+  fprintf(f, "],\n");
+  fprintf(f, " \"mbit_sec\" : %d\n", mbit_sec);
+  fprintf(f, "}\n");
 }
 
 // Design for push/pop of nested kernel routines
@@ -2365,9 +2367,11 @@ bool FixupCexit(uint64 new_start_ts,
   bool good_mwait = (thiscpu->cpu_stack.top == 0); 	// Expecting to be in user-mode
   if (!good_mwait) {
     // No change -- we are not immediately after a switch to idle
-    fprintf(stderr, "FixupCexit ignored %llu %llu %llu %d %05x\n",
-            new_start_ts, exit_latency, pending_span_latency,
-            thiscpu->cpu_stack.top, thiscpu->cpu_stack.eventnum[0]);
+    if (verbose) {
+      fprintf(stderr, "FixupCexit ignored %llu %llu %llu %d %05x\n",
+              new_start_ts, exit_latency, pending_span_latency,
+              thiscpu->cpu_stack.top, thiscpu->cpu_stack.eventnum[0]);
+    }
     return true;
   }
 
@@ -3123,9 +3127,6 @@ DumpShort(stdout, &cpustate[event.cpu]);
       WriteFreqSpan(prior_ts, event.start_ts, i, prior_freq);
     }
   }
-
-  // Keep any hardware description. Leading space is required.
-  fprintf(stdout, " \"mbit_sec\" : %d,\n", mbit_sec);
 
   // Put out any multi-named PID row names
   for (IntName::const_iterator it = pidrownames.begin(); it != pidrownames.end(); ++it) {

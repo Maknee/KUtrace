@@ -1,0 +1,26 @@
+[package]
+name = "kutrace-ebpf"
+version = "0.1.0"
+edition = "2024"
+license = "GPL-2.0-only"
+
+[[bin]]
+name = "kutrace-ebpf"
+path = "src/main.rs"
+
+[dependencies]
+aya-ebpf = "0.2.1"
+kutrace-common = { path = "../kutrace-common", default-features = false }
+
+[build-dependencies]
+aya-build = "0.2"
+
+[profile.release]
+panic = "abort"
+lto = true
+codegen-units = 1
+
+[workspace]
+
+[lints.rust]
+unexpected_cfgs = { level = "warn", check-cfg = ['cfg(bpf_target_arch, values("x86_64", "aarch64"))'] }

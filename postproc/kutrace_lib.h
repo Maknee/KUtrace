@@ -161,6 +161,7 @@ typedef struct {
 // Lock held
 #define KUTRACE_LOCK_HELD	    0x282	/* Inserted by eventtospan 2020.09.27 */
 #define KUTRACE_LOCK_TRY	    0x283	/* Inserted by eventtospan 2020.09.27 */
+#define KUTRACE_AGENT_SPAN      0x285   /* Agent/client semantic span */
 
 
 /* Reasons for waiting, inserted only in postprocessing */
@@ -302,5 +303,4 @@ namespace kutrace {
 }
 
 #endif	// __KUTRACE_LIB_H__
-
 

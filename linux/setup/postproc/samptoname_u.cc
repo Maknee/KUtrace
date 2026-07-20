@@ -1,15 +1,14 @@
 // Little program to paste in user names for PC addresses
+// Copyright 2021 Richard L. Sites
 // 
 // Filter from stdin to stdout
 // One command-line parameter -- pidmaps file name 
 //
-// dick sites 2020.03.06
-//  2020.04.12 dsites fixup __nss_passwd_lookup ==> memcpy
 //
 // TODO: 
 //  cache lookup results to avoid excess command spawning
 //
-// Compile with g++ -O2 samptoname_u.cc -o samptoname_u
+// Compile with g++ -O2 spantopcnameu.cc -o spantopcnameu
 //
 // Input from stdin is a KUtrace json file, some of whose events are
 // PC samples of kernel addresses. We want to rewrite these with the

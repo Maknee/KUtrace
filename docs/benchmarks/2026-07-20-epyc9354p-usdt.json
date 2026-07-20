@@ -1,0 +1,59 @@
+{
+  "date_utc": "2026-07-20T04:21:51Z",
+  "host": {
+    "cpu": "AMD EPYC 9354P 32-Core Processor",
+    "logical_cpus": 64,
+    "kernel": "6.6.36",
+    "architecture": "x86_64"
+  },
+  "configuration": {
+    "target": "release kutrace-usdt-fixture",
+    "provider": "kutrace",
+    "begin_probe": "agent_begin",
+    "end_probe": "agent_end",
+    "recursion_depth": 3,
+    "iterations_per_sample": 1000,
+    "samples": 20,
+    "potential_semantic_spans": 80000,
+    "sample_hz": 0,
+    "ipc": false,
+    "stable_event_bytes": 112,
+    "ring_bytes": 16777216
+  },
+  "results": {
+    "disabled_semaphore": {
+      "minimum_ns_per_potential_span": 1.845,
+      "median_ns_per_potential_span": 1.84525,
+      "p95_ns_per_potential_span": 1.9125,
+      "mean_ns_per_potential_span": 1.8494875
+    },
+    "active_capture": {
+      "minimum_ns_per_span": 2172.88425,
+      "median_ns_per_span": 3222.43125,
+      "p95_ns_per_span": 3279.17375,
+      "mean_ns_per_span": 3129.4415375,
+      "median_added_ns_per_span": 3220.586,
+      "p95_added_ns_per_span": 3277.26125,
+      "paired_agent_spans": 80000,
+      "root_spans": 20000,
+      "child_spans": 60000,
+      "capture_records": 160069,
+      "strict_v3_json": true,
+      "bpf_dropped_events": 0,
+      "probe_dropped_events": 0
+    },
+    "semaphore_values": {
+      "before_attach": 0,
+      "after_detach": 0
+    }
+  },
+  "assessment": {
+    "note_discovery": "pass",
+    "absolute_offset_attachment": "pass",
+    "nested_pairing": "pass",
+    "semaphore_lifecycle": "pass",
+    "loss_gate": "pass",
+    "legacy_pipeline": "pass",
+    "notes": "The disabled measurement exercises the compiled semaphore checks with no collector attached and divides by potential semantic spans. The active number includes both USDT uprobes, eBPF nesting state, two ring records, collection, and exact legacy pairing for each span. All 80,000 requested spans paired with positive duration; the target observed zero before attachment and again after detachment. Semaphore updates use Linux process_vm_readv/process_vm_writev and are reference-counted but are not an atomic read-modify-write across independently starting tracers."
+  }
+}

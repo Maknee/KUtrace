@@ -1,0 +1,15 @@
+[package]
+name = "kutrace-common"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[features]
+default = ["user"]
+user = ["dep:aya", "dep:bytemuck", "dep:serde"]
+
+[dependencies]
+aya = { workspace = true, optional = true }
+bytemuck = { workspace = true, optional = true }
+serde = { workspace = true, optional = true }

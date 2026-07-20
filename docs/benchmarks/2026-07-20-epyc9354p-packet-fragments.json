@@ -1,0 +1,46 @@
+{
+  "date_utc": "2026-07-20T05:32:31Z",
+  "host": {
+    "cpu": "AMD EPYC 9354P 32-Core Processor",
+    "logical_cpus": 64,
+    "kernel": "6.6.36",
+    "architecture": "x86_64"
+  },
+  "configuration": {
+    "program_type": "BPF_PROG_TYPE_CGROUP_SKB",
+    "network": "IPv4 and IPv6 UDP loopback",
+    "application_payload_bytes": 40,
+    "fragments_per_datagram": 3,
+    "first_fragment_application_bytes_min": 0,
+    "first_fragment_application_bytes_max": 8,
+    "out_of_order_zero_fragment_last": true,
+    "post_fragment_headers": [
+      "one destination header",
+      "one AH header",
+      "seven destination headers (eight total with Fragment)",
+      "eight destination headers (nine total, deliberately ignored)"
+    ],
+    "sample_hz": 0,
+    "ipc": false
+  },
+  "results": {
+    "fragmented_datagrams": 6,
+    "reassembled_egress_records": 5,
+    "rejected_overbound_datagrams": 1,
+    "distinct_expected_hashes": 5,
+    "matched_hashes": 5,
+    "fragments_reported_per_record": 3,
+    "out_of_order_start": true,
+    "strict_v3_json": true,
+    "bpf_dropped_events": 0
+  },
+  "assessment": {
+    "ipv4_reassembly": "pass",
+    "ipv6_reassembly": "pass",
+    "first_32_byte_hash_equivalence": "pass",
+    "legacy_pipeline": "pass",
+    "post_fragment_extension_traversal": "pass",
+    "shared_eight_header_boundary": "pass",
+    "notes": "Every accepted UDP datagram was sent as three raw IP fragments with fragment zero last and zero to eight application bytes in that fragment. A 16,384-entry LRU map retained a bounded 128-byte prefix as aligned 32-bit words and emitted exactly one legacy TX hash after all eight required payload words and the UDP length arrived. Destination Options, AH, and a seven-Destination-header chain after Fragment all passed. An eight-Destination-header chain exceeded the shared eight-header bound when Fragment was counted and emitted nothing. State expires after 30 seconds."
+  }
+}

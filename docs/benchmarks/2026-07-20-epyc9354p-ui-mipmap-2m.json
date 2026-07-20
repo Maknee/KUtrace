@@ -1,0 +1,62 @@
+{
+  "date_utc": "2026-07-20",
+  "host": {
+    "cpu": "AMD EPYC 9354P 32-Core Processor",
+    "logical_cpus": 64,
+    "kernel": "6.6.36",
+    "architecture": "x86_64"
+  },
+  "fixture": {
+    "events": 2000000,
+    "agent_spans": 200000,
+    "syscall_spans": 1800000,
+    "enclosing_agent_span_seconds": 2.0,
+    "cpus": 64,
+    "span_seconds": 2.0,
+    "json_bytes": 122376539
+  },
+  "configuration": {
+    "ui_schema_version": 7,
+    "reader_bytes": 262144,
+    "insert_batch_events": 64,
+    "index_workers": 0,
+    "timeline_mipmap_width_seconds": 0.001,
+    "timeline_mipmap_max_event_bins": 256,
+    "mipmap_minimum_screen_bucket_seconds": 0.004,
+    "query_deadline_ms": 2000
+  },
+  "before_mipmap": {
+    "implementation": "schema v5 buffered importer with exact recursive interval query",
+    "import_wall_seconds": 6.16,
+    "maximum_resident_kib": 10580,
+    "database_bytes": 385941504,
+    "full_range_query": "interrupted at the 2000 ms server deadline"
+  },
+  "mipmap": {
+    "events": 2000000,
+    "elapsed_ms": 9355.099,
+    "load_ms": 1720.831043,
+    "index_and_mipmap_ms": 7633.595213,
+    "wall_seconds": 9.36,
+    "user_seconds": 7.18,
+    "system_seconds": 2.19,
+    "maximum_resident_kib": 14336,
+    "database_bytes": 466882560
+  },
+  "dominant_bucket_query": {
+    "input_events": 2000000,
+    "span_seconds": 2.0,
+    "result_rows": 8000,
+    "elapsed_ms": 521.941863,
+    "deadline_ms": 2000,
+    "truncated": false
+  },
+  "gates": {
+    "maximum_import_seconds": 30,
+    "maximum_resident_kib": 32768,
+    "exact_event_count_required": true,
+    "maximum_query_ms": 2000
+  },
+  "status": "pass",
+  "notes": "The query covers all two million generated events, not only the first one-second/million-event window. A two-second enclosing agent span is deliberately excluded from the 256 ms-bounded mipmap and must be merged from raw events for the 8,000-row assertion to pass. Import timing includes the failure-atomic load, materialized overlap-weight mipmap, eight event indexes, mipmap index, semantic views, and atomic publication. This is an engineering regression benchmark, not a publication-grade confidence interval."
+}

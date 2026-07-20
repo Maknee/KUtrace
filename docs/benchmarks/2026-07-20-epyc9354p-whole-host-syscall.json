@@ -1,0 +1,65 @@
+{
+  "date_utc": "2026-07-20T22:08:00Z",
+  "host": {
+    "cpu": "AMD EPYC 9354P 32-Core Processor",
+    "logical_cpus": 64,
+    "kernel": "6.6.36",
+    "architecture": "x86_64",
+    "benchmark_cpu": 0,
+    "collector_cpu": 1,
+    "frequency_governor": "not exposed by this host"
+  },
+  "configuration": {
+    "mode": "direct getpid syscall",
+    "capture_scope": "whole host",
+    "iterations_per_sample": 100000,
+    "samples": 20,
+    "sample_hz": 0,
+    "ring_bytes": 16777216,
+    "benchmark_and_collector_cpu_isolated": true,
+    "bootstrap_resamples": 100000,
+    "bootstrap_seed": "0x484f535447415445"
+  },
+  "results": {
+    "baseline": {
+      "median_ns": 224.15226,
+      "p95_ns": 224.70656,
+      "samples_ns": [224.05135, 224.06746, 224.08206, 224.08316, 224.09985, 224.10096, 224.10126, 224.10625, 224.11326, 224.12426, 224.15226, 224.15457, 224.16515, 224.16796, 224.18876, 224.19886, 224.22036, 224.22185, 224.43116, 224.70656]
+    },
+    "loaded_filtered": {
+      "median_ns": 422.45551,
+      "p95_ns": 424.56602,
+      "added_median_ns": 198.30325,
+      "added_median_bootstrap_95pct_ci_ns": [197.620355, 199.1979],
+      "samples_ns": [420.5238, 421.06619, 421.0679, 421.1509, 421.71931, 421.73431, 421.78691, 421.9193, 422.29971, 422.3896, 422.45551, 422.756, 423.08921, 423.12931, 423.50401, 423.64671, 423.66901, 423.85781, 424.25641, 424.56602]
+    },
+    "whole_host_captured": {
+      "median_ns": 681.01111,
+      "p95_ns": 702.6192,
+      "added_median_ns": 456.85885,
+      "added_median_bootstrap_95pct_ci_ns": [456.097495, 457.583905],
+      "saturation_ratio_to_baseline": 3.038163,
+      "projected_one_core_percent_at_100k_syscalls_per_second": 4.5685885,
+      "samples_ns": [676.8402, 679.23491, 679.95701, 680.11121, 680.19191, 680.24521, 680.25091, 680.43811, 680.71361, 680.77291, 681.01111, 681.22181, 681.24191, 681.41351, 682.03082, 682.05961, 682.28422, 683.61093, 687.48484, 702.6192]
+    }
+  },
+  "transport": {
+    "paired_syscall_records_received": 2042446,
+    "compact_syscall_records_received": 10982,
+    "capture_bytes": 589634592,
+    "disk_records": 5264594
+  },
+  "validation": {
+    "expected_target_getpid_pairs": 2010002,
+    "target_getpid_entry_records": 2010002,
+    "target_getpid_exit_records": 2010002,
+    "wrong_target_getpid_returns": 0,
+    "bpf_dropped_events": 0,
+    "probe_dropped_events": 0
+  },
+  "assessment": {
+    "whole_host_100k_one_core_budget_lt_5pct": "pass",
+    "loss_gate": "pass",
+    "notes": "The 4.57% figure is the measured incremental nanoseconds multiplied by 100,000 syscalls/s and expressed as one CPU-second. Saturation throughput is reported separately and is not represented as the 100k/s operating point."
+  }
+}

@@ -1,0 +1,73 @@
+{
+  "date_utc": "2026-07-20T08:19:22Z",
+  "host": {
+    "cpu": "AMD EPYC 9354P 32-Core Processor",
+    "logical_cpus": 64,
+    "kernel": "6.6.36",
+    "architecture": "x86_64",
+    "legacy_module_vermagic": "6.6.36 SMP preempt mod_unload modversions"
+  },
+  "fixture": {
+    "iterations": 128,
+    "syscalls_per_iteration": 9,
+    "total_paired_syscalls": 1152,
+    "calls": {
+      "getppid": 128,
+      "getuid": 128,
+      "getgid": 128,
+      "getpgid_success": 128,
+      "getpgid_esrch": 128,
+      "getsid_success": 128,
+      "getsid_esrch": 128,
+      "sched_yield": 128,
+      "kill_esrch": 128
+    }
+  },
+  "comparison_contract": {
+    "equal_fields": [
+      "legacy call/return event ID",
+      "canonical syscall name",
+      "legacy low-16-bit arg0 for syscalls that take an argument",
+      "return success or errno class",
+      "exact count"
+    ],
+    "intentionally_variable_fields": [
+      "timestamp",
+      "duration encoding",
+      "CPU",
+      "PID",
+      "successful PID/session/group return value",
+      "unspecified argument registers for no-argument syscalls"
+    ],
+    "reason": "The captures are sequential, legacy alone sees exec/loader startup, and the historical record stores 16-bit PID/arg0/return fields."
+  },
+  "results": {
+    "semantic_signatures_equal": true,
+    "patched_kernel_raw_events": 11153,
+    "patched_kernel_event_lines": 13064,
+    "patched_kernel_json_events": 16401,
+    "aya_event_lines": 2351,
+    "aya_json_events": 2357,
+    "strict_legacy_json": {
+      "patched_kernel": true,
+      "aya": true
+    },
+    "bpf_dropped_events": 0,
+    "probe_dropped_events": 0,
+    "legacy_tracing_state_after_run": 0
+  },
+  "artifacts": {
+    "patched_kernel_capture_bytes": 4194304,
+    "aya_capture_bytes": 262192,
+    "patched_kernel_trace_sha256": "2c565bf52ae4df86613d771daacc1c9863556a187b7940b558d902d8e3632851",
+    "aya_capture_sha256": "4de10c38d3a25d051ed439c5f8e97d21d4405eef8c68837c9f1f7c48008938a4",
+    "patched_kernel_events_sha256": "77e02bb5c9bfc00ca6f6cb56d978c84b9a506e3afefb41d8de8dc383fd946e48",
+    "aya_events_sha256": "aaf53c194e162b5a7d5a6c943331d0cc86069d681b526f1aea3bb6743d0eff02"
+  },
+  "assessment": {
+    "semantic_parity_gate": "pass",
+    "strict_legacy_pipeline_gate": "pass",
+    "loss_gate": "pass",
+    "notes": "This proves the bounded deterministic syscall fixture on one x86-64 host. It is complementary to exhaustive synthetic coverage of all 365 x86-64 and 308 arm64 syscall mappings; it is not proof of live arm64 behavior or every asynchronous kernel event."
+  }
+}

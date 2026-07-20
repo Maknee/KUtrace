@@ -1,0 +1,32 @@
+# Downloaded kernel reference/build tree used by local differential testing.
+/linux/setup/linux-[0-9]*/
+/linux/setup/linux-*.tar.*
+
+# Out-of-tree kernel module build products.
+/linux/setup/module/.*.cmd
+/linux/setup/module/Module.symvers
+/linux/setup/module/modules.order
+/linux/setup/module/*.ko
+/linux/setup/module/*.mod
+/linux/setup/module/*.mod.c
+/linux/setup/module/*.o
+
+# Locally compiled legacy postprocessor executables.
+/linux/setup/postproc/base40
+/linux/setup/postproc/csv_dump_log
+/linux/setup/postproc/dumplogfile4
+/linux/setup/postproc/eventtospan3
+/linux/setup/postproc/hello_world_trace
+/linux/setup/postproc/kuod
+/linux/setup/postproc/kutrace_control
+/linux/setup/postproc/kutrace_unittest
+/linux/setup/postproc/makeself
+/linux/setup/postproc/makeself_rpc
+/linux/setup/postproc/rawtoevent
+/linux/setup/postproc/samptoname_k
+/linux/setup/postproc/samptoname_u
+/linux/setup/postproc/spantoprof
+/linux/setup/postproc/spantospan
+/linux/setup/postproc/spantotrim
+/linux/setup/postproc/time_getpid
+/linux/setup/postproc/unmakeself

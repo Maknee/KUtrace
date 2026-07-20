@@ -1,10 +1,10 @@
 // Little program to paste in kernel names for PC addresses
+// Copyright 2021 Richard L. Sites
 // 
 // Filter from stdin to stdout
 // One command-line parameter -- allsyms file name 
 //   $ cat foo.json |./samptoname_k >foo_with_k_pc.json
 //
-// dick sites 2020.03.06
 //
 // Compile with g++ -O2 samptoname_k.cc -o samptoname_k
 //

@@ -1,0 +1,13 @@
+[package]
+name = "kutrace-trap-fixture"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+libc.workspace = true
+
+[[bin]]
+name = "kutrace-trap-fixture"
+path = "src/main.rs"

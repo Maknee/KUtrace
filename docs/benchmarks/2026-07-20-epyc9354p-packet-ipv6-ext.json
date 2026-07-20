@@ -1,0 +1,44 @@
+{
+  "date_utc": "2026-07-20T04:40:49Z",
+  "host": {
+    "cpu": "AMD EPYC 9354P 32-Core Processor",
+    "logical_cpus": 64,
+    "kernel": "6.6.36",
+    "architecture": "x86_64"
+  },
+  "configuration": {
+    "program_type": "BPF_PROG_TYPE_CGROUP_SKB",
+    "attach_point": "egress",
+    "network": "IPv6 loopback raw packets",
+    "payload_bytes": 32,
+    "sample_hz": 0,
+    "ipc": false,
+    "packets": [
+      "hop-by-hop -> UDP",
+      "five destination headers -> UDP",
+      "eight destination headers -> UDP",
+      "nine destination headers -> deliberately ignored",
+      "atomic fragment -> UDP",
+      "non-initial fragment"
+    ]
+  },
+  "results": {
+    "hop_by_hop_records": 1,
+    "five_header_chain_records": 1,
+    "eight_header_chain_records": 1,
+    "nine_header_chain_records": 0,
+    "atomic_first_fragment_records": 1,
+    "noninitial_fragment_records": 0,
+    "matching_payload_hash_u32": 1242308164,
+    "matching_legacy_label": "tx.5448",
+    "strict_v3_json": true,
+    "bpf_dropped_events": 0
+  },
+  "assessment": {
+    "bounded_extension_traversal": "pass",
+    "first_fragment_handling": "pass",
+    "noninitial_fragment_rejection": "pass",
+    "legacy_pipeline": "pass",
+    "notes": "The kernel verifier accepted the bounded eight-header parser. A hop-by-hop packet, five- and eight-header Destination Options chains, and an atomic IPv6 fragment carrying the same first 32 UDP payload bytes emitted the identical legacy hash. A deliberately over-bound nine-header chain and a non-initial fragment with the same trailing bytes emitted no packet record, preventing false transport-header interpretation."
+  }
+}

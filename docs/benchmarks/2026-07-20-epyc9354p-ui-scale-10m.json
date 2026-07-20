@@ -1,0 +1,64 @@
+{
+  "date_utc": "2026-07-20",
+  "host": {
+    "cpu": "AMD EPYC 9354P 32-Core Processor",
+    "logical_cpus": 64,
+    "kernel": "6.6.36",
+    "architecture": "x86_64"
+  },
+  "fixture": {
+    "events": 10000000,
+    "requested_name_cardinality": 100000,
+    "distinct_names": 100000,
+    "span_seconds": 10.0,
+    "json_bytes": 697215536
+  },
+  "configuration": {
+    "ui_schema_version": 9,
+    "reader_bytes": 262144,
+    "insert_batch_events": 64,
+    "index_workers": 0,
+    "timeline_mipmap_fine_width_seconds": 0.001,
+    "timeline_mipmap_coarse_width_seconds": 0.016,
+    "timeline_mipmap_max_event_bins": 256,
+    "mipmap_name_dimension": false,
+    "query_deadline_ms": 2000
+  },
+  "import": {
+    "events": 10000000,
+    "elapsed_ms": 50366.94,
+    "load_ms": 8869.745813,
+    "index_and_mipmap_ms": 41496.44017,
+    "wall_seconds": 50.37,
+    "user_seconds": 37.73,
+    "system_seconds": 12.6,
+    "maximum_resident_kib": 14876,
+    "database_bytes": 2602635264
+  },
+  "dominant_bucket_query": {
+    "input_events": 10000000,
+    "span_seconds": 10.0,
+    "mipmap_level": "coarse",
+    "result_rows": 8000,
+    "elapsed_ms": 1144.179929,
+    "deadline_ms": 2000,
+    "truncated": false
+  },
+  "name_cardinality_query": {
+    "distinct_names": 100000,
+    "target_name": "trace.name.1",
+    "target_rows": 100,
+    "elapsed_ms": 134.678261,
+    "deadline_ms": 2000,
+    "truncated": false
+  },
+  "gates": {
+    "maximum_import_seconds": 120,
+    "maximum_resident_kib": 65536,
+    "exact_event_count_required": true,
+    "exact_name_cardinality_required": true,
+    "maximum_query_ms": 2000
+  },
+  "status": "pass",
+  "notes": "The schema-v8 1 ms-only aggregate excluded names but its ten-second full-range query still hit the 2,000 ms interrupt. Schema v9 adds a 16 ms level aggregated from the exact-overlap 1 ms level and selects it only when a screen bucket is at least 64 ms. Names remain in the indexed raw table and are deliberately absent from both mipmap grouping keys. The fixture includes one ten-second enclosing span, which is excluded from the 256 ms-bounded pyramid and merged from raw events. Import timing includes failure-atomic load, both mipmap levels, all indexes, semantic views, and atomic publication. This is an engineering regression benchmark, not a publication-grade confidence interval."
+}

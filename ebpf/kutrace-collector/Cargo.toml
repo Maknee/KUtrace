@@ -1,0 +1,16 @@
+[package]
+name = "kutrace-collector"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+anyhow.workspace = true
+aya.workspace = true
+bytemuck.workspace = true
+clap.workspace = true
+kutrace-common = { path = "../kutrace-common" }
+libc.workspace = true
+object.workspace = true
+tokio.workspace = true

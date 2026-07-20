@@ -1,0 +1,111 @@
+{
+  "date_utc": "2026-07-20T02:59:46Z",
+  "host": {
+    "cpu": "AMD EPYC 9354P 32-Core Processor",
+    "logical_cpus": 64,
+    "kernel": "6.6.36",
+    "architecture": "x86_64"
+  },
+  "configuration": {
+    "iterations_per_sample": 10000,
+    "samples": 20,
+    "ring_bytes": 16777216,
+    "syscall_ring_payload_bytes": 48,
+    "scope": "benchmark PID",
+    "attached_program_count": 17,
+    "trap_handler_kprobe_pairs": [
+      "do_error_trap",
+      "math_error"
+    ],
+    "captured_trap_vectors": [0, 4, 6, 9, 10, 11, 12, 16, 17, 19],
+    "bpf_dropped_events": 0
+  },
+  "live_trap_validation": {
+    "fixture": "1000 recoverable UD2 instructions with a SIGILL ucontext handler",
+    "vector": 6,
+    "entry_events": 1000,
+    "return_events": 1000,
+    "legacy_json_spans": 1001,
+    "legacy_span_split_reason": "eventtospan3 splits one trap across an intervening scheduling boundary",
+    "minimum_duration_ns": 1070,
+    "mean_duration_ns": 1334.73,
+    "maximum_duration_ns": 7840,
+    "strict_v3_json": true,
+    "bpf_dropped_events": 0
+  },
+  "results": [
+    {
+      "mode": "getpid",
+      "baseline": {
+        "min_ns": 138.1696,
+        "median_ns": 138.3106,
+        "p95_ns": 142.8357,
+        "mean_ns": 138.92621
+      },
+      "loaded_filtered": {
+        "min_ns": 321.2035,
+        "median_ns": 329.4545,
+        "p95_ns": 332.2495,
+        "mean_ns": 327.497535
+      },
+      "traced": {
+        "min_ns": 1001.9723,
+        "median_ns": 1019.5665,
+        "p95_ns": 1035.2445,
+        "mean_ns": 1017.555145
+      },
+      "filter_added_median_ns": 191.1439,
+      "traced_added_median_ns": 881.2559,
+      "traced_ratio": 7.371572,
+      "capture_bytes": 45028880
+    },
+    {
+      "mode": "client_span_shared_memory",
+      "baseline_median_ns": 4.739,
+      "traced": {
+        "min_ns": 626.6588,
+        "median_ns": 664.0919,
+        "p95_ns": 739.8403,
+        "mean_ns": 679.19363
+      },
+      "traced_added_median_ns": 659.3529,
+      "client_events_attempted_including_warmup": 402002,
+      "client_events_received": 402002,
+      "client_events_dropped": 0,
+      "capture_bytes": 46450160
+    },
+    {
+      "mode": "recoverable_ud2_trap",
+      "baseline": {
+        "min_ns": 2236.1498,
+        "median_ns": 2242.5948,
+        "p95_ns": 2322.5572,
+        "mean_ns": 2248.36895
+      },
+      "loaded_filtered": {
+        "min_ns": 2821.0073,
+        "median_ns": 2833.0644,
+        "p95_ns": 2841.5644,
+        "mean_ns": 2832.125705
+      },
+      "traced": {
+        "min_ns": 4982.0868,
+        "median_ns": 5023.74,
+        "p95_ns": 5061.0942,
+        "mean_ns": 5021.5708
+      },
+      "filter_added_median_ns": 590.4696,
+      "traced_added_median_ns": 2781.1452,
+      "traced_ratio": 2.240146,
+      "timed_traps": 200000,
+      "captured_traps_including_warmup": 201001,
+      "capture_bytes": 90064752
+    }
+  ],
+  "assessment": {
+    "getpid_gate_lt_500ns": "fail",
+    "client_span_gate_lt_2us": "pass",
+    "loss_gate": "pass",
+    "notes": "Short seventeen-program run, not a publication-grade confidence interval. Captured UD2 cost includes both BPF trap events, raw rt_sigreturn syscall capture, signal delivery, and the fixture's userspace ucontext handler."
+  }
+}

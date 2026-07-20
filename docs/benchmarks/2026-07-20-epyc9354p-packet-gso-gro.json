@@ -1,0 +1,37 @@
+{
+  "date_utc": "2026-07-20T05:04:10Z",
+  "host": {
+    "cpu": "AMD EPYC 9354P 32-Core Processor",
+    "logical_cpus": 64,
+    "kernel": "6.6.36",
+    "architecture": "x86_64"
+  },
+  "configuration": {
+    "program_type": "BPF_PROG_TYPE_CGROUP_SKB",
+    "network": "IPv4 UDP loopback",
+    "udp_segment_bytes": 64,
+    "logical_segments": 4,
+    "aggregate_payload_bytes": 256,
+    "receiver_udp_gro": true,
+    "sample_hz": 0,
+    "ipc": false
+  },
+  "results": {
+    "gso_egress_logical_records": 4,
+    "gro_ingress_logical_records": 4,
+    "unique_expected_hashes": 4,
+    "matched_tx_rx_hashes": 4,
+    "egress_gso_segs": 4,
+    "ingress_gro_segs": 4,
+    "gso_gro_size": 64,
+    "strict_v3_json": true,
+    "bpf_dropped_events": 0
+  },
+  "assessment": {
+    "gso_expansion": "pass",
+    "gro_expansion": "pass",
+    "segment_hash_equivalence": "pass",
+    "legacy_pipeline": "pass",
+    "notes": "One UDP_SEGMENT send entered the egress hook as a four-segment GSO skb. A UDP_GRO receiver caused ingress to expose the matching four-segment aggregate. The verifier-bounded eBPF loop emitted one hash per logical segment in each direction; all four unique hashes matched exactly. The implementation caps expansion at 64 logical segments and increments the explicit BPF dropped counter when an skb exceeds that cap."
+  }
+}

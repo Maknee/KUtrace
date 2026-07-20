@@ -1,0 +1,42 @@
+{
+  "date_utc": "2026-07-20T04:01:27Z",
+  "host": {
+    "cpu": "AMD EPYC 9354P 32-Core Processor",
+    "logical_cpus": 64,
+    "kernel": "6.6.36",
+    "architecture": "x86_64"
+  },
+  "configuration": {
+    "program_type": "BPF_PROG_TYPE_CGROUP_SKB",
+    "attach_points": ["ingress", "egress"],
+    "cgroup": "/user.slice/user-20001.slice/session-4.scope",
+    "protocol": "IPv4 TCP loopback",
+    "connections": 10,
+    "payload_bytes": 59,
+    "sample_hz": 0,
+    "ipc": false,
+    "stable_event_bytes": 112,
+    "ring_bytes": 16777216
+  },
+  "results": {
+    "packet_tx_records": 10,
+    "packet_rx_records": 10,
+    "unique_payload_hashes": 1,
+    "payload_hash_u32": 1142433586,
+    "legacy_hash_label": "632A",
+    "matched_tx_rx_pairs": 10,
+    "minimum_loopback_delta_ns": 1800,
+    "mean_loopback_delta_ns": 2123.0,
+    "maximum_loopback_delta_ns": 2420,
+    "legacy_json_tx_spans": 10,
+    "legacy_json_rx_spans": 10,
+    "strict_v3_json": true,
+    "bpf_dropped_events": 0
+  },
+  "assessment": {
+    "hash_correlation": "pass",
+    "loss_gate": "pass",
+    "legacy_pipeline": "pass",
+    "notes": "All ten sends and receives retained the same exact 32-bit XOR hash and legacy rx/tx hash label. Cgroup-skb ingress does not permit task attribution helpers on this kernel, so packet records intentionally use PID zero and do not carry IPC. Later companion runs validate bounded IPv6 extension traversal, deliberate non-initial-fragment rejection, and GSO/GRO logical-segment hash equivalence. Fragment reassembly and TLS plaintext correlation remain explicit gaps."
+  }
+}

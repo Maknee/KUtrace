@@ -1,0 +1,71 @@
+{
+  "date_utc": "2026-07-20T02:20:00Z",
+  "host": {
+    "cpu": "AMD EPYC 9354P 32-Core Processor",
+    "logical_cpus": 64,
+    "kernel": "6.6.36",
+    "architecture": "x86_64"
+  },
+  "configuration": {
+    "iterations_per_sample": 10000,
+    "samples": 20,
+    "ring_bytes": 16777216,
+    "disk_record_bytes": 112,
+    "syscall_ring_payload_bytes": 48,
+    "syscall_ring_bytes_including_header": 56,
+    "syscall_pair_ring_bytes": 112,
+    "prior_syscall_pair_ring_bytes": 240,
+    "scope": "benchmark PID",
+    "bpf_dropped_events": 0
+  },
+  "results": [
+    {
+      "mode": "getpid",
+      "baseline": {
+        "min_ns": 137.5866,
+        "median_ns": 138.4586,
+        "p95_ns": 145.6786,
+        "mean_ns": 139.210665
+      },
+      "loaded_filtered": {
+        "min_ns": 321.4184,
+        "median_ns": 324.3364,
+        "p95_ns": 329.8064,
+        "mean_ns": 324.842935
+      },
+      "traced": {
+        "min_ns": 979.9493,
+        "median_ns": 1014.4445,
+        "p95_ns": 1054.0237,
+        "mean_ns": 1015.47928
+      },
+      "filter_added_median_ns": 185.8778,
+      "traced_added_median_ns": 875.9859,
+      "traced_ratio": 7.326699,
+      "added_median_improvement_vs_full_record_ns": 151.6707,
+      "capture_bytes": 45028544
+    },
+    {
+      "mode": "client_span_shared_memory",
+      "baseline_median_ns": 4.739,
+      "traced": {
+        "min_ns": 464.4931,
+        "median_ns": 478.2571,
+        "p95_ns": 483.6111,
+        "mean_ns": 476.054445
+      },
+      "traced_added_median_ns": 473.5181,
+      "client_events_attempted_including_warmup": 402002,
+      "client_events_received": 402002,
+      "client_events_dropped": 0,
+      "capture_bytes": 45030224
+    }
+  ],
+  "assessment": {
+    "getpid_gate_lt_500ns": "fail",
+    "client_span_gate_lt_2us": "pass",
+    "loss_gate": "pass",
+    "compact_ring_transport": "retained",
+    "notes": "The collector expands compact syscall ring records into the unchanged 112-byte KUEBPF01 disk ABI. The short run is not a publication-grade confidence interval."
+  }
+}

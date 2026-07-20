@@ -1,0 +1,86 @@
+{
+  "date_utc": "2026-07-20T21:55:32Z",
+  "host": {
+    "cpu": "AMD EPYC 9354P 32-Core Processor",
+    "logical_cpus": 64,
+    "kernel": "6.6.36",
+    "architecture": "x86_64",
+    "benchmark_cpu": 0,
+    "collector_cpu": 1,
+    "frequency_governor": "not exposed by this host",
+    "mitigations": [
+      "Enhanced/Automatic IBRS; conditional IBPB; always-on STIBP; RSB filling",
+      "Safe RET",
+      "Speculative Store Bypass disabled via prctl",
+      "usercopy/swapgs barriers and __user pointer sanitization"
+    ]
+  },
+  "configuration": {
+    "mode": "direct getpid syscall",
+    "iterations_per_sample": 100000,
+    "samples": 20,
+    "timed_operations": 2000000,
+    "timed_seconds": 1.154713692,
+    "timed_operations_per_second": 1732031.0774,
+    "sample_hz": 0,
+    "ring_bytes": 16777216,
+    "scope": "benchmark PID",
+    "benchmark_and_collector_cpu_isolated": true,
+    "bootstrap": {
+      "resamples": 100000,
+      "seed": "0x4b555452414345",
+      "method": "independent resampling of sorted per-run samples; difference of resampled medians"
+    }
+  },
+  "transport": {
+    "paired_payload_bytes": 64,
+    "paired_ring_bytes_including_header": 72,
+    "fallback_compact_payload_bytes": 48,
+    "fallback_compact_ring_bytes_including_header": 56,
+    "prior_two_compact_ring_bytes": 112,
+    "paired_syscall_records_received": 2009982,
+    "compact_syscall_records_received": 50,
+    "stable_disk_record_bytes": 112,
+    "stable_disk_abi_unchanged": true
+  },
+  "results": {
+    "baseline": {
+      "median_ns": 138.35261,
+      "p95_ns": 138.58341,
+      "samples_ns": [138.2919, 138.30131, 138.31321, 138.31531, 138.32921, 138.33541, 138.33561, 138.3393, 138.341, 138.34851, 138.35261, 138.36621, 138.3895, 138.3944, 138.39521, 138.40901, 138.41511, 138.4205, 138.42241, 138.58341]
+    },
+    "loaded_filtered": {
+      "median_ns": 337.30018,
+      "p95_ns": 339.84189,
+      "added_median_ns": 198.94757,
+      "added_median_bootstrap_95pct_ci_ns": [198.13522, 199.689065],
+      "samples_ns": [335.94837, 336.17347, 336.26468, 336.32868, 336.36157, 336.39237, 336.58548, 336.82697, 336.92797, 337.08957, 337.30018, 337.61778, 337.64937, 337.88918, 338.18597, 338.24068, 338.52958, 338.86008, 339.28099, 339.84189]
+    },
+    "pid_captured": {
+      "median_ns": 580.71763,
+      "p95_ns": 582.32414,
+      "added_median_ns": 442.36502,
+      "added_median_bootstrap_95pct_ci_ns": [441.985975, 442.720645],
+      "ratio_to_baseline": 4.197374,
+      "samples_ns": [526.2465, 564.70718, 580.07353, 580.15623, 580.18454, 580.28194, 580.40473, 580.54954, 580.68535, 580.70724, 580.71763, 580.71874, 580.94664, 581.01215, 581.11865, 581.35665, 581.42894, 581.68885, 581.82775, 582.32414]
+    }
+  },
+  "validation": {
+    "expected_getpid_pairs": 2010002,
+    "getpid_entry_records": 2010002,
+    "getpid_exit_records": 2010002,
+    "wrong_getpid_returns": 0,
+    "capture_bytes": 450261232,
+    "disk_records": 4020189,
+    "bpf_dropped_events": 0,
+    "probe_dropped_events": 0,
+    "live_differential_syscall_pairs": 1152,
+    "live_differential_semantic_signatures_equal": true,
+    "strict_legacy_json": true
+  },
+  "assessment": {
+    "pid_filtered_syscall_added_median_lt_500ns": "pass",
+    "loss_gate": "pass",
+    "notes": "The first two captured samples are low warm-state outliers; retaining them makes the reported median and confidence interval conservative rather than discarding data. The collector expands paired and fallback records to the unchanged two-record KUEBPF01 disk ABI."
+  }
+}

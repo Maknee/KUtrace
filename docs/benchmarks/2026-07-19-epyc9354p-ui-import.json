@@ -1,0 +1,33 @@
+{
+  "date_utc": "2026-07-19",
+  "host": {
+    "cpu": "AMD EPYC 9354P 32-Core Processor",
+    "logical_cpus": 64,
+    "kernel": "6.6.36",
+    "architecture": "x86_64"
+  },
+  "fixture": {
+    "events": 1000000,
+    "agent_spans": 100000,
+    "syscall_spans": 900000,
+    "cpus": 64,
+    "json_bytes": 61132784
+  },
+  "streaming_import": {
+    "elapsed_ms": 44842.584,
+    "events_per_second": 22300.23,
+    "maximum_resident_kib": 9728,
+    "database_bytes": 186011648,
+    "database_includes_indexes": true,
+    "status": "memory gate pass; throughput optimization still required"
+  },
+  "dominant_bucket_query": {
+    "input_events": 1000000,
+    "result_rows": 8000,
+    "elapsed_ms": 669.981405,
+    "deadline_ms": 2000,
+    "truncated": false,
+    "status": "pass"
+  },
+  "notes": "The importer used a transaction-backed Serde visitor and never materialized the events array. Total import time includes creation of six indexes and two views. Peak RSS was measured with /usr/bin/time -v."
+}

@@ -1,0 +1,95 @@
+{
+  "date_utc": "2026-07-20T01:57:38Z",
+  "host": {
+    "cpu": "AMD EPYC 9354P 32-Core Processor",
+    "logical_cpus": 64,
+    "kernel": "6.6.36",
+    "architecture": "x86_64"
+  },
+  "configuration": {
+    "iterations_per_sample": 10000,
+    "samples": 20,
+    "ring_bytes": 16777216,
+    "record_bytes": 112,
+    "client_ring_slots": 524288,
+    "attached_tracepoints": [
+      "raw_syscalls/sys_enter",
+      "raw_syscalls/sys_exit",
+      "sched/sched_switch",
+      "sched/sched_wakeup",
+      "irq/irq_handler_entry",
+      "irq/irq_handler_exit",
+      "irq/softirq_entry",
+      "irq/softirq_exit"
+    ],
+    "scope": "benchmark PID",
+    "bpf_dropped_events": 0
+  },
+  "results": [
+    {
+      "mode": "getpid",
+      "baseline": {
+        "min_ns": 138.1696,
+        "median_ns": 138.1906,
+        "p95_ns": 138.8666,
+        "mean_ns": 138.37756
+      },
+      "loaded_filtered": {
+        "min_ns": 321.7314,
+        "median_ns": 324.3714,
+        "p95_ns": 330.1814,
+        "mean_ns": 325.152235
+      },
+      "traced": {
+        "min_ns": 1148.0991,
+        "median_ns": 1165.8472,
+        "p95_ns": 1186.4482,
+        "mean_ns": 1165.275405
+      },
+      "filter_added_median_ns": 186.1808,
+      "traced_added_median_ns": 1027.6566,
+      "traced_ratio": 8.436516,
+      "capture_bytes": 45028432
+    },
+    {
+      "mode": "client_span_shared_memory",
+      "baseline": {
+        "min_ns": 4.738,
+        "median_ns": 4.739,
+        "p95_ns": 5.496,
+        "mean_ns": 4.77692
+      },
+      "traced": {
+        "min_ns": 475.1461,
+        "median_ns": 487.0881,
+        "p95_ns": 495.9332,
+        "mean_ns": 485.9538
+      },
+      "traced_added_median_ns": 482.3491,
+      "traced_ratio": 102.782887,
+      "client_events_attempted_including_warmup": 402002,
+      "client_events_received": 402002,
+      "client_events_dropped": 0,
+      "capture_bytes": 45032352
+    }
+  ],
+  "rejected_optimization_trials": [
+    {
+      "design": "Cache syscall entry in a global BPF hash map and emit one completed record at exit",
+      "baseline_median_ns": 138.1866,
+      "traced_median_ns": 1482.5157,
+      "traced_p95_ns": 1491.5407,
+      "traced_added_median_ns": 1344.3291,
+      "capture_bytes": 22515984,
+      "bpf_dropped_events": 0,
+      "result": "rejected",
+      "reason": "Capture bytes fell by 50%, but hash-map insert/lookup/remove cost increased median syscall overhead by 316.7 ns versus the two-ring-record implementation."
+    }
+  ],
+  "assessment": {
+    "getpid_gate_lt_500ns": "fail",
+    "client_span_gate_lt_2us": "pass",
+    "loss_gate": "pass",
+    "notes": "Short post-IRQ-hook microbenchmark, not a publication-grade confidence interval. Results supersede the earlier active-capture point for the current eight-tracepoint collector."
+  }
+}

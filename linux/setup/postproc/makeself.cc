@@ -23,14 +23,50 @@
 static const char* const_text_1 = "<script>";
 static const char* const_text_2 = "</script>";
 
-static const char* const_text_3 = "var myString = '";
-static const char* const_text_4 = "';";
+static const char* const_text_3 = "var myString = new Uint8Array([";
+static const char* const_text_4 = "]);";
 
 //static const char* const_text_5 = "data = JSON.parse(myString); newdata2_resize(data);";
 // Now uses onload="initAll()"
 static const char* const_text_5 = "";
 static const char* const_text_6 = "";
 
+char* read_file(FILE* f, long& size) {
+    if (f == stdin) {
+        // For stdin, read chunks until EOF
+        const int chunk_size = 16384;  // 16KB chunks
+        char* buffer = nullptr;
+        size = 0;
+        long capacity = chunk_size;
+        buffer = new char[capacity];
+        
+        while (!feof(f)) {
+            if (size + chunk_size > capacity) {
+                capacity *= 2;
+                char* new_buffer = new char[capacity];
+                memcpy(new_buffer, buffer, size);
+                delete[] buffer;
+                buffer = new_buffer;
+            }
+            long bytes_read = fread(buffer + size, 1, chunk_size, f);
+            if (bytes_read > 0) {
+                size += bytes_read;
+            }
+        }
+        return buffer;
+    } else {
+        // For regular files, use fseek/ftell
+        fseek(f, 0, SEEK_END);
+        size = ftell(f);
+        fseek(f, 0, SEEK_SET);
+        char* buffer = new char[size];
+        size_t r = fread(buffer, 1, size, f);
+        if (r != size) {
+          printf("OUT\n");
+        }
+        return buffer;
+    }
+}
 
 void usage() {
   fprintf(stderr, "Usage: makeself <input html> <input json> <output html>\n");
@@ -58,7 +94,7 @@ int main (int argc, const char** argv) {
     // Pipe from stdin 
     finjson = stdin;
 
-    fouthtml = fopen(argv[2], "wb");
+    fouthtml = fopen(argv[2], "wb+");
     if (fouthtml == NULL) {fprintf(stderr, "%s did not open.\n", argv[2]);}
   } else {
     // Pipe from stdin and to stdout 
@@ -70,18 +106,17 @@ int main (int argc, const char** argv) {
     exit(0);
   }
 
-  char* inlib_buf =  new char[  1000000];
-  char* inhtml_buf = new char[  1000000];
-  char* injson_buf = new char[250000000];	// 250MB
+  long lib_len;
+  char* inlib_buf = read_file(finlib, lib_len);
+  if (finlib != stdin) fclose(finlib);
 
-  int lib_len = fread(inlib_buf, 1, 1000000, finlib);
-  fclose(finlib);
+  long html_len;
+  char* inhtml_buf = read_file(finhtml, html_len);
+  if (finhtml != stdin) fclose(finhtml);
 
-  int html_len = fread(inhtml_buf, 1, 1000000, finhtml);
-  fclose(finhtml);
-
-  int json_len = fread(injson_buf, 1, 250000000, finjson);
-  if (finjson != stdin) {fclose(finjson);}
+  long json_len;
+  char* injson_buf = read_file(finjson, json_len);
+  if (finjson != stdin) fclose(finjson);
 
   char* self0 = strstr(inhtml_buf, "<!-- selfcontained0 -->");
   char* self1 = strstr(inhtml_buf, "<!-- selfcontained1 -->");
@@ -127,39 +162,39 @@ int main (int argc, const char** argv) {
   //
   //  plus inhtml_buf after self2 (len4)
 
-  const char* prior_line = &injson_buf[0];
-  int linenum = 1;
-  bool check_sorted = true;
-  for (int i = 0; i < json_len; ++i) {
-    if (injson_buf[i] == '\n') {
-      ++linenum;
-      const char* next_line = &injson_buf[i + 1];
-      // Check for sorted
-      if (i < json_len - 5) {
-        if (check_sorted && (strncmp(prior_line, next_line, 4) > 0)) {
-          fprintf(stderr, "Input not sorted at line %d\n", linenum);
-          char temp[64];
-          strncpy(temp, next_line, 64);
-          temp[63] = '\0';
-          fprintf(stderr, "  '%s...'\n", temp);
-          exit(0);
-        }
-        // Stop checking sorted at first line that has "[999.0," in column 1
-        if (strncmp(next_line, "[999", 4) == 0) {check_sorted = false;}
-        // Stop checking sorted if line has " \"unsorted\"" in column 1
-        // Note leading space.
-        if ((i < json_len - 11) && (strncmp(next_line, " \"unsorted\"", 11) == 0)) {check_sorted = false;}
-        // Stop checking sorted if line has " \"presorted\"" in column 1
-        if ((i < json_len - 12) && (strncmp(next_line, " \"presorted\"", 12) == 0)) {check_sorted = false;}
-      }
+  // const char* prior_line = &injson_buf[0];
+  // int linenum = 1;
+  // bool check_sorted = true;
+  // for (int i = 0; i < json_len; ++i) {
+  //   if (injson_buf[i] == '\n') {
+  //     ++linenum;
+  //     const char* next_line = &injson_buf[i + 1];
+  //     // Check for sorted
+  //     if (i < json_len - 5) {
+  //       if (check_sorted && (strncmp(prior_line, next_line, 4) > 0)) {
+  //         fprintf(stderr, "Input not sorted at line %d\n", linenum);
+  //         char temp[64];
+  //         strncpy(temp, next_line, 64);
+  //         temp[63] = '\0';
+  //         fprintf(stderr, "  '%s...'\n", temp);
+  //         exit(0);
+  //       }
+  //       // Stop checking sorted at first line that has "[999.0," in column 1
+  //       if (strncmp(next_line, "[999", 4) == 0) {check_sorted = false;}
+  //       // Stop checking sorted if line has " \"unsorted\"" in column 1
+  //       // Note leading space.
+  //       if ((i < json_len - 11) && (strncmp(next_line, " \"unsorted\"", 11) == 0)) {check_sorted = false;}
+  //       // Stop checking sorted if line has " \"presorted\"" in column 1
+  //       if ((i < json_len - 12) && (strncmp(next_line, " \"presorted\"", 12) == 0)) {check_sorted = false;}
+  //     }
 
-      prior_line = next_line;
-      // Replace newline with space -- JSON string may not contain newline
-      injson_buf[i] = ' ';
-      // Replace backslash with two of them
-      // Replace quote with backslash quote
-    } 
-  }
+  //     prior_line = next_line;
+  //     // Replace newline with space -- JSON string may not contain newline
+  //     injson_buf[i] = ' ';
+  //     // Replace backslash with two of them
+  //     // Replace quote with backslash quote
+  //   } 
+  // }
 
   // Lengths of four inhtml pieces
   int len1 = self0_end - inhtml_buf;
@@ -175,7 +210,7 @@ int main (int argc, const char** argv) {
   fwrite(self0_cr2, 1, len2, fouthtml);
 
   fwrite(const_text_3, 1, strlen(const_text_3), fouthtml);
-  fwrite(injson_buf, 1, json_len, fouthtml);
+  int r = fwrite(injson_buf, 1, json_len, fouthtml);
   fwrite(const_text_4, 1, strlen(const_text_4), fouthtml);
 
   fwrite(self1_end, 1, len3, fouthtml);
@@ -183,6 +218,7 @@ int main (int argc, const char** argv) {
   fwrite(const_text_6, 1, strlen(const_text_6), fouthtml);
 
   fwrite(self2_end, 1, len4, fouthtml);
+  fflush(fouthtml);
   if (fouthtml != stdout) {fclose(fouthtml);}  
 
   free(inlib_buf);

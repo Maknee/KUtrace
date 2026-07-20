@@ -1,0 +1,104 @@
+{
+  "date_utc": "2026-07-20T03:20:04Z",
+  "host": {
+    "cpu": "AMD EPYC 9354P 32-Core Processor",
+    "logical_cpus": 64,
+    "kernel": "6.6.36",
+    "architecture": "x86_64"
+  },
+  "configuration": {
+    "default_sample_hz_per_cpu": 99,
+    "event_source": "PERF_COUNT_HW_CPU_CYCLES",
+    "fallback_source": "PERF_COUNT_SW_CPU_CLOCK",
+    "perf_links": 64,
+    "attached_program_count": 18,
+    "ring_bytes": 16777216,
+    "stable_event_bytes": 112,
+    "bpf_dropped_events": 0
+  },
+  "live_pipeline_validation": {
+    "workload": "openssl sha256",
+    "requested_sample_hz": 997,
+    "elapsed_seconds": 3.202752,
+    "samples": 3132,
+    "observed_sample_hz": 977.91,
+    "user_samples": 3129,
+    "kernel_samples": 3,
+    "unique_pc_labels": 220,
+    "legacy_json_user_spans": 3127,
+    "legacy_json_kernel_spans": 3,
+    "strict_v3_json": true,
+    "bpf_dropped_events": 0
+  },
+  "normal_rate_results": [
+    {
+      "mode": "getpid",
+      "samples_per_distribution": 50,
+      "iterations_per_sample": 10000,
+      "baseline": {
+        "min_ns": 138.4316,
+        "median_ns": 138.5356,
+        "p95_ns": 222.94,
+        "mean_ns": 150.760016
+      },
+      "loaded_filtered": {
+        "min_ns": 323.4184,
+        "median_ns": 326.8505,
+        "p95_ns": 351.2585,
+        "mean_ns": 331.922262
+      },
+      "traced": {
+        "min_ns": 1000.4373,
+        "median_ns": 1019.1594,
+        "p95_ns": 1037.3375,
+        "mean_ns": 1019.565956
+      },
+      "filter_added_median_ns": 188.3149,
+      "traced_added_median_ns": 880.6238,
+      "captured_pc_samples": 14,
+      "capture_bytes": 112232128
+    },
+    {
+      "mode": "client_span_shared_memory",
+      "samples_per_distribution": 20,
+      "iterations_per_sample": 10000,
+      "baseline_median_ns": 4.739,
+      "traced": {
+        "min_ns": 586.5726,
+        "median_ns": 633.3597,
+        "p95_ns": 736.8121,
+        "mean_ns": 645.561605
+      },
+      "traced_added_median_ns": 628.6207,
+      "client_events_received": 402002,
+      "client_events_dropped": 0,
+      "capture_bytes": 46441648
+    }
+  ],
+  "direct_sampling_cost": {
+    "workload": "dependency-chained integer recurrence",
+    "requested_sample_hz": 997,
+    "observed_sample_hz": 996.711,
+    "timed_operations": 2000000000,
+    "captured_samples_including_warmup": 2650,
+    "user_samples": 2647,
+    "kernel_samples": 3,
+    "baseline_median_ns_per_op": 1.31713673,
+    "loaded_filtered_median_ns_per_op": 1.31936464,
+    "captured_median_ns_per_op": 1.32298985,
+    "filtered_added_ns_per_op": 0.00222791,
+    "captured_added_ns_per_op": 0.00585312,
+    "estimated_filtered_callback_ns_per_sample": 1681.44,
+    "estimated_captured_ns_per_sample": 4417.45,
+    "estimated_ring_write_increment_ns_per_sample": 2736.01,
+    "projected_default_99hz_busy_cpu_percent": 0.04373,
+    "capture_bytes": 350400,
+    "bpf_dropped_events": 0
+  },
+  "assessment": {
+    "getpid_gate_lt_500ns": "fail",
+    "client_span_gate_lt_2us": "pass",
+    "loss_gate": "pass",
+    "notes": "Per-sample costs divide aggregate median overhead by observed samples and are estimates. Retired-instruction and IPC counters are not included."
+  }
+}
