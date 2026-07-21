@@ -37,7 +37,7 @@ struct Args {
     /// HTTP address for the local workspace.
     #[arg(long, default_value = "127.0.0.1:3000")]
     listen: SocketAddr,
-    /// Existing self-contained KUtrace HTML served unchanged at /legacy.
+    /// Existing self-contained KUtrace HTML served at /legacy.
     #[arg(long)]
     legacy_html: Option<PathBuf>,
     /// Persistent SQLite database. By default an adjacent .sqlite file is used.
@@ -650,15 +650,25 @@ async fn stylesheet() -> impl IntoResponse {
     )
 }
 
+async fn legacy_keyboard() -> impl IntoResponse {
+    (
+        [(header::CONTENT_TYPE, "text/javascript; charset=utf-8")],
+        include_str!("../assets/legacy-keyboard.js"),
+    )
+}
+
 async fn legacy(State(state): State<AppState>) -> Response {
     let Some(path) = state.legacy_html else {
         return (StatusCode::NOT_FOUND, "No --legacy-html was supplied").into_response();
     };
     match std::fs::read(path) {
-        Ok(bytes) => Response::builder()
-            .header(header::CONTENT_TYPE, "text/html; charset=utf-8")
-            .body(Body::from(bytes))
-            .unwrap(),
+        Ok(mut bytes) => {
+            bytes.extend_from_slice(b"\n<script src=\"/legacy-keyboard.js\"></script>\n");
+            Response::builder()
+                .header(header::CONTENT_TYPE, "text/html; charset=utf-8")
+                .body(Body::from(bytes))
+                .unwrap()
+        }
         Err(error) => (StatusCode::INTERNAL_SERVER_ERROR, error.to_string()).into_response(),
     }
 }
@@ -711,6 +721,7 @@ async fn main() -> Result<()> {
         .route("/app.js", get(javascript))
         .route("/style.css", get(stylesheet))
         .route("/legacy", get(legacy))
+        .route("/legacy-keyboard.js", get(legacy_keyboard))
         .route("/api/query", post(query))
         .route("/api/schema", get(schema))
         .with_state(state);

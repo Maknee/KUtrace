@@ -394,11 +394,13 @@ test('uses the mipmap at low zoom and exact events for non-materialized filters'
   expect(timelineQueries.at(-1)).toContain('pid = 100');
 });
 
-test('serves the untouched legacy viewer', async ({page}) => {
+test('serves the original legacy viewer with keyboard navigation', async ({page}) => {
   const source=await readFile('../../../hello_world_demo_live.html');
   const response=await page.request.get('/legacy');
   expect(response.status()).toBe(200);
-  expect(Buffer.compare(await response.body(),source)).toBe(0);
+  const served=await response.body();
+  expect(served.subarray(0,source.length).equals(source)).toBe(true);
+  expect(served.subarray(source.length).toString()).toContain('/legacy-keyboard.js');
   await page.goto('/legacy');
   await expect(page.getByRole('button', {name: 'Mark'})).toBeVisible();
   await expect(page.locator('body')).toContainText('hello world');
@@ -430,6 +432,14 @@ test('serves the untouched legacy viewer', async ({page}) => {
   await expect.poll(()=>invert.evaluate(button=>button.style.backgroundColor)).not.toBe(invertBefore);
 
   const initialRange=await page.evaluate(()=>[window.realxleft,window.realxright]);
+  await page.locator('body').evaluate(body=>{body.tabIndex=-1;body.focus()});
+  await page.keyboard.press('KeyW');
+  await expect.poll(async()=>page.evaluate(()=>window.realxright-window.realxleft)).toBeLessThan(initialRange[1]-initialRange[0]);
+  const keyboardZoomedLeft=await page.evaluate(()=>window.realxleft);
+  await page.keyboard.press('KeyD');
+  await expect.poll(async()=>page.evaluate(()=>window.realxleft)).toBeGreaterThan(keyboardZoomedLeft);
+  await page.keyboard.press('Digit0');
+  await expect.poll(async()=>page.evaluate(()=>[window.realxleft,window.realxright])).toEqual(initialRange);
   const zoomSurface=await page.locator('#panzoomrect_x').boundingBox();
   expect(zoomSurface).not.toBeNull();
   await page.mouse.move(zoomSurface.x+zoomSurface.width/2,zoomSurface.y+zoomSurface.height/2);
