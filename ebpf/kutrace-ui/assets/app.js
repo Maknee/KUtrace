@@ -4,7 +4,7 @@ const state={
   mipmapCoarseWidth:0,mipmapMaxBins:0,selectedAgent:null,selectedAgentName:'',
   selectedAgentSql:'',refreshController:null,overviewController:null,overviewKey:'',
   overviewRows:[],hitRegions:[],search:'',searchInvert:false,followTail:false,
-  eventCount:0,activeDock:'details',activeView:'timeline',
+  eventCount:0,activeDock:'details',activeView:'timeline',timelineRenderer:'kutrace',
   overlays:{marks:true,arcs:true,locks:true,frequency:true,ipc:true,samples:true,colorblind:false},
   groups:{cpu:true,process:true,kernel:true,agent:true}
 };
@@ -76,7 +76,7 @@ function renderSavedViews(){
   document.querySelectorAll('[data-load-view]').forEach(button=>button.onclick=()=>{const view=state.views[+button.dataset.loadView];$('sql').value=view.sql;$('view-name').value=view.name;activateDock('sql');runSql()});
   document.querySelectorAll('[data-delete-view]').forEach(button=>button.onclick=()=>{state.views.splice(+button.dataset.deleteView,1);renderSavedViews()});
 }
-function workspaceState(){return {kind:'kutrace-workspace',version:2,filters:state.filters,sql:$('sql').value,range:state.range,views:state.views,trackMode:state.trackMode,overlays:state.overlays}}
+function workspaceState(){return {kind:'kutrace-workspace',version:2,filters:state.filters,sql:$('sql').value,range:state.range,views:state.views,trackMode:state.trackMode,timelineRenderer:state.timelineRenderer,overlays:state.overlays}}
 function validWorkspace(value){
   const fields=new Set(['category','cpu','pid','event','rpc','name']),ops=new Set(['=','!=','contains','>=','<=']);
   if(!value||typeof value!=='object'||(value.kind&&value.kind!=='kutrace-workspace')||(value.version&&![1,2].includes(value.version)))throw new Error('Unsupported workspace file');
@@ -86,14 +86,14 @@ function validWorkspace(value){
   if(views.reduce((size,view)=>size+view.name.length+view.sql.length,0)>250000)throw new Error('Saved SQL views are too large');
   if(value.sql!==undefined&&(typeof value.sql!=='string'||value.sql.length>100000))throw new Error('Invalid workspace SQL');
   if(value.range!==undefined&&(!Array.isArray(value.range)||value.range.length!==2||value.range.some(v=>!Number.isFinite(v))))throw new Error('Invalid workspace range');
-  const trackMode=value.trackMode==='pid'?'pid':'cpu',overlays=value.overlays&&typeof value.overlays==='object'?value.overlays:{};
-  return {filters,views:views.map(view=>({name:view.name.trim(),sql:view.sql})),sql:value.sql,range:value.range,trackMode,overlays};
+  const trackMode=value.trackMode==='pid'?'pid':'cpu',timelineRenderer=value.timelineRenderer==='lanes'?'lanes':'kutrace',overlays=value.overlays&&typeof value.overlays==='object'?value.overlays:{};
+  return {filters,views:views.map(view=>({name:view.name.trim(),sql:view.sql})),sql:value.sql,range:value.range,trackMode,timelineRenderer,overlays};
 }
 function applyWorkspace(value){
   const workspace=validWorkspace(value);state.filters=workspace.filters;state.views=workspace.views;state.trackMode=workspace.trackMode;Object.assign(state.overlays,workspace.overlays);
   if(workspace.sql!==undefined)$('sql').value=workspace.sql;
   if(workspace.range&&state.full){const a=Math.max(state.full[0],workspace.range[0]),b=Math.min(state.full[1],workspace.range[1]);state.range=a<b?[a,b]:[...state.full]}
-  $('track-mode').value=state.trackMode;syncToggleUi();renderChips();renderSavedViews();
+  $('track-mode').value=state.trackMode;activateTimelineRenderer(workspace.timelineRenderer);syncToggleUi();renderChips();renderSavedViews();
 }
 async function loadMetadata(){
   const meta=await query("SELECT key,value FROM metadata WHERE key IN ('title','tracebase','flags','timeline_mipmap_width','timeline_mipmap_coarse_width','timeline_mipmap_max_bins')",10),values=Object.fromEntries(meta.rows);
@@ -306,13 +306,17 @@ async function refresh(){
 }
 let sqlController=null;
 async function runSql(sql=$('sql').value){if(sqlController)sqlController.abort();const controller=new AbortController();sqlController=controller;$('query-status').textContent='Running…';try{const result=await query(sql,1000,controller.signal);if(sqlController!==controller)return;renderTable($('query-table'),result);$('query-status').textContent=`${result.rows.length}${result.truncated?' (truncated)':''} rows · ${result.elapsed_ms.toFixed(2)} ms · exact SQL shown above`}catch(error){if(error.name!=='AbortError'&&sqlController===controller)showError(error)}}
-function activateDock(name){state.activeDock=name;document.querySelectorAll('.dock-tab').forEach(tab=>{const active=tab.dataset.dock===name;tab.classList.toggle('active',active);tab.setAttribute('aria-selected',String(active))});document.querySelectorAll('[data-dock-panel]').forEach(panel=>panel.classList.toggle('active',panel.dataset.dockPanel===name));document.querySelector('.analysis-dock').classList.remove('collapsed');$('toggle-dock').textContent='⌄'}
-function activateView(name){state.activeView=name;document.querySelectorAll('.view-tab').forEach(tab=>{const active=tab.dataset.view===name;tab.classList.toggle('active',active);tab.setAttribute('aria-selected',String(active))});document.querySelectorAll('.view-pane').forEach(pane=>{const active=pane.id===`${name}-view`;pane.classList.toggle('active',active);pane.hidden=!active});if(name==='legacy'&&!$('legacy-frame').hasAttribute('src'))$('legacy-frame').src=$('legacy-frame').dataset.src;if(name==='timeline')refresh()}
+function activateDock(name){state.activeDock=name;document.querySelectorAll('.dock-tab').forEach(tab=>{const active=tab.dataset.dock===name;tab.classList.toggle('active',active);tab.setAttribute('aria-selected',String(active))});document.querySelectorAll('[data-dock-panel]').forEach(panel=>panel.classList.toggle('active',panel.dataset.dockPanel===name));document.querySelector('.analysis-dock').classList.remove('collapsed');$('timeline-view').classList.add('dock-open');$('toggle-dock').textContent='⌄';$('toggle-dock').setAttribute('aria-expanded','true')}
+function syncWorkspaceChrome(){document.body.classList.toggle('kutrace-primary',state.activeView==='legacy'||state.timelineRenderer==='kutrace')}
+function activateTimelineRenderer(name){
+  state.timelineRenderer=name==='lanes'?'lanes':'kutrace';document.querySelectorAll('.renderer-tab').forEach(tab=>{const active=tab.dataset.renderer===state.timelineRenderer;tab.classList.toggle('active',active);tab.setAttribute('aria-selected',String(active))});document.querySelectorAll('.timeline-renderer').forEach(renderer=>{const active=renderer.id===`${state.timelineRenderer}-renderer`;renderer.classList.toggle('active',active);renderer.hidden=!active});$('renderer-label').textContent=state.timelineRenderer==='kutrace'?'Original KUtrace renderer':'Experimental event lanes';if(state.timelineRenderer==='kutrace'&&!$('timeline-legacy-frame').hasAttribute('src'))$('timeline-legacy-frame').src=$('timeline-legacy-frame').dataset.src;syncWorkspaceChrome();if(state.timelineRenderer==='lanes'&&state.full){$('timeline').dataset.ready='false';refresh()}
+}
+function activateView(name){state.activeView=name;document.querySelectorAll('.view-tab').forEach(tab=>{const active=tab.dataset.view===name;tab.classList.toggle('active',active);tab.setAttribute('aria-selected',String(active))});document.querySelectorAll('.view-pane').forEach(pane=>{const active=pane.id===`${name}-view`;pane.classList.toggle('active',active);pane.hidden=!active});if(name==='legacy'&&!$('legacy-frame').hasAttribute('src'))$('legacy-frame').src=$('legacy-frame').dataset.src;syncWorkspaceChrome();if(name==='timeline'&&state.timelineRenderer==='lanes')refresh()}
 function applyLegacyRange(legacy,left,width){
   if(!legacy.x||!legacy.d3||!legacy.state2||typeof legacy.do_zoomed_x2!=='function')return false;const [pixelStart,pixelEnd]=legacy.x.range(),[timeStart,timeEnd]=legacy.x.domain(),fullWidth=timeEnd-timeStart,multiplier=(pixelEnd-pixelStart)/fullWidth,scale=fullWidth/width,offset=-(left-timeStart)*scale*multiplier-pixelStart*(scale-1),transform=legacy.d3.zoomIdentity.translate(offset,legacy.state2.savedtransformX.y).scale(scale);legacy.state2.savedtransformX=transform;if(legacy.state)legacy.state.just_reset=false;const surface=legacy.panzoomrect_x&&legacy.panzoomrect_x.node();if(surface)surface.__zoom=transform;legacy.do_zoomed_x2(transform,[(pixelStart+pixelEnd)/2,0]);return true;
 }
 function navigateLegacy(action){
-  const frame=$('legacy-frame'),legacy=frame.contentWindow;if(!legacy||typeof legacy.do_zoomed_x2!=='function')return false;
+  const frame=state.activeView==='timeline'&&state.timelineRenderer==='kutrace'?$('timeline-legacy-frame'):$('legacy-frame'),legacy=frame.contentWindow;if(!legacy||typeof legacy.do_zoomed_x2!=='function')return false;
   const fullStart=Number(legacy.dataTsLo),fullEnd=Number(legacy.dataTsHi),currentStart=Number(legacy.realxleft),currentEnd=Number(legacy.realxright);if(![fullStart,fullEnd,currentStart,currentEnd].every(Number.isFinite)||fullEnd<=fullStart)return false;
   const fullSpan=fullEnd-fullStart,currentSpan=Math.max(Number.EPSILON,currentEnd-currentStart);let width=currentSpan,left=currentStart;
   if(action==='reset-range'){left=fullStart;width=fullSpan}
@@ -324,12 +328,12 @@ function navigateLegacy(action){
   if(width>=fullSpan){left=fullStart;width=fullSpan}else left=Math.max(fullStart,Math.min(fullEnd-width,left));return applyLegacyRange(legacy,left,width);
 }
 function runNavigation(action){
-  if(state.activeView==='legacy')return navigateLegacy(action);
+  if(state.activeView==='legacy'||state.timelineRenderer==='kutrace')return navigateLegacy(action);
   if(action==='reset-range')return setRange(...state.full);if(action==='zoom-in')return zoomRange(.5);if(action==='zoom-out')return zoomRange(2);if(action==='pan-left')return panRange(-.25);if(action==='pan-right')return panRange(.25);return false;
 }
 const navigationKeys={w:'zoom-in',s:'zoom-out',a:'pan-left',d:'pan-right','+':'zoom-in','=':'zoom-in','-':'zoom-out','0':'reset-range',Home:'reset-range',ArrowLeft:'pan-left','[':'pan-left',ArrowRight:'pan-right',']':'pan-right'};
 function handleNavigationKey(event){const target=event.target;if((target&&typeof target.matches==='function'&&target.matches('input,textarea,select,[contenteditable=true]'))||event.ctrlKey||event.metaKey||event.altKey)return;const key=event.key.length===1?event.key.toLowerCase():event.key,action=navigationKeys[key];if(action){event.preventDefault();runNavigation(action)}}
-function installLegacyNavigation(){const frame=$('legacy-frame');frame.addEventListener('load',()=>{try{const legacy=frame.contentWindow;if(!legacy||legacy.__kutraceKeyboardNavigation)return;legacy.__kutraceKeyboardNavigation=true;legacy.addEventListener('keydown',handleNavigationKey)}catch(error){showError(error)}})}
+function installLegacyNavigation(frameId){const frame=$(frameId);frame.addEventListener('load',()=>{try{const legacy=frame.contentWindow;if(!legacy||legacy.__kutraceKeyboardNavigation)return;legacy.__kutraceKeyboardNavigation=true;legacy.addEventListener('keydown',handleNavigationKey)}catch(error){showError(error)}})}
 function syncToggleUi(){
   document.documentElement.classList.toggle('colorblind',state.overlays.colorblind);document.body.classList.toggle('colorblind',state.overlays.colorblind);document.querySelectorAll('[data-overlay]').forEach(button=>button.setAttribute('aria-pressed',String(state.overlays[button.dataset.overlay])));document.querySelectorAll('[data-track-group]').forEach(button=>button.classList.toggle('active',state.groups[button.dataset.trackGroup]));updatePerformanceLegend();
 }
@@ -346,8 +350,8 @@ $('previous-cpus').onclick=()=>{if(state.cpuPage>0){state.cpuPage--;refresh()}};
 $('track-mode').onchange=event=>{state.trackMode=event.target.value;state.cpuPage=0;state.overviewKey='';refresh()};
 document.querySelectorAll('[data-overlay]').forEach(button=>button.onclick=()=>{const key=button.dataset.overlay;state.overlays[key]=!state.overlays[key];state.overviewKey='';syncToggleUi();refresh()});
 document.querySelectorAll('[data-track-group]').forEach(button=>button.onclick=()=>{const key=button.dataset.trackGroup;state.groups[key]=!state.groups[key];button.textContent=(state.groups[key]?'▾':'▸')+button.textContent.slice(1);state.overviewKey='';syncToggleUi();refresh()});
-document.querySelectorAll('.view-tab').forEach(button=>button.onclick=()=>activateView(button.dataset.view));document.querySelectorAll('.dock-tab').forEach(button=>button.onclick=()=>activateDock(button.dataset.dock));
-$('toggle-dock').onclick=()=>{const dock=document.querySelector('.analysis-dock'),collapsed=dock.classList.toggle('collapsed');$('toggle-dock').textContent=collapsed?'⌃':'⌄';$('toggle-dock').setAttribute('aria-expanded',String(!collapsed))};
+document.querySelectorAll('.view-tab').forEach(button=>button.onclick=()=>activateView(button.dataset.view));document.querySelectorAll('.renderer-tab').forEach(button=>button.onclick=()=>activateTimelineRenderer(button.dataset.renderer));document.querySelectorAll('.dock-tab').forEach(button=>button.onclick=()=>activateDock(button.dataset.dock));
+$('toggle-dock').onclick=()=>{const dock=document.querySelector('.analysis-dock'),collapsed=dock.classList.toggle('collapsed');$('timeline-view').classList.toggle('dock-open',!collapsed);$('toggle-dock').textContent=collapsed?'⌃':'⌄';$('toggle-dock').setAttribute('aria-expanded',String(!collapsed))};
 let searchTimer=null;$('trace-search').oninput=event=>{state.search=event.target.value.trim();clearTimeout(searchTimer);searchTimer=setTimeout(()=>refresh(),120)};$('search-invert').onclick=()=>{state.searchInvert=!state.searchInvert;$('search-invert').setAttribute('aria-pressed',String(state.searchInvert));refresh()};
 $('flame-weight').onchange=()=>loadFlamegraph().catch(showError);$('follow-live').onclick=()=>{state.followTail=!state.followTail;$('follow-live').setAttribute('aria-pressed',String(state.followTail));$('live-status').textContent=`${state.eventCount} events · ${state.followTail?'following':'static'}`;if(state.followTail){const span=state.range[1]-state.range[0];setRange(state.full[1]-span,state.full[1])}};
 $('save-workspace').onclick=()=>{localStorage.setItem('kutrace-workspace',JSON.stringify(workspaceState()));$('query-status').textContent='Workspace saved locally'};
@@ -355,4 +359,4 @@ $('export-workspace').onclick=()=>{const url=URL.createObjectURL(new Blob([JSON.
 $('workspace-file').onchange=async event=>{try{const file=event.target.files[0];if(!file)return;applyWorkspace(JSON.parse(await file.text()));localStorage.setItem('kutrace-workspace',JSON.stringify(workspaceState()));state.overviewKey='';await refresh();await runSql();$('query-status').textContent='Workspace imported'}catch(error){showError(error)}finally{event.target.value=''}};
 window.addEventListener('keydown',handleNavigationKey);
 let resizeTimer=null;window.addEventListener('resize',()=>{clearTimeout(resizeTimer);resizeTimer=setTimeout(()=>refresh(),100)});
-(async()=>{installLegacyNavigation();await loadMetadata();const saved=JSON.parse(localStorage.getItem('kutrace-workspace')||'null');if(saved)applyWorkspace(saved);else{renderChips();renderSavedViews();syncToggleUi()}installOverviewNavigation();renderSelectionSummary();await refresh();await runSql();setInterval(pollExtent,1500)})().catch(showError);
+(async()=>{installLegacyNavigation('timeline-legacy-frame');installLegacyNavigation('legacy-frame');await loadMetadata();const saved=JSON.parse(localStorage.getItem('kutrace-workspace')||'null');if(saved)applyWorkspace(saved);else{activateTimelineRenderer('kutrace');renderChips();renderSavedViews();syncToggleUi()}installOverviewNavigation();renderSelectionSummary();await refresh();await runSql();setInterval(pollExtent,1500)})().catch(showError);

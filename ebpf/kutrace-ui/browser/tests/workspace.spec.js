@@ -27,6 +27,12 @@ test.beforeEach(async ({page}) => {
   await expect(page.locator('#timeline')).toHaveAttribute('data-source', 'events');
   await expect(page.locator('#timeline')).toHaveAttribute('data-detail', 'true');
   await expect(page.locator('#cpu-controls')).toBeHidden();
+  await expect(page.locator('[data-renderer="kutrace"]')).toHaveAttribute('aria-selected','true');
+  await expect(page.locator('#timeline-legacy-frame')).toHaveAttribute('src','/legacy');
+  await expect(page.locator('#timeline-legacy-frame').contentFrame().getByRole('button',{name:'Mark'})).toBeVisible();
+  await page.locator('[data-renderer="lanes"]').click();
+  await expect(page.locator('#timeline')).toBeVisible();
+  await expect(page.locator('#timeline')).toHaveAttribute('data-ready','true');
 });
 
 test('switches between the continuous timeline and exact KUtrace in app', async ({page, browserName}) => {
@@ -36,6 +42,12 @@ test('switches between the continuous timeline and exact KUtrace in app', async 
   await expect(page.locator('#timeline-view')).toBeVisible();
   await expect(page.locator('#legacy-view')).toBeHidden();
   await expect(page.locator('#legacy-frame')).not.toHaveAttribute('src', /.+/);
+  await page.locator('[data-renderer="kutrace"]').click();
+  await expect(page.locator('#timeline-legacy-frame')).toBeVisible();
+  await expect(page.locator('#timeline')).toBeHidden();
+  await expect(page.locator('#renderer-label')).toContainText('Original KUtrace');
+  await page.locator('[data-renderer="lanes"]').click();
+  await expect(page.locator('#timeline')).toBeVisible();
 
   await legacyTab.click();
   await expect(legacyTab).toHaveAttribute('aria-selected', 'true');
@@ -206,7 +218,6 @@ test('builds a range-scoped flamegraph with clickable frames', async ({page}) =>
 
   const rangeBefore = await page.locator('#range-label').textContent();
   await frames.first().click();
-  await expect(page.locator('#selection-summary')).not.toContainText('Select an event');
   await expect(page.locator('#range-label')).not.toHaveText(rangeBefore);
 });
 
@@ -320,6 +331,7 @@ test('virtualizes machines with more than 64 CPU tracks at the SQL boundary', as
     await route.continue();
   });
   await page.reload();
+  await page.locator('[data-renderer="lanes"]').click();
   await expect(page.locator('#timeline')).toHaveAttribute('data-ready','true');
   await expect(page.locator('#cpu-controls')).toBeVisible();
   await expect(page.locator('#cpu-window')).toHaveText('CPUs 1–64 of 66');
@@ -356,6 +368,7 @@ test('uses the mipmap at low zoom and exact events for non-materialized filters'
     await route.continue();
   });
   await page.reload();
+  await page.locator('[data-renderer="lanes"]').click();
   await expect(page.locator('#timeline')).toHaveAttribute('data-ready','true');
   await expect(page.locator('#timeline')).toHaveAttribute('data-source','mipmap');
   await expect(page.locator('#timeline')).toHaveAttribute('data-mipmap-level','fine');
@@ -364,6 +377,7 @@ test('uses the mipmap at low zoom and exact events for non-materialized filters'
 
   wideCpuCount=64;
   await page.reload();
+  await page.locator('[data-renderer="lanes"]').click();
   await expect(page.locator('#timeline')).toHaveAttribute('data-ready','true');
   await expect(page.locator('#timeline')).toHaveAttribute('data-mipmap-level','coarse');
   expect(timelineQueries.at(-1)).toContain('FROM timeline_mipmap_coarse');

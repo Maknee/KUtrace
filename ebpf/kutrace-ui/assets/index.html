@@ -87,29 +87,35 @@
       <section id="timeline-view" class="view-pane active">
         <section class="timeline-card">
           <div class="section-head timeline-title">
-            <div><h2>Continuous system timeline</h2><span id="timeline-mode" class="mode-badge">Exact events</span><span id="range-label"></span></div>
-            <div class="timeline-actions"><button id="zoom-selection" disabled>Zoom selection</button><button id="clear-selection" disabled>Clear selection</button><span class="shortcut-help">drag select · Shift+drag pan · Ctrl+wheel zoom · WASD navigate</span></div>
+            <div><h2>System timeline</h2><span id="renderer-label" class="mode-badge">Original KUtrace renderer</span></div>
+            <div class="renderer-tabs" role="tablist" aria-label="Timeline renderer"><button class="renderer-tab active" data-renderer="kutrace" role="tab" aria-selected="true">KUtrace</button><button class="renderer-tab" data-renderer="lanes" role="tab" aria-selected="false">Experimental lanes</button></div>
           </div>
-          <div class="overview-shell" aria-label="Full trace overview">
-            <canvas id="overview" height="72"></canvas><div id="overview-viewport"></div>
+          <div id="kutrace-renderer" class="timeline-renderer active">
+            <iframe id="timeline-legacy-frame" title="Original KUtrace timeline" data-src="/legacy"></iframe>
           </div>
-          <div class="time-ruler"><span id="ruler-start"></span><span id="ruler-center"></span><span id="ruler-end"></span></div>
-          <div class="timeline-scroll">
-            <div class="timeline-shell">
-              <canvas id="timeline" height="420" tabindex="0" aria-label="Trace timeline; drag to select, Shift plus drag to pan, Ctrl plus wheel to zoom"></canvas>
-              <div id="time-selection" aria-hidden="true"></div>
-              <div id="timeline-tooltip" role="tooltip" hidden></div>
+          <div id="lanes-renderer" class="timeline-renderer modern-renderer" hidden>
+            <div class="modern-renderer-head"><span id="timeline-mode" class="mode-badge">Exact events</span><span id="range-label"></span><div class="timeline-actions"><button id="zoom-selection" disabled>Zoom selection</button><button id="clear-selection" disabled>Clear selection</button><span class="shortcut-help">drag select · Shift+drag pan · Ctrl+wheel zoom · WASD navigate</span></div></div>
+            <div class="overview-shell" aria-label="Full trace overview">
+              <canvas id="overview" height="72"></canvas><div id="overview-viewport"></div>
             </div>
+            <div class="time-ruler"><span id="ruler-start"></span><span id="ruler-center"></span><span id="ruler-end"></span></div>
+            <div class="timeline-scroll">
+              <div class="timeline-shell">
+                <canvas id="timeline" height="420" tabindex="0" aria-label="Trace timeline; drag to select, Shift plus drag to pan, Ctrl plus wheel to zoom"></canvas>
+                <div id="time-selection" aria-hidden="true"></div>
+                <div id="timeline-tooltip" role="tooltip" hidden></div>
+              </div>
+            </div>
+            <div class="legend"><i class="agent"></i>agent <i class="syscall"></i>syscall <i class="kernel"></i>kernel <i class="user"></i>user <i class="scheduler"></i>scheduler <i class="special"></i>other <span id="perf-legend"></span></div>
           </div>
-          <div class="legend"><i class="agent"></i>agent <i class="syscall"></i>syscall <i class="kernel"></i>kernel <i class="user"></i>user <i class="scheduler"></i>scheduler <i class="special"></i>other <span id="perf-legend"></span></div>
         </section>
-        <section class="analysis-dock">
+        <section class="analysis-dock collapsed">
           <div class="dock-tabs" role="tablist" aria-label="Trace analysis">
             <button class="dock-tab active" data-dock="details" role="tab">Details</button>
             <button class="dock-tab" data-dock="flamegraph" role="tab">Flamegraph</button>
             <button class="dock-tab" data-dock="sql" role="tab">SQL</button>
             <button class="dock-tab" data-dock="agent" role="tab">Agent reasoning</button>
-            <button id="toggle-dock" class="dock-toggle" title="Collapse analysis drawer">⌄</button>
+            <button id="toggle-dock" class="dock-toggle" title="Expand analysis drawer" aria-expanded="false">⌃</button>
           </div>
           <div class="dock-body">
             <section class="dock-panel active" data-dock-panel="details">
