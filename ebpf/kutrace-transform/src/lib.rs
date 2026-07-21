@@ -6,6 +6,13 @@ use std::{
 };
 
 use anyhow::{Context, Result, bail};
+use blazesym::{
+    MaybeDefault,
+    symbolize::{
+        Input, Symbolized, Symbolizer,
+        source::{Elf, Kernel, Source},
+    },
+};
 use bytemuck::{bytes_of, from_bytes};
 use chrono::{DateTime, Utc};
 use kutrace_common::{
@@ -129,8 +136,18 @@ struct PcSymbolRecord {
     offset: u64,
 }
 
-/// Symbol names captured live alongside sampled PCs. The binary capture stays
-/// self-contained and valid without this optional enrichment.
+#[derive(Clone, Debug, Deserialize)]
+struct PcMappingRecord {
+    version: u8,
+    tgid: u32,
+    start: u64,
+    end: u64,
+    file_offset: u64,
+    path: String,
+}
+
+/// Optional symbol names for sampled PCs. The binary capture remains valid
+/// without this post-processing enrichment.
 #[derive(Clone, Debug, Default)]
 pub struct PcSymbols {
     names: HashMap<PcSymbolKey, String>,
@@ -172,6 +189,71 @@ impl PcSymbols {
         Ok(Self { names })
     }
 
+    /// Resolve raw sampled PCs after capture using executable mapping metadata
+    /// and an optional snapshot of the capture kernel's kallsyms.
+    pub fn symbolize(
+        capture: &Capture,
+        mappings_path: Option<&Path>,
+        kallsyms_path: Option<&Path>,
+    ) -> Result<Self> {
+        let mappings = match mappings_path {
+            Some(path) => load_mappings(path)?,
+            None => HashMap::new(),
+        };
+        let symbolizer = Symbolizer::builder()
+            .enable_code_info(false)
+            .enable_inlined_fns(false)
+            .enable_demangling(true)
+            .build();
+        let mut names = HashMap::new();
+        let mut seen = std::collections::HashSet::new();
+        let kernel_source = kallsyms_path.map(|path| {
+            let kernel = Kernel {
+                kallsyms: MaybeDefault::Some(path.to_path_buf()),
+                vmlinux: MaybeDefault::None,
+                ..Kernel::default()
+            };
+            Source::Kernel(kernel)
+        });
+
+        for event in &capture.events {
+            if event.kind != EVENT_PC_SAMPLE {
+                continue;
+            }
+            let user = event.flags & EVENT_FLAG_USER != 0;
+            let key = PcSymbolKey {
+                tgid: if user { event.tgid() } else { 0 },
+                ip: event.args[0],
+                user,
+            };
+            if !seen.insert(key) {
+                continue;
+            }
+            let result = if user {
+                symbolize_user_pc(&symbolizer, &mappings, key)
+            } else {
+                kernel_source.as_ref().and_then(|source| {
+                    symbolizer
+                        .symbolize_single(source, Input::AbsAddr(key.ip))
+                        .ok()
+                        .and_then(display_symbol)
+                })
+            };
+            if let Some(symbol) = result {
+                names.insert(key, symbol);
+            }
+        }
+        Ok(Self { names })
+    }
+
+    pub fn len(&self) -> usize {
+        self.names.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.names.is_empty()
+    }
+
     fn get(&self, event: &Event) -> Option<&str> {
         let user = event.flags & EVENT_FLAG_USER != 0;
         let key = PcSymbolKey {
@@ -180,6 +262,68 @@ impl PcSymbols {
             user,
         };
         self.names.get(&key).map(String::as_str)
+    }
+}
+
+fn load_mappings(path: &Path) -> Result<HashMap<u32, Vec<PcMappingRecord>>> {
+    let contents = std::fs::read_to_string(path)
+        .with_context(|| format!("read mapping sidecar {}", path.display()))?;
+    let mut mappings: HashMap<u32, Vec<PcMappingRecord>> = HashMap::new();
+    for (index, line) in contents.lines().enumerate() {
+        if line.trim().is_empty() {
+            continue;
+        }
+        let mut mapping: PcMappingRecord = serde_json::from_str(line).with_context(|| {
+            format!(
+                "parse mapping sidecar {} line {}",
+                path.display(),
+                index + 1
+            )
+        })?;
+        if mapping.version != 1 {
+            bail!(
+                "unsupported mapping sidecar version {} on line {}",
+                mapping.version,
+                index + 1
+            );
+        }
+        mapping.path = decode_proc_path(&mapping.path);
+        mappings.entry(mapping.tgid).or_default().push(mapping);
+    }
+    Ok(mappings)
+}
+
+fn decode_proc_path(path: &str) -> String {
+    path.replace("\\040", " ")
+        .replace("\\011", "\t")
+        .replace("\\012", "\n")
+        .replace("\\134", "\\")
+}
+
+fn symbolize_user_pc(
+    symbolizer: &Symbolizer,
+    mappings: &HashMap<u32, Vec<PcMappingRecord>>,
+    key: PcSymbolKey,
+) -> Option<String> {
+    let mapping = mappings
+        .get(&key.tgid)?
+        .iter()
+        .find(|mapping| mapping.start <= key.ip && key.ip < mapping.end)?;
+    if mapping.path.ends_with(" (deleted)") {
+        return None;
+    }
+    let file_offset = mapping.file_offset.checked_add(key.ip - mapping.start)?;
+    let source = Source::Elf(Elf::new(&mapping.path));
+    symbolizer
+        .symbolize_single(&source, Input::FileOffset(file_offset))
+        .ok()
+        .and_then(display_symbol)
+}
+
+fn display_symbol(symbol: Symbolized<'_>) -> Option<String> {
+    match symbol {
+        Symbolized::Sym(symbol) => Some(format!("{}+0x{:x}", symbol.name, symbol.offset)),
+        Symbolized::Unknown(_) => None,
     }
 }
 
@@ -1187,6 +1331,67 @@ mod tests {
 
         assert!(output.contains("hello::run+0x7 (280)"));
         assert!(output.contains("schedule+0x2a (281)"));
+        assert!(!output.contains("PC="));
+    }
+
+    #[inline(never)]
+    fn offline_symbol_fixture() {
+        std::hint::black_box(());
+    }
+
+    #[test]
+    fn symbolizes_user_pc_from_captured_mapping_afterward() {
+        let ip = offline_symbol_fixture as *const () as usize as u64;
+        let maps = std::fs::read_to_string("/proc/self/maps").unwrap();
+        let (start, end, file_offset, path) = maps
+            .lines()
+            .find_map(|line| {
+                let mut fields = line.split_whitespace();
+                let range = fields.next()?;
+                let permissions = fields.next()?;
+                let offset = u64::from_str_radix(fields.next()?, 16).ok()?;
+                fields.next()?;
+                fields.next()?;
+                let path = fields.collect::<Vec<_>>().join(" ");
+                let (start, end) = range.split_once('-')?;
+                let start = u64::from_str_radix(start, 16).ok()?;
+                let end = u64::from_str_radix(end, 16).ok()?;
+                (permissions.contains('x') && start <= ip && ip < end && path.starts_with('/'))
+                    .then_some((start, end, offset, path))
+            })
+            .expect("test function must have a file-backed executable mapping");
+        let directory = tempfile::tempdir().unwrap();
+        let mappings_path = directory.path().join("capture.maps.jsonl");
+        std::fs::write(
+            &mappings_path,
+            format!(
+                "{}\n",
+                serde_json::json!({
+                    "version": 1,
+                    "tgid": std::process::id(),
+                    "start": start,
+                    "end": end,
+                    "file_offset": file_offset,
+                    "path": path,
+                })
+            ),
+        )
+        .unwrap();
+        let mut sample = event(EVENT_PC_SAMPLE, -1, 1_100);
+        sample.flags = EVENT_FLAG_USER;
+        sample.pid_tgid = u64::from(std::process::id()) << 32 | u64::from(std::process::id());
+        sample.args[0] = ip;
+        let capture = Capture {
+            header: FileHeader::new(1_000, 1_700_000_001_000_000_000, ARCH_X86_64),
+            events: vec![sample],
+        };
+
+        let symbols = PcSymbols::symbolize(&capture, Some(&mappings_path), None).unwrap();
+        let mut output = Vec::new();
+        to_legacy_events_with_symbols(&capture, &SyscallNames::default(), &symbols, &mut output)
+            .unwrap();
+        let output = String::from_utf8(output).unwrap();
+        assert!(output.contains("offline_symbol_fixture+0x0"), "{output}");
         assert!(!output.contains("PC="));
     }
 

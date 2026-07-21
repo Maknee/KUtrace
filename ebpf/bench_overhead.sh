@@ -9,7 +9,7 @@ iterations=${KUTRACE_BENCH_ITERATIONS:-10000}
 samples=${KUTRACE_BENCH_SAMPLES:-20}
 modes=${KUTRACE_BENCH_MODES:-"getpid client-span trap"}
 capture_scope=${KUTRACE_BENCH_SCOPE:-pid}
-sample_hz=${KUTRACE_SAMPLE_HZ:-99}
+sample_hz=${KUTRACE_SAMPLE_HZ:-0}
 collector_duration_secs=${KUTRACE_COLLECTOR_DURATION_SECS:-3}
 benchmark_cpu=${KUTRACE_BENCH_CPU:-$(python3 - <<'PY'
 import os

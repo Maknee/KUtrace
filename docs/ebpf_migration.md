@@ -219,9 +219,9 @@ measured 633.4 ns total / 736.8 ns p95 with zero loss. A separate CPU-only run
 at 997 Hz observed 996.7 samples/s and added 0.44% to a busy CPU. Dividing
 aggregate overhead by 2,650 observed samples estimates 1.68 us per filtered
 callback and 4.42 us per captured sample, including a 2.74 us ring-write
-increment. Projected at the default 99 Hz, captured sampling consumes about
-0.044% of a continuously busy CPU. These are short-run estimates, not PMU
-body-only measurements.
+increment. Projected at 99 Hz, captured sampling consumes about 0.044% of a
+continuously busy CPU. PC sampling is now opt-in; these are short-run estimates,
+not PMU body-only measurements.
 
 The opt-in retired-instruction/IPC run is recorded in
 [`benchmarks/2026-07-20-epyc9354p-ipc.json`](benchmarks/2026-07-20-epyc9354p-ipc.json).
@@ -466,12 +466,19 @@ PC sampling uses a perf-event eBPF program attached to every online CPU. It
 prefers hardware CPU-cycle frequency sampling and falls back to the software
 CPU clock when the PMU is unavailable. The full instruction pointer and actual
 sample period remain in the stable `KUEBPF01` record; compatibility output uses
-KUtrace's exact `PC_U`/`PC_K` IDs, address hash, and `PC=<hex>` label. A 997 Hz
+KUtrace's exact `PC_U`/`PC_K` IDs and address hash. When profiling is enabled,
+the collector records executable mapping ranges and snapshots `/proc/kallsyms`
+without performing symbol lookup in the capture hot path. `kutrace-transform`
+then uses Blazesym after capture to translate user virtual addresses through
+their mapping file offsets and resolve kernel addresses against the snapshot.
+Missing, deleted, namespace-inaccessible, JIT, or otherwise unresolved objects
+retain the `PC=<hex>` label. A 997 Hz
 live validation over an OpenSSL SHA-256 workload produced 3,132 records over
 3.203 seconds (977.9 Hz), including 3,129 user and 3 kernel samples with 220
 unique PCs and zero drops. The unchanged span builder emitted 3,130 strict-v3
 profile spans; the first sample on each observed CPU establishes an interval
-boundary and is intentionally not rendered. `--sample-hz 0` disables sampling.
+boundary and is intentionally not rendered. PC sampling is disabled by default;
+`--sample-hz HZ` enables it explicitly.
 The same program now compiles against Aya's arm64 `user_pt_regs` and reads
 `pc` instead of x86 `rip`; userspace enables the identical hardware-cycle to
 software-clock fallback on arm64. This is cross-compiled evidence only until a

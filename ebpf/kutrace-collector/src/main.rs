@@ -35,11 +35,11 @@ use kutrace_common::{
 use tokio::io::unix::AsyncFd;
 use tokio::net::UnixDatagram;
 
+mod mappings;
 mod shared_ring;
-mod symbolizer;
 mod usdt;
+use mappings::MappingRecorder;
 use shared_ring::SharedConsumer;
-use symbolizer::SymbolRecorder;
 use usdt::{UsdtBinary, UsdtSemaphores};
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -197,11 +197,14 @@ struct Args {
     #[arg(long)]
     duration_secs: Option<f64>,
     /// Per-CPU PC sampling frequency. Zero disables sampled PCs.
-    #[arg(long, default_value_t = 99)]
+    #[arg(long, default_value_t = 0)]
     sample_hz: u64,
-    /// Resolve sampled PCs live and write a JSON-lines symbol sidecar.
+    /// Record executable mappings for post-processing sampled user PCs.
     #[arg(long, value_name = "PATH")]
-    symbols: Option<PathBuf>,
+    mappings: Option<PathBuf>,
+    /// Snapshot kallsyms for post-processing sampled kernel PCs.
+    #[arg(long, value_name = "PATH")]
+    kallsyms: Option<PathBuf>,
     /// Correlate every captured event with pinned hardware cycles and retired
     /// instructions, emitting KUtrace's four-bit IPC value.
     #[arg(long)]
@@ -905,7 +908,7 @@ fn task_comm(tid: u32) -> [u8; 16] {
 fn write_capture_event(
     output: &mut BufWriter<File>,
     task_names: &mut HashMap<u32, [u8; 16]>,
-    symbol_recorder: Option<&mut SymbolRecorder>,
+    mapping_recorder: Option<&mut MappingRecorder>,
     mut event: Event,
 ) -> Result<()> {
     if event.comm[0] == 0 {
@@ -913,7 +916,7 @@ fn write_capture_event(
             .entry(event.tid())
             .or_insert_with(|| task_comm(event.tid()));
     }
-    if let Some(recorder) = symbol_recorder {
+    if let Some(recorder) = mapping_recorder {
         recorder.record(&event)?;
     }
     output.write_all(bytes_of(&event))?;
@@ -931,7 +934,7 @@ fn write_ring_item(
     output: &mut BufWriter<File>,
     task_names: &mut HashMap<u32, [u8; 16]>,
     stats: &mut RingStats,
-    mut symbol_recorder: Option<&mut SymbolRecorder>,
+    mut mapping_recorder: Option<&mut MappingRecorder>,
 ) -> Result<()> {
     let event = match item.len() {
         size if size == core::mem::size_of::<Event>() => *bytemuck::from_bytes::<Event>(item),
@@ -943,7 +946,7 @@ fn write_ring_item(
             stats.paired_syscall_records_received += 1;
             let paired = bytemuck::from_bytes::<PairedSyscallEvent>(item);
             for event in paired_syscall_to_events(paired) {
-                write_capture_event(output, task_names, symbol_recorder.as_deref_mut(), event)?;
+                write_capture_event(output, task_names, mapping_recorder.as_deref_mut(), event)?;
             }
             return Ok(());
         }
@@ -956,7 +959,7 @@ fn write_ring_item(
             )
         }
     };
-    write_capture_event(output, task_names, symbol_recorder, event)
+    write_capture_event(output, task_names, mapping_recorder, event)
 }
 
 async fn shutdown_signal() -> Result<()> {
@@ -1095,8 +1098,12 @@ fn seed_scoped_tids(bpf: &mut Ebpf, tgid: u32) -> Result<usize> {
 #[tokio::main]
 async fn main() -> Result<()> {
     let args = Args::parse();
-    if args.symbols.as_ref() == Some(&args.output) {
-        bail!("--symbols must not name the capture output file");
+    if args.mappings.as_ref() == Some(&args.output) || args.kallsyms.as_ref() == Some(&args.output)
+    {
+        bail!("metadata sidecars must not name the capture output file");
+    }
+    if args.mappings.is_some() && args.mappings == args.kallsyms {
+        bail!("--mappings and --kallsyms must name different files");
     }
     let mut external_probes = args.uprobes.clone();
     if let (Some(binary), Some(symbol)) = (&args.uprobe_binary, &args.uprobe_symbol) {
@@ -1129,11 +1136,15 @@ async fn main() -> Result<()> {
         header.flags |= KUTRACE_FLAG_IPC;
     }
     output.write_all(bytes_of(&header))?;
-    let mut symbol_recorder = args
-        .symbols
+    let mut mapping_recorder = args
+        .mappings
         .as_deref()
-        .map(SymbolRecorder::create)
+        .map(MappingRecorder::create)
         .transpose()?;
+    if let Some(path) = args.kallsyms.as_deref() {
+        std::fs::copy("/proc/kallsyms", path)
+            .with_context(|| format!("snapshot kernel symbols to {}", path.display()))?;
+    }
 
     let mut bpf =
         Ebpf::load_file(&args.ebpf).with_context(|| format!("load {}", args.ebpf.display()))?;
@@ -1326,7 +1337,7 @@ async fn main() -> Result<()> {
             ready = async_ring.readable_mut() => {
                 let mut guard = ready?;
                 while let Some(item) = guard.get_inner_mut().next() {
-                    write_ring_item(&item, &mut output, &mut task_names, &mut ring_stats, symbol_recorder.as_mut())?;
+                    write_ring_item(&item, &mut output, &mut task_names, &mut ring_stats, mapping_recorder.as_mut())?;
                 }
                 guard.clear_ready();
             }
@@ -1365,7 +1376,7 @@ async fn main() -> Result<()> {
             &mut output,
             &mut task_names,
             &mut ring_stats,
-            symbol_recorder.as_mut(),
+            mapping_recorder.as_mut(),
         )?;
     }
     let mut pending_syscall_entries_flushed = 0u64;
@@ -1374,14 +1385,14 @@ async fn main() -> Result<()> {
             write_capture_event(
                 &mut output,
                 &mut task_names,
-                symbol_recorder.as_mut(),
+                mapping_recorder.as_mut(),
                 compact_syscall_to_event(pending),
             )?;
             pending_syscall_entries_flushed += 1;
         }
     }
     output.flush()?;
-    let (symbols_resolved, symbols_unresolved) = match symbol_recorder.as_mut() {
+    let (mappings_recorded, mapping_misses) = match mapping_recorder.as_mut() {
         Some(recorder) => recorder.finish()?,
         None => (0, 0),
     };
@@ -1391,7 +1402,7 @@ async fn main() -> Result<()> {
     let paired_syscall_records_received = ring_stats.paired_syscall_records_received;
     let compact_syscall_records_received = ring_stats.compact_syscall_records_received;
     eprintln!(
-        "capture complete; bpf_dropped_events={dropped_events}; probe_dropped_events={probe_dropped_events}; client_events_received={client_events_received}; client_shm_dropped={client_shm_dropped}; paired_syscall_records_received={paired_syscall_records_received}; compact_syscall_records_received={compact_syscall_records_received}; pending_syscall_entries_flushed={pending_syscall_entries_flushed}; symbols_resolved={symbols_resolved}; symbols_unresolved={symbols_unresolved}"
+        "capture complete; bpf_dropped_events={dropped_events}; probe_dropped_events={probe_dropped_events}; client_events_received={client_events_received}; client_shm_dropped={client_shm_dropped}; paired_syscall_records_received={paired_syscall_records_received}; compact_syscall_records_received={compact_syscall_records_received}; pending_syscall_entries_flushed={pending_syscall_entries_flushed}; mappings_recorded={mappings_recorded}; mapping_misses={mapping_misses}"
     );
     std::fs::remove_file(&args.agent_socket)?;
     std::fs::remove_file(&args.agent_shm)?;

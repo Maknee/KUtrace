@@ -26,7 +26,8 @@ it should not infer system behavior by looking at this human visualization.
   navigation pauses following so the selected history does not jump away.
 - The dock keeps exact event details and the SQL notebook beside a range-based
   flamegraph. With the current capture ABI, that flamegraph truthfully groups
-  timed spans by category and name. Sampled PCs are symbolized leaf samples;
+  timed spans by category and name. Explicitly requested sampled PCs are
+  symbolized during post-processing and shown as leaf samples;
   a true on-CPU call-stack flamegraph requires future BPF stack-ID, frame, and
   module tables and must not be synthesized from leaf PCs.
 - The original renderer is a first-class tab and compatibility surface. It is

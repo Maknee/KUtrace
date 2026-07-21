@@ -5,13 +5,13 @@ usage() {
   cat <<'EOF'
 Usage: ebpf/kutrace-run [OPTIONS] -- COMMAND [ARG...]
 
-Trace one command with KUtrace eBPF, symbolize sampled PCs, convert the
-capture, and serve the modern UI.
+Trace one command with KUtrace eBPF, post-process any explicitly requested PC
+samples, convert the capture, and serve the human workspace.
 
 Options:
   --listen ADDRESS   UI address (default: 127.0.0.1:3000)
   --output-dir DIR   Keep artifacts in DIR (default: a new /tmp directory)
-  --sample-hz HZ     PC sampling frequency (default: 99; 0 disables it)
+  --sample-hz HZ     Enable optional PC profiling at HZ (default: 0/off)
   --title TITLE      Trace title shown in the UI
   --no-ui            Create the capture and JSON without starting the UI
   -h, --help         Show this help
@@ -30,7 +30,7 @@ script_dir=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 repo_dir=$(cd "$script_dir/.." && pwd)
 listen=127.0.0.1:3000
 output_dir=
-sample_hz=99
+sample_hz=0
 title=
 serve_ui=1
 
@@ -112,7 +112,7 @@ if [[ -z "$output_dir" ]]; then
 else
   mkdir -p "$output_dir"
   output_dir=$(cd "$output_dir" && pwd)
-  for artifact in capture.kuevents capture.events capture.json capture.html capture.sqlite capture.symbols.jsonl collector.log collector.pid; do
+  for artifact in capture.kuevents capture.events capture.json capture.html capture.sqlite capture.maps.jsonl capture.kallsyms collector.log collector.pid; do
     [[ ! -e "$output_dir/$artifact" ]] || die "$output_dir/$artifact already exists"
   done
 fi
@@ -122,11 +122,19 @@ events="$output_dir/capture.events"
 json="$output_dir/capture.json"
 legacy_html="$output_dir/capture.html"
 database="$output_dir/capture.sqlite"
-symbols="$output_dir/capture.symbols.jsonl"
+mappings="$output_dir/capture.maps.jsonl"
+kallsyms="$output_dir/capture.kallsyms"
 collector_log="$output_dir/collector.log"
 collector_pidfile="$output_dir/collector.pid"
 agent_shm="$output_dir/agent.shm"
 agent_socket="$output_dir/agent.sock"
+
+collector_metadata_args=()
+transform_metadata_args=()
+if ((sample_hz > 0)); then
+  collector_metadata_args=(--mappings "$mappings" --kallsyms "$kallsyms")
+  transform_metadata_args=(--mappings "$mappings" --kallsyms "$kallsyms")
+fi
 
 if [[ -z "$title" ]]; then
   title="KUtrace: $(basename "$1")"
@@ -181,7 +189,7 @@ sudo bash -c 'printf "%s\n" "$$" > "$1"; shift; exec "$@"' \
   --agent-shm "$agent_shm" \
   --agent-socket "$agent_socket" \
   --pid "$command_pid" \
-  --symbols "$symbols" \
+  "${collector_metadata_args[@]}" \
   --sample-hz "$sample_hz" > /dev/null 2> "$collector_log" &
 collector_job_pid=$!
 
@@ -224,7 +232,7 @@ if ((command_status != 0)); then
   echo "kutrace-run: command exited with status $command_status; showing its trace anyway" >&2
 fi
 
-"$transform" events "$capture" --symbols "$symbols" | LC_ALL=C sort -n > "$events"
+"$transform" events "$capture" "${transform_metadata_args[@]}" | LC_ALL=C sort -n > "$events"
 "$span_builder" "$title" < "$events" > "$json"
 (
   cd "$repo_dir/postproc"
@@ -234,7 +242,10 @@ fi
 
 echo "Trace JSON: $json"
 echo "Original KUtrace HTML: $legacy_html"
-echo "Symbols: $symbols"
+if ((sample_hz > 0)); then
+  echo "Profiler mappings: $mappings"
+  echo "Kernel symbols: $kallsyms"
+fi
 if ((serve_ui == 0)); then
   trap - EXIT
   exit "$command_status"

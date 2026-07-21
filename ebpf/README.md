@@ -22,21 +22,23 @@ make -C ebpf build build-ebpf test
 
 For the normal single-command workflow, `kutrace-run` starts the target in a
 paused state, attaches the PID-scoped collector, captures the complete command,
-resolves sampled user and kernel PCs with Blazesym, converts it to strict
-version-3 JSON, packages the original self-contained KUtrace HTML, and serves
-both through the human-first continuous workspace. Missing build artifacts are
-built automatically:
+converts it to strict version-3 JSON, packages the original self-contained
+KUtrace HTML, and serves both through the human-first continuous workspace.
+This normal path is event-driven; optional PC profiling is off. Missing build
+artifacts are built automatically:
 
 ```sh
 ebpf/kutrace-run -- /usr/bin/printf 'Hello, world!\n'
 ```
 
-Open `http://127.0.0.1:3000/` and press Ctrl-C when finished. Symbol names and
-offsets are captured in a JSON-lines sidecar while the target still exists;
-addresses Blazesym cannot resolve remain visible as `PC=<hex>`. Use `--no-ui`
-to produce capture artifacts without starting the server, `--output-dir DIR`
-to choose their location, and `--listen ADDRESS` to select another interface
-or port.
+Open `http://127.0.0.1:3000/` and press Ctrl-C when finished. Add, for example,
+`--sample-hz 99` only when PC profiling is wanted. The collector then records
+executable mappings and a capture-time kernel-symbol snapshot; Blazesym resolves
+the raw PCs afterward in `kutrace-transform`, outside the traced workload.
+Addresses it cannot resolve remain visible as `PC=<hex>`. Use `--no-ui` to
+produce capture artifacts without starting the server, `--output-dir DIR` to
+choose their location, and `--listen ADDRESS` to select another interface or
+port.
 
 The individual pipeline stages remain available when explicit control is
 needed:
@@ -61,10 +63,11 @@ page-fault durations when the kernel permits one, with a closed-span fallback.
 On x86-64 it also pairs the probeable common `do_error_trap` and `math_error`
 handlers, preserving KUtrace's `0x400/0x600 + vector` trap contract. Linux marks
 the remaining vector-specific exception entries `notrace`; the collector does
-not mislabel ambiguous signal events as traps. A per-CPU perf-event program
-samples user and kernel PCs at 99 Hz by default, emitting the exact legacy
-`PC_U`/`PC_K` contract. `--sample-hz` changes the rate and zero disables it;
-hardware cycles automatically fall back to the software CPU clock.
+not mislabel ambiguous signal events as traps. A separate, opt-in per-CPU
+perf-event program samples user and kernel PCs when `--sample-hz HZ` is
+nonzero, emitting the exact legacy `PC_U`/`PC_K` contract. Normal KUtrace
+capture is event-driven and leaves PC profiling disabled; hardware cycles
+automatically fall back to the software CPU clock when profiling is requested.
 `--ipc` additionally opens a pinned hardware cycles/retired-instructions group
 on every online CPU and emits KUtrace's historical four-bit IPC scale. It is
 opt-in because it adds two perf-counter reads to every retained hook. Pinned
@@ -286,6 +289,8 @@ ebpf/bench_overhead.sh
 Tune `KUTRACE_BENCH_ITERATIONS` and `KUTRACE_BENCH_SAMPLES` for longer runs.
 Benchmarking only an unloaded program is insufficient; the script attaches the
 program, drains the ring, and scopes capture to the benchmark PID.
+`KUTRACE_SAMPLE_HZ` defaults to zero so this measures event tracing; set it
+explicitly only to include the separate PC profiler.
 Set `KUTRACE_BENCH_MODES='scheduler mixed'` to measure a full same-CPU
 two-thread rendezvous and the same handoff with two syscalls plus two semantic
 span pairs per operation. Their published raw distributions, confidence

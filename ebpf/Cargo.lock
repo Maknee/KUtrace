@@ -648,7 +648,6 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "aya",
- "blazesym",
  "bytemuck",
  "clap",
  "kutrace-common",
@@ -680,6 +679,7 @@ name = "kutrace-transform"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "blazesym",
  "bytemuck",
  "chrono",
  "clap",
