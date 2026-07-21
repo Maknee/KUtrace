@@ -241,9 +241,24 @@ test('builds a range-scoped flamegraph with clickable frames', async ({page}) =>
 });
 
 test('shows CPU and PID groups together and can isolate either group', async ({page}) => {
+  const groupingQueries=[];
+  await page.route('**/api/query',async route=>{const request=route.request();if(request.method()==='POST'){const sql=request.postDataJSON().sql;if(sql.startsWith('SELECT DISTINCT cpu FROM events')||sql.startsWith('SELECT DISTINCT pid FROM events'))groupingQueries.push(sql)}await route.continue()});
+  await page.reload();
   const timeline = page.locator('#timeline');
   await expect(timeline).toHaveAttribute('data-track-mode', 'cpu_pid');
   await expect(timeline).toHaveAttribute('data-track-groups', 'cpu,pid');
+  await expect(timeline).toHaveAttribute('data-visible-tracks',/.+/);
+  await expect(page.locator('#track-mode')).toHaveValue('cpu_pid');
+  expect(groupingQueries.find(sql=>sql.startsWith('SELECT DISTINCT cpu'))).toContain('dur>0 AND pid>0 AND cpu>=0');
+  expect(groupingQueries.find(sql=>sql.startsWith('SELECT DISTINCT pid'))).toContain('dur>0 AND pid>0 AND cpu>=0');
+  const linkedTracks=(await timeline.getAttribute('data-visible-tracks')).split(',');
+  expect(linkedTracks.some(track=>track.startsWith('cpu:'))).toBe(true);
+  expect(linkedTracks.some(track=>track.startsWith('pid:'))).toBe(true);
+  await page.locator('[data-track-group="process"]').click();
+  await expect(timeline).toHaveAttribute('data-ready','true');
+  await expect(timeline).toHaveAttribute('data-visible-tracks','');
+  await page.locator('[data-track-group="process"]').click();
+  await expect(timeline).toHaveAttribute('data-ready','true');
   await page.locator('#track-mode').selectOption('pid');
   await expect(timeline).toHaveAttribute('data-ready', 'true');
   await expect(timeline).toHaveAttribute('data-track-mode', 'pid');
