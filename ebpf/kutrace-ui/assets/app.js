@@ -44,7 +44,7 @@ function renderTable(target,result){
   const body=result.rows.map(r=>`<tr>${r.map(v=>`<td>${escapeHtml(v??'')}</td>`).join('')}</tr>`).join('');
   target.innerHTML=head+`<tbody>${body}</tbody>`;
 }
-function performance(raw){
+function formatPerformance(raw){
   if(!raw||!state.overlays.ipc)return '';
   const hasIpc=(state.flags&128)!==0,hasLlc=(state.flags&32)!==0;
   if(hasIpc&&hasLlc)return `IPC ${ipcValues[(raw&12)+1]} · LLC ${llcValues[[0,2,5,8][raw&3]]}`;
@@ -110,10 +110,11 @@ function boundedRange(start,end){
 function updateRangeChrome(){
   if(!state.range)return;const [start,end]=state.range;$('range-label').textContent=`${start.toFixed(6)}s – ${end.toFixed(6)}s · ${(end-start).toFixed(6)}s`;$('ruler-start').textContent=`${start.toFixed(6)}s`;$('ruler-center').textContent=`${((start+end)/2).toFixed(6)}s`;$('ruler-end').textContent=`${end.toFixed(6)}s`;updatePrintSummary();
 }
-function previewTimelineRange(previous,next){
+function snapshotTimeline(){const canvas=$('timeline'),source=document.createElement('canvas');source.width=canvas.width;source.height=canvas.height;if(source.width&&source.height)source.getContext('2d').drawImage(canvas,0,0);return source}
+function previewTimelineRange(previous,next,source=null){
   const canvas=$('timeline'),width=canvas.getBoundingClientRect().width,height=canvas.getBoundingClientRect().height;if(!canvas.width||!canvas.height||width<=TIMELINE_LABEL_WIDTH||height<=0)return;
   const [oldStart,oldEnd]=previous,[newStart,newEnd]=next,oldSpan=oldEnd-oldStart,newSpan=newEnd-newStart,overlapStart=Math.max(oldStart,newStart),overlapEnd=Math.min(oldEnd,newEnd);if(oldSpan<=0||newSpan<=0)return;
-  const source=document.createElement('canvas');source.width=canvas.width;source.height=canvas.height;source.getContext('2d').drawImage(canvas,0,0);const ratio=canvas.width/width,label=TIMELINE_LABEL_WIDTH*ratio,plot=canvas.width-label,ctx=canvas.getContext('2d');ctx.save();ctx.setTransform(1,0,0,1,0,0);ctx.fillStyle=state.timelineRenderer==='kutrace'?'#fff':'#080b11';ctx.fillRect(label,0,plot,canvas.height);
+  source=source||snapshotTimeline();const ratio=canvas.width/width,label=TIMELINE_LABEL_WIDTH*ratio,plot=canvas.width-label,ctx=canvas.getContext('2d');ctx.save();ctx.setTransform(1,0,0,1,0,0);ctx.fillStyle=state.timelineRenderer==='kutrace'?'#fff':'#080b11';ctx.fillRect(label,0,plot,canvas.height);
   if(overlapEnd>overlapStart){const sx=label+(overlapStart-oldStart)*plot/oldSpan,sw=(overlapEnd-overlapStart)*plot/oldSpan,dx=label+(overlapStart-newStart)*plot/newSpan,dw=(overlapEnd-overlapStart)*plot/newSpan;ctx.drawImage(source,sx,0,sw,canvas.height,dx,0,dw,canvas.height)}
   ctx.restore();canvas.dataset.preview='true';canvas.dataset.ready='false';
 }
@@ -320,7 +321,7 @@ function eventSearchSql(){
 }
 async function loadEvents(signal){
   const [start,end]=state.range,scope=`ts < ${end} AND ts_end > ${start}`,sql=`SELECT id,ts,dur,cpu,pid,event,name,category,arg0,retval,ipc FROM events ${where(scope)} ORDER BY ts LIMIT 501`,result=await query(sql,501,signal),rows=result.rows.slice(0,500),target=$('event-table');
-  target.innerHTML=`<thead><tr>${['ts','dur','cpu','pid','event','name','category','arg0','retval','performance'].map(c=>`<th>${c}</th>`).join('')}</tr></thead><tbody>${rows.map(row=>{const item={id:row[0],start:row[1],end:row[1]+row[2],track:state.trackMode==='cpu_pid'?`cpu:${row[3]}`:(state.trackMode==='cpu'?row[3]:row[4]),event:row[5],name:row[6],category:row[7]},match=searchMatch(item);return `<tr data-event-id="${row[0]}"${state.selectedEvent&&state.selectedEvent.id===row[0]?' aria-selected="true"':''}${state.search?` style="opacity:${match?1:.32}"`:''}>${[...row.slice(1,10),performance(row[10])].map(v=>`<td>${escapeHtml(v??'')}</td>`).join('')}</tr>`}).join('')}</tbody>`;
+  target.innerHTML=`<thead><tr>${['ts','dur','cpu','pid','event','name','category','arg0','retval','performance'].map(c=>`<th>${c}</th>`).join('')}</tr></thead><tbody>${rows.map(row=>{const item={id:row[0],start:row[1],end:row[1]+row[2],track:state.trackMode==='cpu_pid'?`cpu:${row[3]}`:(state.trackMode==='cpu'?row[3]:row[4]),event:row[5],name:row[6],category:row[7]},match=searchMatch(item);return `<tr data-event-id="${row[0]}"${state.selectedEvent&&state.selectedEvent.id===row[0]?' aria-selected="true"':''}${state.search?` style="opacity:${match?1:.32}"`:''}>${[...row.slice(1,10),formatPerformance(row[10])].map(v=>`<td>${escapeHtml(v??'')}</td>`).join('')}</tr>`}).join('')}</tbody>`;
   target.querySelectorAll('[data-event-id]').forEach((tr,index)=>tr.onclick=()=>{const row=rows[index];setSelection(row[1],row[1]+Math.max(row[2],1e-9),{id:row[0],start:row[1],end:row[1]+row[2],track:state.trackMode==='cpu_pid'?`cpu:${row[3]}`:(state.trackMode==='cpu'?row[3]:row[4]),event:row[5],name:row[6],category:row[7]})});
   $('event-count').textContent=result.rows.length>500?'500+ rows':`${result.rows.length} rows`;
   const searchExtra=eventSearchSql();if(searchExtra){const count=await query(`SELECT COUNT(*) FROM events ${where(`${scope} AND ${searchExtra}`)}`,1,signal);$('search-count').textContent=`${count.rows[0][0]} matches`;canvasSearchCount(count.rows[0][0])}else{$('search-count').textContent='';canvasSearchCount(0)}
@@ -391,7 +392,25 @@ function runNavigation(action){
   if(action==='reset-range')return setRange(...state.full);if(action==='zoom-in')return zoomRange(.5);if(action==='zoom-out')return zoomRange(2);if(action==='pan-left')return panRange(-.25);if(action==='pan-right')return panRange(.25);return false;
 }
 const navigationKeys={w:'zoom-in',s:'zoom-out',a:'pan-left',d:'pan-right','+':'zoom-in','=':'zoom-in','-':'zoom-out','0':'reset-range',Home:'reset-range',ArrowLeft:'pan-left','[':'pan-left',ArrowRight:'pan-right',']':'pan-right'};
-function handleNavigationKey(event){const target=event.target;if((target&&typeof target.matches==='function'&&target.matches('input,textarea,select,[contenteditable=true]'))||event.ctrlKey||event.metaKey||event.altKey)return;const key=event.key.length===1?event.key.toLowerCase():event.key,action=navigationKeys[key];if(action){event.preventDefault();runNavigation(action)}}
+const smoothNavigation={keys:new Set(),frame:0,last:0,baseRange:null,source:null};
+function navigationInputBlocked(event){const target=event.target;return (target&&typeof target.matches==='function'&&target.matches('input,textarea,select,[contenteditable=true]'))||event.ctrlKey||event.metaKey||event.altKey}
+function applySmoothNavigation(seconds){
+  if(!state.range||!smoothNavigation.baseRange)return;const left=smoothNavigation.keys.has('a'),right=smoothNavigation.keys.has('d'),zoomIn=smoothNavigation.keys.has('w'),zoomOut=smoothNavigation.keys.has('s');if(!left&&!right&&!zoomIn&&!zoomOut)return;
+  let [start,end]=state.range,span=end-start,center=(start+end)/2;if(zoomIn!==zoomOut){const factor=Math.exp((zoomOut?1:-1)*1.8*seconds);span*=factor;start=center-span/2;end=center+span/2}if(left!==right){const delta=(right?1:-1)*span*.72*seconds;start+=delta;end+=delta}const next=boundedRange(start,end);previewTimelineRange(smoothNavigation.baseRange,next,smoothNavigation.source);state.range=next;updateOverviewViewport();updateRangeChrome();
+}
+function smoothNavigationFrame(now){
+  if(!smoothNavigation.keys.size){smoothNavigation.frame=0;return}const seconds=Math.min(.05,Math.max(0,(now-smoothNavigation.last)/1000));smoothNavigation.last=now;if(seconds)applySmoothNavigation(seconds);smoothNavigation.frame=requestAnimationFrame(smoothNavigationFrame);
+}
+function beginSmoothNavigation(key){
+  if(!smoothNavigation.keys.size){if(state.refreshController)state.refreshController.abort();smoothNavigation.baseRange=[...state.range];smoothNavigation.source=snapshotTimeline();smoothNavigation.last=globalThis.performance.now()}smoothNavigation.keys.add(key);applySmoothNavigation(1/30);if(!smoothNavigation.frame)smoothNavigation.frame=requestAnimationFrame(smoothNavigationFrame);
+}
+function endSmoothNavigation(key){
+  if(!smoothNavigation.keys.delete(key)||smoothNavigation.keys.size)return;if(smoothNavigation.frame)cancelAnimationFrame(smoothNavigation.frame);smoothNavigation.frame=0;smoothNavigation.baseRange=null;smoothNavigation.source=null;refresh();
+}
+function handleNavigationKey(event){
+  if(navigationInputBlocked(event))return;const key=event.key.length===1?event.key.toLowerCase():event.key,action=navigationKeys[key];if(!action)return;event.preventDefault();if(state.activeView!=='legacy'&&['w','a','s','d'].includes(key)){if(!event.repeat)beginSmoothNavigation(key);return}runNavigation(action);
+}
+function handleNavigationKeyUp(event){const key=event.key.length===1?event.key.toLowerCase():event.key;if(['w','a','s','d'].includes(key)){event.preventDefault();endSmoothNavigation(key)}}
 function installLegacyNavigation(frameId){const frame=$(frameId);frame.addEventListener('load',()=>{try{const legacy=frame.contentWindow;if(!legacy||legacy.__kutraceKeyboardNavigation)return;legacy.__kutraceKeyboardNavigation=true;legacy.addEventListener('keydown',handleNavigationKey)}catch(error){showError(error)}})}
 function syncToggleUi(){
   document.documentElement.classList.toggle('colorblind',state.overlays.colorblind);document.body.classList.toggle('colorblind',state.overlays.colorblind);document.querySelectorAll('[data-overlay]').forEach(button=>button.setAttribute('aria-pressed',String(state.overlays[button.dataset.overlay])));document.querySelectorAll('[data-track-group]').forEach(button=>button.classList.toggle('active',state.groups[button.dataset.trackGroup]));updatePerformanceLegend();
@@ -417,5 +436,6 @@ $('save-workspace').onclick=()=>{localStorage.setItem('kutrace-workspace',JSON.s
 $('export-workspace').onclick=()=>{const url=URL.createObjectURL(new Blob([JSON.stringify(workspaceState(),null,2)],{type:'application/json'})),link=document.createElement('a');link.href=url;link.download='kutrace-workspace.json';link.click();URL.revokeObjectURL(url);$('query-status').textContent='Workspace exported'};$('import-workspace').onclick=()=>$('workspace-file').click();
 $('workspace-file').onchange=async event=>{try{const file=event.target.files[0];if(!file)return;applyWorkspace(JSON.parse(await file.text()));localStorage.setItem('kutrace-workspace',JSON.stringify(workspaceState()));state.overviewKey='';await refresh();await runSql();$('query-status').textContent='Workspace imported'}catch(error){showError(error)}finally{event.target.value=''}};
 window.addEventListener('keydown',handleNavigationKey);
+window.addEventListener('keyup',handleNavigationKeyUp);window.addEventListener('blur',()=>{if(!smoothNavigation.keys.size)return;smoothNavigation.keys.clear();if(smoothNavigation.frame)cancelAnimationFrame(smoothNavigation.frame);smoothNavigation.frame=0;smoothNavigation.baseRange=null;smoothNavigation.source=null;refresh()});
 let resizeTimer=null;window.addEventListener('resize',()=>{clearTimeout(resizeTimer);resizeTimer=setTimeout(()=>refresh(),100)});
 (async()=>{installLegacyNavigation('legacy-frame');await loadMetadata();const saved=JSON.parse(localStorage.getItem('kutrace-workspace')||'null');if(saved)applyWorkspace(saved);else{activateTimelineRenderer('kutrace');renderChips();renderSavedViews();syncToggleUi()}installOverviewNavigation();renderSelectionSummary();await refresh();await runSql();setInterval(pollExtent,1500)})().catch(showError);

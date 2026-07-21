@@ -153,10 +153,22 @@ test('composes filters, runs SQL, zooms, and restores saved state', async ({page
   const immediate = await page.evaluate(() => {
     const before=document.querySelector('#range-label').textContent;
     window.dispatchEvent(new KeyboardEvent('keydown',{key:'w',bubbles:true}));
-    return {before,after:document.querySelector('#range-label').textContent,preview:document.querySelector('#timeline').dataset.preview};
+    const result={before,after:document.querySelector('#range-label').textContent,preview:document.querySelector('#timeline').dataset.preview};
+    window.dispatchEvent(new KeyboardEvent('keyup',{key:'w',bubbles:true}));
+    return result;
   });
   expect(immediate.after).not.toBe(immediate.before);
   expect(immediate.preview).toBe('true');
+  await expect(page.locator('#timeline')).toHaveAttribute('data-ready','true');
+  await page.keyboard.press('Home');
+
+  await page.keyboard.down('KeyW');
+  await page.waitForTimeout(90);
+  const heldRange=await page.locator('#range-label').textContent();
+  await page.waitForTimeout(90);
+  await expect(page.locator('#range-label')).not.toHaveText(heldRange);
+  await expect(page.locator('#timeline')).toHaveAttribute('data-preview','true');
+  await page.keyboard.up('KeyW');
   await expect(page.locator('#timeline')).toHaveAttribute('data-ready','true');
   await page.keyboard.press('Home');
 
