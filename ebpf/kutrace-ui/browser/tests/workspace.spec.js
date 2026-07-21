@@ -291,6 +291,21 @@ test('searches the visible trace, inverts matches, and toggles KUtrace overlays'
   await expect(page.locator('html')).toHaveClass(/colorblind/);
 });
 
+test('escapes filter editing back to timeline navigation', async ({page}) => {
+  const filter=page.locator('#filter-value'),timeline=page.locator('#timeline');
+  await filter.fill('agent.tool');
+  await filter.focus();
+  const initialRange=await page.locator('#range-label').textContent();
+  await page.keyboard.press('KeyW');
+  await expect(page.locator('#range-label')).toHaveText(initialRange);
+  const editedValue=await filter.inputValue();
+  await page.keyboard.press('Escape');
+  await expect(timeline).toBeFocused();
+  await expect(filter).toHaveValue(editedValue);
+  await page.keyboard.press('KeyW');
+  await expect(page.locator('#range-label')).not.toHaveText(initialRange);
+});
+
 test('follows a growing trace tail while continuing passive extent polling', async ({page}) => {
   let extentQueries = 0;
   await page.route('**/api/query', async route => {

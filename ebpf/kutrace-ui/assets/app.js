@@ -408,6 +408,7 @@ function endSmoothNavigation(key){
   if(!smoothNavigation.keys.delete(key)||smoothNavigation.keys.size)return;if(smoothNavigation.frame)cancelAnimationFrame(smoothNavigation.frame);smoothNavigation.frame=0;smoothNavigation.baseRange=null;smoothNavigation.source=null;refresh();
 }
 function handleNavigationKey(event){
+  const target=event.target;if(event.key==='Escape'&&target&&typeof target.matches==='function'&&target.matches('input,textarea,select,[contenteditable=true]')){event.preventDefault();target.blur();if(state.activeView==='timeline')$('timeline').focus({preventScroll:true});return}
   if(navigationInputBlocked(event))return;const key=event.key.length===1?event.key.toLowerCase():event.key,action=navigationKeys[key];if(!action)return;event.preventDefault();if(state.activeView!=='legacy'&&['w','a','s','d'].includes(key)){if(!event.repeat)beginSmoothNavigation(key);return}runNavigation(action);
 }
 function handleNavigationKeyUp(event){const key=event.key.length===1?event.key.toLowerCase():event.key;if(['w','a','s','d'].includes(key)){event.preventDefault();endSmoothNavigation(key)}}
