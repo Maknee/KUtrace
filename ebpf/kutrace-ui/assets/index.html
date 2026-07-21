@@ -87,13 +87,10 @@
       <section id="timeline-view" class="view-pane active">
         <section class="timeline-card">
           <div class="section-head timeline-title">
-            <div><h2>System timeline</h2><span id="renderer-label" class="mode-badge">Original KUtrace renderer</span></div>
-            <div class="renderer-tabs" role="tablist" aria-label="Timeline renderer"><button class="renderer-tab active" data-renderer="kutrace" role="tab" aria-selected="true">KUtrace</button><button class="renderer-tab" data-renderer="lanes" role="tab" aria-selected="false">Experimental lanes</button></div>
+            <div><h2>System timeline</h2><span id="renderer-label" class="mode-badge">Native KUtrace</span></div>
+            <div class="renderer-tabs" role="tablist" aria-label="Timeline renderer"><button class="renderer-tab active" data-renderer="kutrace" role="tab" aria-selected="true">Native KUtrace</button><button class="renderer-tab" data-renderer="lanes" role="tab" aria-selected="false">Event lanes</button></div>
           </div>
-          <div id="kutrace-renderer" class="timeline-renderer active">
-            <iframe id="timeline-legacy-frame" title="Original KUtrace timeline" data-src="/legacy"></iframe>
-          </div>
-          <div id="lanes-renderer" class="timeline-renderer modern-renderer" hidden>
+          <div id="kutrace-renderer" class="timeline-renderer modern-renderer active">
             <div class="modern-renderer-head"><span id="timeline-mode" class="mode-badge">Exact events</span><span id="range-label"></span><div class="timeline-actions"><button id="zoom-selection" disabled>Zoom selection</button><button id="clear-selection" disabled>Clear selection</button><span class="shortcut-help">drag select · Shift+drag pan · Ctrl+wheel zoom · WASD navigate</span></div></div>
             <div class="overview-shell" aria-label="Full trace overview">
               <canvas id="overview" height="72"></canvas><div id="overview-viewport"></div>
