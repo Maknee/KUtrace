@@ -1,9 +1,38 @@
-# Query-backed KUtrace workspace
+# Human-first KUtrace workspace
 
-The modern workspace is additive. `eventtospan3` still produces version-3 JSON,
+The workspace is a continuous, human-readable trace viewer. Its primary surface
+is one horizontally aligned timeline with an overview brush, sticky time ruler,
+CPU or PID tracks, a persistent selection, and a dock for details, flamegraph,
+SQL, and optional agent context. `eventtospan3` still produces version-3 JSON,
 and the self-contained `show_cpu.html` remains the exact visual/interaction
-parity oracle. `kutrace-ui` imports that same JSON into SQLite and can serve the
-original self-contained HTML byte-for-byte at `/legacy`.
+parity oracle. `kutrace-ui` imports that same JSON into SQLite and serves the
+original self-contained HTML byte-for-byte at `/legacy` when it is supplied.
+
+The agent data is deliberately not the main view. It is supporting evidence a
+person can correlate with scheduler, syscall, RPC, resource, and sampled-PC
+activity. A future MCP or skill should consume structured query and trace APIs;
+it should not infer system behavior by looking at this human visualization.
+
+## Interaction model
+
+- One shared range controls the overview, ruler, tracks, details, flamegraph,
+  and SQL-derived selections. Dragging selects a time interval; modifier-drag
+  pans; cursor-centered wheel zoom and keyboard navigation preserve context.
+- CPU and PID are alternate organizations of the same events, not separate
+  pages. Search, inversion, event-group filters, and display overlays compose
+  across both modes.
+- The overview represents the entire trace and shows the visible window. A
+  follow-tail control can keep the window at the newest published data; manual
+  navigation pauses following so the selected history does not jump away.
+- The dock keeps exact event details and the SQL notebook beside a range-based
+  flamegraph. With the current capture ABI, that flamegraph truthfully groups
+  timed spans by category and name. Sampled PCs are symbolized leaf samples;
+  a true on-CPU call-stack flamegraph requires future BPF stack-ID, frame, and
+  module tables and must not be synthesized from leaf PCs.
+- The original renderer is a first-class tab and compatibility surface. It is
+  not a screenshot or approximate reimplementation, so its annotations,
+  wakeup arcs, locks, frequency and IPC overlays, marks, and legacy gestures
+  remain available while the continuous workspace reaches feature parity.
 
 ## Data model
 
@@ -79,8 +108,8 @@ is positive. `event_summary` supplies common aggregation.
 
 These choices follow Perfetto's separation between query-backed track datasets,
 composable SQL filters, bounded data sources, and time-bucket mipmaps. The
-workspace deliberately does not clone the legacy renderer; the `/legacy` route
-keeps exact KUtrace behavior available while the new surface evolves.
+continuous workspace reuses those query primitives while `/legacy` keeps exact
+KUtrace behavior available as both a user feature and the parity oracle.
 
 ## Run
 

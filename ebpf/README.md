@@ -18,6 +18,30 @@ Aya's eBPF target currently needs Rust's `rust-src` component and `bpf-linker`:
 rustup component add rust-src
 cargo install bpf-linker
 make -C ebpf build build-ebpf test
+```
+
+For the normal single-command workflow, `kutrace-run` starts the target in a
+paused state, attaches the PID-scoped collector, captures the complete command,
+resolves sampled user and kernel PCs with Blazesym, converts it to strict
+version-3 JSON, packages the original self-contained KUtrace HTML, and serves
+both through the human-first continuous workspace. Missing build artifacts are
+built automatically:
+
+```sh
+ebpf/kutrace-run -- /usr/bin/printf 'Hello, world!\n'
+```
+
+Open `http://127.0.0.1:3000/` and press Ctrl-C when finished. Symbol names and
+offsets are captured in a JSON-lines sidecar while the target still exists;
+addresses Blazesym cannot resolve remain visible as `PC=<hex>`. Use `--no-ui`
+to produce capture artifacts without starting the server, `--output-dir DIR`
+to choose their location, and `--listen ADDRESS` to select another interface
+or port.
+
+The individual pipeline stages remain available when explicit control is
+needed:
+
+```sh
 
 sudo ebpf/target/release/kutrace-collector \
   --ebpf ebpf/kutrace-ebpf/target/bpfel-unknown-none/release/kutrace-ebpf \
@@ -28,8 +52,7 @@ ebpf/target/release/kutrace-transform events capture.kuevents \
   | LC_ALL=C sort -n \
   | postproc/eventtospan3 "Aya capture" > capture.json
 
-postproc/spantotrim < capture.json \
-  | postproc/makeself postproc/show_cpu.html > capture.html
+(cd postproc && ./makeself show_cpu.html ../capture.json ../capture.html)
 ```
 
 The collector attaches syscall, scheduler, hardware IRQ, softirq, CPU-idle,
@@ -288,6 +311,27 @@ The paired USDT fixture's disabled and active measurements are published in
 Its active measurement includes both USDT sites, eBPF nesting state, two ring
 records, collection, and legacy span pairing.
 
+### Legacy versus eBPF profiler overhead
+
+`bench_profiler_comparison.sh` compares application slowdown from legacy
+KUtrace PC sampling and Aya/eBPF sampling at the same rate. It pins the
+syscall-free workload and collector to separate CPUs, brackets both profilers
+with three baseline distributions, checks loss evidence, and never inserts,
+removes, or replaces the legacy module:
+
+```sh
+make -C ebpf bench-profiler-overhead
+```
+
+This gate requires x86-64 and an idle, vermagic-matched `kutrace_mod` already
+loaded. On the EPYC 9354P at 250 Hz, legacy KUtrace added 0.1190% median
+overhead and Aya/eBPF added 0.1405%; Aya was 1.180× the added legacy component,
+while both remained below 0.15% of the busy CPU. Aya reported zero BPF and
+probe loss. Legacy wrapping was disabled and its capture remained active until
+stop, although the legacy format has no explicit drop counter. See the raw
+distributions and methodology in
+[`../docs/benchmarks/2026-07-21-epyc9354p-profiler-comparison.json`](../docs/benchmarks/2026-07-21-epyc9354p-profiler-comparison.json).
+
 ## Differential compatibility gates
 
 `cargo test -p kutrace-transform --test legacy_pipeline` compiles and executes
@@ -322,15 +366,17 @@ the machine-readable `comparison.json` report.
 ## Query-backed UI
 
 `kutrace-ui` imports the unchanged version-3 JSON into an indexed SQLite
-database and serves an embedded workspace with composable filter chips, SQL
-queries, CPU time-bucket tracks, bounded event tables, recursive agent/tool-call
-trees, selected-span query/observation/decision/result context, RPC/resource
-relationships, IPC/LLC overlays, and portable saved workspaces. Selected-agent
-context SQL can be opened verbatim in the notebook and retained as one of 32
-validated named read-only views in the version-2 workspace format. Version-1
-workspace files remain importable. The original
-self-contained viewer is
-served unchanged when `--legacy-html` is supplied:
+database and serves a continuous, human-first timeline. A full-trace overview,
+shared ruler and range, CPU/PID tracks, search and display controls feed a
+dock containing exact event details, a span flamegraph, SQL, and optional agent
+context. The flamegraph groups real timed spans; sampled PCs are symbolized
+leaves because the current capture ABI does not contain call stacks. Recursive
+agent/tool-call trees and query/observation/decision/result context remain
+available in the dock instead of dominating the visualization. SQL can be
+retained as one of 32 validated named read-only views in the portable version-2
+workspace format; version-1 files remain importable. The original self-contained
+viewer is a first-class tab and is served unchanged when `--legacy-html` is
+supplied:
 
 ```sh
 ebpf/target/release/kutrace-ui capture.json \

@@ -24,6 +24,7 @@ rust-version = "1.87"
 anyhow = "1.0"
 axum = "0.8.9"
 aya = "0.14.0"
+blazesym = "0.2.5"
 bytemuck = { version = "1.23", features = ["derive"] }
 chrono = { version = "0.4", default-features = false, features = ["clock"] }
 cc = "1.2"

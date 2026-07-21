@@ -1,6 +1,24 @@
 import {expect, test} from '@playwright/test';
 import {readFile} from 'node:fs/promises';
 
+async function openDock(page, name) {
+  await page.locator(`[data-dock="${name}"]`).click();
+  await expect(page.locator(`[data-dock="${name}"]`)).toHaveAttribute('aria-selected', 'true');
+  await expect(page.locator(`[data-dock-panel="${name}"]`)).toBeVisible();
+}
+
+async function dragTimelineRange(page, from = .3, to = .7) {
+  const timeline = page.locator('#timeline');
+  const box = await timeline.boundingBox();
+  expect(box).not.toBeNull();
+  const y = box.y + box.height / 2;
+  await page.mouse.move(box.x + box.width * from, y);
+  await page.mouse.down();
+  await page.mouse.move(box.x + box.width * to, y, {steps: 5});
+  await page.mouse.up();
+  return box;
+}
+
 test.beforeEach(async ({page}) => {
   await page.goto('/');
   await expect(page.locator('#trace-title')).toContainText('Agent reasoning fixture');
@@ -10,7 +28,37 @@ test.beforeEach(async ({page}) => {
   await expect(page.locator('#cpu-controls')).toBeHidden();
 });
 
-test('renders query-backed tracks and agent relationships', async ({page, browserName}) => {
+test('switches between the continuous timeline and exact KUtrace in app', async ({page, browserName}) => {
+  const timelineTab = page.locator('[data-view="timeline"]');
+  const legacyTab = page.locator('[data-view="legacy"]');
+  await expect(timelineTab).toHaveAttribute('aria-selected', 'true');
+  await expect(page.locator('#timeline-view')).toBeVisible();
+  await expect(page.locator('#legacy-view')).toBeHidden();
+  await expect(page.locator('#legacy-frame')).not.toHaveAttribute('src', /.+/);
+
+  await legacyTab.click();
+  await expect(legacyTab).toHaveAttribute('aria-selected', 'true');
+  await expect(page.locator('#timeline-view')).toBeHidden();
+  await expect(page.locator('#legacy-view')).toBeVisible();
+  await expect(page.locator('#legacy-frame')).toHaveAttribute('src', '/legacy');
+  await expect(page.locator('#legacy-frame').contentFrame().getByRole('button', {name: 'Mark'})).toBeVisible();
+
+  await timelineTab.click();
+  await expect(timelineTab).toHaveAttribute('aria-selected', 'true');
+  await expect(page.locator('#timeline')).toBeVisible();
+  if (browserName === 'chromium') {
+    await expect(page).toHaveScreenshot('workspace.png', {
+      animations: 'disabled',
+      fullPage: true,
+      mask: [page.locator('#query-status')],
+      maskColor: '#121722'
+    });
+  }
+});
+
+test('keeps agent reasoning in an explicit analysis dock', async ({page}) => {
+  await expect(page.locator('[data-dock-panel="agent"]')).toBeHidden();
+  await openDock(page, 'agent');
   await expect(page.locator('#agent-tree')).toContainText('agent.reason');
   await expect(page.locator('#agent-tree')).toContainText('agent.tool.read');
   await expect(page.locator('#agent-tree')).toContainText('agent.tool.write');
@@ -22,13 +70,6 @@ test('renders query-backed tracks and agent relationships', async ({page, browse
   await expect(page.locator('#agent-annotations')).not.toContainText('ordinary.mark');
   await expect(page.locator('#event-table')).toContainText('ordinary.mark');
   await expect(page.locator('#agent-context-sql')).toContainText('FROM agent_annotations');
-  await page.locator('#open-agent-context').click();
-  await expect(page.locator('#sql')).toHaveValue(/WHERE span_id=1/);
-  await expect(page.locator('#query-status')).toContainText('rows');
-  await page.locator('#view-name').fill('Root agent inspection');
-  await page.locator('#save-view').click();
-  await expect(page.locator('#saved-views')).toContainText('Root agent inspection');
-  await expect(page.locator('#query-status')).toContainText('Saved view');
   await page.locator('[data-agent-span="2"]').click();
   await expect(page.locator('#agent-context-title')).toContainText('agent.tool.read · span #2');
   await expect(page.locator('#agent-annotations')).toContainText('observation agent.observation.observed.read.delay · 22');
@@ -37,10 +78,18 @@ test('renders query-backed tracks and agent relationships', async ({page, browse
   await expect(page.locator('#rpc-flows')).toContainText('ReadFile.77');
   await expect(page.locator('#resource-activity')).toContainText('resource.database');
   await expect(page.locator('#resource-activity')).toContainText('enqueue.worker');
+  await page.locator('#open-agent-context').click();
+  await expect(page.locator('[data-dock="sql"]')).toHaveAttribute('aria-selected', 'true');
+  await expect(page.locator('#sql')).toHaveValue(/WHERE span_id=1/);
+  await expect(page.locator('#query-status')).toContainText('rows');
+  await page.locator('#view-name').fill('Root agent inspection');
+  await page.locator('#save-view').click();
+  await expect(page.locator('#saved-views')).toContainText('Root agent inspection');
+  await expect(page.locator('#query-status')).toContainText('Saved view');
   await expect(page.locator('#event-table')).toContainText('IPC 2.5 · LLC 512');
   await expect(page.locator('#perf-legend')).toContainText('IPC');
   await expect(page.locator('#perf-legend')).toContainText('LLC');
-  await expect(page.locator('a[href="/legacy"]')).toHaveText(/Exact KUtrace view/);
+  await expect(page.locator('a[href="/legacy"]').first()).toHaveText(/Exact KUtrace view/);
   await expect(page.locator('#timeline')).toBeVisible();
   const longSpanCoverage = await page.locator('#timeline').evaluate(canvas => {
     const context = canvas.getContext('2d');
@@ -54,14 +103,6 @@ test('renders query-backed tracks and agent relationships', async ({page, browse
     return {columns, plotWidth: canvas.width - 48};
   });
   expect(longSpanCoverage.columns).toBeGreaterThan(longSpanCoverage.plotWidth * .9);
-  if (browserName === 'chromium') {
-    await expect(page).toHaveScreenshot('workspace.png', {
-      animations: 'disabled',
-      fullPage: true,
-      mask: [page.locator('#query-status')],
-      maskColor: '#121722'
-    });
-  }
 });
 
 test('composes filters, runs SQL, zooms, and restores saved state', async ({page}) => {
@@ -72,6 +113,7 @@ test('composes filters, runs SQL, zooms, and restores saved state', async ({page
   await expect(page.locator('#filter-chips')).toContainText('category = agent');
   await expect(page.locator('#event-count')).toContainText('4 rows');
 
+  await openDock(page, 'sql');
   await page.locator('#sql').fill('SELECT COUNT(*) AS agent_count FROM agent_spans');
   await page.locator('#run-sql').click();
   await expect(page.locator('#query-table tbody td').first()).toHaveText('4');
@@ -82,16 +124,18 @@ test('composes filters, runs SQL, zooms, and restores saved state', async ({page
   await expect(page.locator('#range-label')).not.toHaveText(initialRange);
   await page.keyboard.press('Digit0');
   await expect(page.locator('#range-label')).toHaveText(initialRange);
-  await page.keyboard.press('Equal');
+  await page.keyboard.press('KeyW');
   await expect(page.locator('#range-label')).not.toHaveText(initialRange);
   const zoomedRange = await page.locator('#range-label').textContent();
-  await page.keyboard.press('ArrowRight');
+  await page.keyboard.press('KeyD');
   await expect(page.locator('#range-label')).not.toHaveText(zoomedRange);
   const pannedRange = await page.locator('#range-label').textContent();
   await page.locator('#sql').focus();
   await page.keyboard.press('ArrowLeft');
   await expect(page.locator('#range-label')).toHaveText(pannedRange);
   await page.locator('#timeline').focus();
+  await page.keyboard.press('KeyS');
+  await expect(page.locator('#range-label')).not.toHaveText(pannedRange);
   await page.keyboard.press('Home');
   await expect(page.locator('#range-label')).toHaveText(initialRange);
 
@@ -119,21 +163,128 @@ test('prints capture provenance, visible range, filters, and the track legend', 
   await expect(page.locator('#timeline')).toBeVisible();
 });
 
-test('supports bounded pointer selection and trackpad-style navigation', async ({page}) => {
+test('uses a collapsible dock for details, flamegraph, SQL, and agent analysis', async ({page}) => {
+  for (const name of ['details', 'flamegraph', 'sql', 'agent']) {
+    await openDock(page, name);
+    for (const other of ['details', 'flamegraph', 'sql', 'agent'].filter(value => value !== name)) {
+      await expect(page.locator(`[data-dock-panel="${other}"]`)).toBeHidden();
+    }
+  }
+
+  await page.locator('#toggle-dock').click();
+  await expect(page.locator('.dock-body')).toBeHidden();
+  await page.locator('#toggle-dock').click();
+  await expect(page.locator('.dock-body')).toBeVisible();
+});
+
+test('keeps the overview viewport synchronized with zoom and pan', async ({page}) => {
+  const viewport = page.locator('#overview-viewport');
+  await expect(page.locator('#overview')).toBeVisible();
+  expect(await page.locator('#overview').evaluate(canvas => canvas.width)).toBeGreaterThan(0);
+  await expect(viewport).toBeVisible();
+  const initial = await viewport.evaluate(element => ({left: element.style.left, width: element.style.width}));
+
+  await page.locator('#zoom-in').click();
+  await expect.poll(() => viewport.evaluate(element => element.style.width)).not.toBe(initial.width);
+  const zoomed = await viewport.evaluate(element => ({left: element.style.left, width: element.style.width}));
+  expect(Number.parseFloat(zoomed.width)).toBeLessThan(Number.parseFloat(initial.width));
+
+  await page.locator('#pan-right').click();
+  await expect.poll(() => viewport.evaluate(element => element.style.left)).not.toBe(zoomed.left);
+});
+
+test('builds a range-scoped flamegraph with clickable frames', async ({page}) => {
+  await dragTimelineRange(page, .2, .8);
+  await openDock(page, 'flamegraph');
+  await expect(page.locator('#flame-range')).not.toBeEmpty();
+  await expect(page.locator('#flame-status')).toContainText(/frame|span/i);
+  const frames = page.locator('#flamegraph .flame-frame');
+  await expect(frames.first()).toBeVisible();
+  await expect(page.locator('#flamegraph')).toContainText(/agent|runtime|write|getpid/i);
+
+  const rangeBefore = await page.locator('#range-label').textContent();
+  await frames.first().click();
+  await expect(page.locator('#selection-summary')).not.toContainText('Select an event');
+  await expect(page.locator('#range-label')).not.toHaveText(rangeBefore);
+});
+
+test('switches between CPU and process/thread track grouping', async ({page}) => {
   const timeline = page.locator('#timeline');
-  const box = await timeline.boundingBox();
-  expect(box).not.toBeNull();
+  await expect(timeline).toHaveAttribute('data-track-mode', 'cpu');
+  await page.locator('#track-mode').selectOption('pid');
+  await expect(timeline).toHaveAttribute('data-ready', 'true');
+  await expect(timeline).toHaveAttribute('data-track-mode', 'pid');
+  await expect(page.locator('#cpu-controls')).toBeHidden();
+  await page.locator('#track-mode').selectOption('cpu');
+  await expect(timeline).toHaveAttribute('data-track-mode', 'cpu');
+});
+
+test('searches the visible trace, inverts matches, and toggles KUtrace overlays', async ({page}) => {
+  await page.locator('#trace-search').fill('agent.tool');
+  await expect(page.locator('#search-count')).toHaveText(/2\s+(matches|events)/i);
+  await expect(page.locator('#timeline')).toHaveAttribute('data-search-count', '2');
+  await page.locator('#search-invert').click();
+  await expect(page.locator('#search-invert')).toHaveAttribute('aria-pressed', 'true');
+  await expect(page.locator('#search-count')).toHaveText(/16\s+(matches|events)/i);
+
+  for (const overlay of ['marks', 'arcs', 'locks', 'frequency', 'ipc', 'samples']) {
+    const button = page.locator(`[data-overlay="${overlay}"]`);
+    await expect(button).toHaveAttribute('aria-pressed', 'true');
+    await button.click();
+    await expect(button).toHaveAttribute('aria-pressed', 'false');
+  }
+  const colorblind = page.locator('[data-overlay="colorblind"]');
+  await colorblind.click();
+  await expect(colorblind).toHaveAttribute('aria-pressed', 'true');
+  await expect(page.locator('html')).toHaveClass(/colorblind/);
+});
+
+test('follows a growing trace tail while continuing passive extent polling', async ({page}) => {
+  let extentQueries = 0;
+  await page.route('**/api/query', async route => {
+    const request = route.request();
+    if (request.method() === 'POST' && request.postDataJSON().sql === 'SELECT COUNT(*),MIN(ts),MAX(ts_end) FROM events') {
+      extentQueries++;
+      const end = extentQueries === 1 ? 1.050 : 1.080;
+      await route.fulfill({
+        contentType: 'application/json',
+        body: JSON.stringify({columns: ['COUNT(*)', 'MIN(ts)', 'MAX(ts_end)'], rows: [[18 + extentQueries, 1, end]], truncated: false, elapsed_ms: .1}),
+      });
+      return;
+    }
+    await route.continue();
+  });
+  await page.reload();
+  await expect(page.locator('#follow-live')).toHaveAttribute('aria-pressed', 'false');
+  await page.locator('#follow-live').click();
+  await expect(page.locator('#follow-live')).toHaveAttribute('aria-pressed', 'true');
+  await expect(page.locator('#live-status')).toContainText(/following|live/i);
+  await expect.poll(() => extentQueries, {timeout: 5000}).toBeGreaterThan(0);
+  await expect(page.locator('#range-label')).toContainText('1.050000s');
+
+  await page.locator('#follow-live').click();
+  await expect(page.locator('#follow-live')).toHaveAttribute('aria-pressed', 'false');
+  const stoppedRange = await page.locator('#range-label').textContent();
+  await expect.poll(() => extentQueries, {timeout: 5000}).toBeGreaterThan(1);
+  await expect(page.locator('#range-label')).toHaveText(stoppedRange);
+});
+
+test('keeps an area selection until it is zoomed or cleared', async ({page}) => {
+  const timeline = page.locator('#timeline');
   const initialRange = await page.locator('#range-label').textContent();
-  const y = box.y + box.height / 2;
-  await page.mouse.move(box.x + box.width * .3, y);
-  await page.mouse.down();
-  await page.mouse.move(box.x + box.width * .7, y, {steps: 5});
+  const box = await dragTimelineRange(page);
   await expect(page.locator('#time-selection')).toBeVisible();
-  await page.mouse.up();
+  await expect(page.locator('#zoom-selection')).toBeEnabled();
+  await expect(page.locator('#clear-selection')).toBeEnabled();
+  await expect(page.locator('#range-label')).toHaveText(initialRange);
+  await expect(page.locator('#selection-summary')).not.toContainText('Select an event');
+
+  await page.locator('#zoom-selection').click();
   await expect(page.locator('#range-label')).not.toHaveText(initialRange);
+  await expect(page.locator('#time-selection')).toBeVisible();
 
   const selectedRange = await page.locator('#range-label').textContent();
-  await page.mouse.move(box.x + box.width * .6, y);
+  await page.mouse.move(box.x + box.width * .6, box.y + box.height / 2);
   await page.keyboard.down('Control');
   await page.mouse.wheel(0, -180);
   await page.keyboard.up('Control');
@@ -145,8 +296,11 @@ test('supports bounded pointer selection and trackpad-style navigation', async (
   await page.keyboard.up('Shift');
   await expect(page.locator('#range-label')).not.toHaveText(zoomedRange);
 
-  await timeline.dblclick({position: {x: box.width / 2, y: box.height / 2}});
-  await expect(page.locator('#range-label')).toHaveText(initialRange);
+  await dragTimelineRange(page, .4, .6);
+  await expect(page.locator('#time-selection')).toBeVisible();
+  await page.locator('#clear-selection').click();
+  await expect(page.locator('#time-selection')).toBeHidden();
+  await expect(page.locator('#zoom-selection')).toBeDisabled();
 });
 
 test('virtualizes machines with more than 64 CPU tracks at the SQL boundary', async ({page}) => {
@@ -187,8 +341,8 @@ test('uses the mipmap at low zoom and exact events for non-materialized filters'
     const request=route.request();
     if(request.method()==='POST'){
       const payload=request.postDataJSON();
-      if(payload.sql==='SELECT MIN(ts),MAX(ts_end) FROM events'){
-        await route.fulfill({contentType:'application/json',body:JSON.stringify({columns:['MIN(ts)','MAX(ts_end)'],rows:[[0,10]],truncated:false,elapsed_ms:0.1})});
+      if(payload.sql==='SELECT COUNT(*),MIN(ts),MAX(ts_end) FROM events'){
+        await route.fulfill({contentType:'application/json',body:JSON.stringify({columns:['COUNT(*)','MIN(ts)','MAX(ts_end)'],rows:[[18,0,10]],truncated:false,elapsed_ms:0.1})});
         return;
       }
       if(wideCpuCount&&payload.sql.startsWith('SELECT DISTINCT cpu FROM events')){
@@ -288,6 +442,7 @@ test('exports, validates, and imports portable workspaces with named SQL views',
   await page.locator('#filter-op').selectOption('contains');
   await page.locator('#filter-value').fill('agent.');
   await page.locator('#add-filter').click();
+  await openDock(page, 'sql');
   await page.locator('#sql').fill('SELECT name, dur FROM agent_spans ORDER BY dur DESC');
   await page.locator('#view-name').fill('Slow agent spans');
   await page.locator('#save-view').click();

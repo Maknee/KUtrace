@@ -12,6 +12,18 @@
 /linux/setup/module/*.o
 
 # Locally compiled legacy postprocessor executables.
+/postproc/checktrace
+/postproc/eventtospan3
+/postproc/kuod
+/postproc/makeself
+/postproc/rawtoevent
+/postproc/samptoname_k
+/postproc/samptoname_u
+/postproc/spantoprof
+/postproc/spantospan
+/postproc/spantotrim
+/postproc/time_getpid
+/postproc/unmakeself
 /linux/setup/postproc/base40
 /linux/setup/postproc/csv_dump_log
 /linux/setup/postproc/dumplogfile4

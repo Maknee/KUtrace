@@ -1,0 +1,151 @@
+{
+  "date_utc": "2026-07-21T03:00:46.402975Z",
+  "host": {
+    "cpu": "AMD EPYC 9354P 32-Core Processor",
+    "logical_cpus": 64,
+    "kernel": "6.6.36",
+    "architecture": "x86_64"
+  },
+  "methodology": {
+    "workload": "dependency-chained integer recurrence with no syscalls in the timed loop",
+    "benchmark_cpu": 31,
+    "collector_cpu": 30,
+    "matched_sample_hz": 250,
+    "baseline_distributions": 3,
+    "baseline_samples_total": 120,
+    "legacy_scope": "whole host (legacy KUtrace has no PID-scoped capture mode)",
+    "legacy_target_sample_attribution": "PC_U records on the pinned benchmark CPU",
+    "aya_scope": "PID-scoped output; perf callbacks remain attached on every online CPU",
+    "module_vermagic": "6.6.36",
+    "module_was_replaced": false
+  },
+  "baseline": {
+    "median_ns_per_op": 1.3172626725,
+    "p95_ns_per_op": 1.317432245,
+    "before_median_ns_per_op": 1.317263595,
+    "middle_median_ns_per_op": 1.31729805,
+    "after_median_ns_per_op": 1.317191795
+  },
+  "legacy_kutrace": {
+    "samples_per_distribution": 40,
+    "iterations_per_sample": 200000000,
+    "timed_operations": 8000000000,
+    "median_ns_per_op": 1.3188303525,
+    "p95_ns_per_op": 1.31895765,
+    "added_ns_per_op": 0.0015676799999999602,
+    "relative_overhead_percent": 0.11901043221886028,
+    "bootstrap_95_ci_added_ns_per_op": [
+      0.0015356850000001199,
+      0.001596930000000052
+    ],
+    "target_user_pc_samples": 2646,
+    "all_pc_samples_in_capture": 175526,
+    "observed_target_samples_per_timed_second": 250.79218440995223,
+    "estimated_added_ns_per_target_sample": 4739.7732426302655
+  },
+  "aya_ebpf": {
+    "samples_per_distribution": 40,
+    "iterations_per_sample": 200000000,
+    "timed_operations": 8000000000,
+    "median_ns_per_op": 1.31911323,
+    "p95_ns_per_op": 1.319321655,
+    "added_ns_per_op": 0.0018505574999998498,
+    "relative_overhead_percent": 0.14048507853697262,
+    "bootstrap_95_ci_added_ns_per_op": [
+      0.001830054999999886,
+      0.0018778550000000394
+    ],
+    "target_user_pc_samples": 2647,
+    "all_pc_samples_in_capture": 2647,
+    "observed_target_samples_per_timed_second": 250.83095193895326,
+    "estimated_added_ns_per_target_sample": 5592.920287117037
+  },
+  "comparison": {
+    "aya_to_legacy_added_overhead_ratio": 1.1804433940599464,
+    "aya_minus_legacy_added_ns_per_op": 0.00028287749999988954
+  },
+  "loss_status": {
+    "legacy_capture_remained_active_until_stop": true,
+    "legacy_wrap_enabled": false,
+    "legacy_explicit_drop_counter_available": false,
+    "aya_bpf_dropped_events": 0,
+    "aya_probe_dropped_events": 0
+  },
+  "limitations": [
+    "Legacy KUtrace PC sampling is tied to the 250 Hz local APIC timer and cannot be isolated from its other trace hooks.",
+    "Legacy records the whole host; Aya output is PID-scoped to avoid unrelated syscall traffic overwhelming the ring. Both sampling callbacks execute on every online CPU.",
+    "Per-sample costs divide aggregate application slowdown by observed target samples; they are not probe-body timings.",
+    "Legacy has no explicit drop counter. Remaining active with wrapping disabled proves the trace buffer did not fill, but not a formal zero-drop count."
+  ],
+  "raw_samples_ns_per_op": {
+    "baseline_before": [
+      1.317158345, 1.3171896450000002, 1.317204445, 1.317209295,
+      1.3172165, 1.317227195, 1.31722875, 1.3172314500000002,
+      1.317232595, 1.317232695, 1.31723335, 1.3172369950000002,
+      1.3172437, 1.3172458000000002, 1.3172472499999999,
+      1.3172576999999999, 1.3172582499999999, 1.317262695,
+      1.317263495, 1.3172635499999998, 1.317263595, 1.317265645,
+      1.317266895, 1.317270395, 1.317273045, 1.317273145,
+      1.317277495, 1.317278245, 1.317284395, 1.3172861450000002,
+      1.317286295, 1.3173063500000002, 1.3173097950000001,
+      1.317331895, 1.3173513449999998, 1.3173523449999998,
+      1.3173525, 1.3173561, 1.3173591000000002, 1.31737675
+    ],
+    "baseline_middle": [
+      1.31716265, 1.3172069450000001, 1.31721649, 1.31723175,
+      1.317243345, 1.3172444, 1.317249195, 1.3172616949999998,
+      1.3172626500000002, 1.317274145, 1.317275845,
+      1.3172766999999999, 1.317282695, 1.317285745, 1.31728795,
+      1.3172895000000002, 1.3172903450000002, 1.31729455,
+      1.3172962499999998, 1.317296495, 1.31729805,
+      1.3173041499999998, 1.317306695, 1.31731915, 1.317321195,
+      1.3173234950000001, 1.317324445, 1.3173249449999997,
+      1.317332145, 1.31734415, 1.3173579499999999, 1.317364345,
+      1.31737715, 1.3174019949999998, 1.317432245,
+      1.3177787499999998, 1.3178203, 1.3181518549999998,
+      1.31827335, 1.31829895
+    ],
+    "baseline_after": [
+      1.3170866949999998, 1.3170897000000001, 1.31710204,
+      1.3171243999999998, 1.31712815, 1.3171301499999999,
+      1.31713065, 1.317138995, 1.31715215, 1.3171559499999999,
+      1.317156645, 1.317157295, 1.317160595, 1.3171652449999998,
+      1.317174045, 1.317181895, 1.31718525, 1.3171864,
+      1.3171864450000002, 1.317187145, 1.317191795,
+      1.3171959450000001, 1.317200745, 1.3172043, 1.3172102,
+      1.31721575, 1.3172169449999998, 1.317218795,
+      1.3172232449999999, 1.317226195, 1.317230995, 1.31724545,
+      1.3172486950000002, 1.317252495, 1.317262995, 1.317278245,
+      1.3172827449999998, 1.31729215, 1.31730625,
+      1.3173133949999998
+    ],
+    "legacy_kutrace": [
+      1.318627755, 1.318676755, 1.31868255, 1.318683155,
+      1.318697045, 1.31874925, 1.3187577549999998,
+      1.3187698049999999, 1.318775055, 1.3187777049999998,
+      1.318781655, 1.31878735, 1.3187904049999999, 1.3187978,
+      1.3188026050000001, 1.318805355, 1.31880805, 1.318822555,
+      1.3188231550000002, 1.3188262, 1.318834505, 1.318835955,
+      1.318837105, 1.318842405, 1.318844505, 1.318847605,
+      1.318850355, 1.31886315, 1.3188638550000003, 1.31887365,
+      1.3188776999999998, 1.31888185, 1.318887955, 1.318892105,
+      1.318897955, 1.318906655, 1.31890701, 1.318925255,
+      1.31895765, 1.3189709050000002
+    ],
+    "aya_ebpf": [
+      1.31886065, 1.3189422549999998, 1.3189905499999999,
+      1.3189940050000002, 1.319025305, 1.319048155, 1.319051705,
+      1.319063155, 1.3190645549999997, 1.3190688549999998,
+      1.3190730549999998, 1.3190761549999999, 1.319088155,
+      1.319091255, 1.319101655, 1.3191027999999998,
+      1.319104955, 1.319105055, 1.3191062049999998, 1.319108805,
+      1.319117655, 1.319120205, 1.319120205, 1.319125555,
+      1.3191263549999999, 1.319128805, 1.319135155, 1.319136505,
+      1.3191369050000001, 1.319142255, 1.319153455, 1.319163655,
+      1.319171555, 1.319186105, 1.319203255,
+      1.3192172599999998, 1.31925986, 1.319260505, 1.319321655,
+      1.319326355
+    ]
+  },
+  "reproduction_script": "ebpf/bench_profiler_comparison.sh"
+}

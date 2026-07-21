@@ -16,6 +16,7 @@ use kutrace_common::{
     EVENT_SOFTIRQ_EXIT, EVENT_SYSCALL_ENTER, EVENT_SYSCALL_EXIT, EVENT_TRAP_ENTER, EVENT_TRAP_EXIT,
     Event, FILE_MAGIC, FILE_VERSION, FileHeader, event_ipc, event_ipc_byte,
 };
+use serde::Deserialize;
 
 pub const KUTRACE_USERPID: u16 = 0x200;
 pub const KUTRACE_RUNNABLE: u16 = 0x206;
@@ -109,6 +110,77 @@ fn x86_trap_name(vector: u8) -> String {
 pub struct Capture {
     pub header: FileHeader,
     pub events: Vec<Event>,
+}
+
+#[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]
+struct PcSymbolKey {
+    tgid: u32,
+    ip: u64,
+    user: bool,
+}
+
+#[derive(Debug, Deserialize)]
+struct PcSymbolRecord {
+    version: u8,
+    tgid: u32,
+    ip: u64,
+    user: bool,
+    symbol: String,
+    offset: u64,
+}
+
+/// Symbol names captured live alongside sampled PCs. The binary capture stays
+/// self-contained and valid without this optional enrichment.
+#[derive(Clone, Debug, Default)]
+pub struct PcSymbols {
+    names: HashMap<PcSymbolKey, String>,
+}
+
+impl PcSymbols {
+    pub fn load(path: impl AsRef<Path>) -> Result<Self> {
+        let path = path.as_ref();
+        let contents = std::fs::read_to_string(path)
+            .with_context(|| format!("read symbol sidecar {}", path.display()))?;
+        let mut names = HashMap::new();
+        for (index, line) in contents.lines().enumerate() {
+            if line.trim().is_empty() {
+                continue;
+            }
+            let record: PcSymbolRecord = serde_json::from_str(line).with_context(|| {
+                format!("parse symbol sidecar {} line {}", path.display(), index + 1)
+            })?;
+            if record.version != 1 {
+                bail!(
+                    "unsupported symbol sidecar version {} on line {}",
+                    record.version,
+                    index + 1
+                );
+            }
+            if record.symbol.is_empty() {
+                continue;
+            }
+            let display = format!("{}+0x{:x}", record.symbol, record.offset);
+            names.insert(
+                PcSymbolKey {
+                    tgid: record.tgid,
+                    ip: record.ip,
+                    user: record.user,
+                },
+                display,
+            );
+        }
+        Ok(Self { names })
+    }
+
+    fn get(&self, event: &Event) -> Option<&str> {
+        let user = event.flags & EVENT_FLAG_USER != 0;
+        let key = PcSymbolKey {
+            tgid: if user { event.tgid() } else { 0 },
+            ip: event.args[0],
+            user,
+        };
+        self.names.get(&key).map(String::as_str)
+    }
 }
 
 pub fn read_capture(path: impl AsRef<Path>) -> Result<Capture> {
@@ -403,9 +475,14 @@ fn output_event(out: &mut impl Write, event: &LegacyEvent) -> io::Result<()> {
 /// Emit the exact line-oriented contract accepted by the legacy `eventtospan3`.
 /// This is deliberately the compatibility boundary: the existing span builder
 /// and HTML renderer remain byte-for-byte the same executables.
-pub fn to_legacy_events(
+pub fn to_legacy_events(capture: &Capture, names: &SyscallNames, out: impl Write) -> Result<()> {
+    to_legacy_events_with_symbols(capture, names, &PcSymbols::default(), out)
+}
+
+pub fn to_legacy_events_with_symbols(
     capture: &Capture,
     names: &SyscallNames,
+    symbols: &PcSymbols,
     mut out: impl Write,
 ) -> Result<()> {
     let dt = DateTime::<Utc>::from_timestamp_nanos(capture.header.epoch_start_ns as i64);
@@ -659,7 +736,10 @@ pub fn to_legacy_events(
                     arg: (ip >> 6) & 0xffff,
                     retval: 0,
                     ipc: event_ipc(event.flags),
-                    name: format!("PC={ip:012x}"),
+                    name: symbols
+                        .get(event)
+                        .map(str::to_owned)
+                        .unwrap_or_else(|| format!("PC={ip:012x}")),
                 });
             }
             EVENT_PACKET_RX | EVENT_PACKET_TX => {
@@ -1073,6 +1153,88 @@ mod tests {
             "641 2  43 0  {} 0 0 PC={kernel_ip:012x} (281)",
             (kernel_ip >> 6) & 0xffff
         )));
+    }
+
+    #[test]
+    fn enriches_pc_samples_from_the_optional_symbol_sidecar() {
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("capture.symbols.jsonl");
+        std::fs::write(
+            &path,
+            concat!(
+                r#"{"version":1,"tgid":42,"ip":20015998343868,"user":true,"symbol":"hello::run","offset":7}"#,
+                "\n",
+                r#"{"version":1,"tgid":0,"ip":18446744071581156711,"user":false,"symbol":"schedule","offset":42}"#,
+                "\n"
+            ),
+        )
+        .unwrap();
+        let symbols = PcSymbols::load(&path).unwrap();
+        let names = SyscallNames::default();
+
+        let mut user = event(EVENT_PC_SAMPLE, -1, 1_100);
+        user.args[0] = 0x0000_1234_5678_9abc;
+        user.flags = EVENT_FLAG_USER;
+        let mut kernel = event(EVENT_PC_SAMPLE, -1, 1_200);
+        kernel.args[0] = 0xffff_ffff_8123_4567;
+        let capture = Capture {
+            header: FileHeader::new(1_000, 1_700_000_001_000_000_000, ARCH_X86_64),
+            events: vec![user, kernel],
+        };
+        let mut output = Vec::new();
+        to_legacy_events_with_symbols(&capture, &names, &symbols, &mut output).unwrap();
+        let output = String::from_utf8(output).unwrap();
+
+        assert!(output.contains("hello::run+0x7 (280)"));
+        assert!(output.contains("schedule+0x2a (281)"));
+        assert!(!output.contains("PC="));
+    }
+
+    #[test]
+    fn sidecar_misses_keep_the_raw_pc_fallback() {
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("capture.symbols.jsonl");
+        std::fs::write(
+            &path,
+            r#"{"version":1,"tgid":99,"ip":4660,"user":true,"symbol":"other_process","offset":0}
+"#,
+        )
+        .unwrap();
+        let symbols = PcSymbols::load(&path).unwrap();
+        let mut sample = event(EVENT_PC_SAMPLE, -1, 1_100);
+        sample.args[0] = 0x1234;
+        sample.flags = EVENT_FLAG_USER;
+        let capture = Capture {
+            header: FileHeader::new(1_000, 1_700_000_001_000_000_000, ARCH_X86_64),
+            events: vec![sample],
+        };
+        let mut output = Vec::new();
+        to_legacy_events_with_symbols(&capture, &SyscallNames::default(), &symbols, &mut output)
+            .unwrap();
+
+        assert!(
+            String::from_utf8(output)
+                .unwrap()
+                .contains("PC=000000001234 (280)")
+        );
+    }
+
+    #[test]
+    fn rejects_unknown_symbol_sidecar_versions() {
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("capture.symbols.jsonl");
+        std::fs::write(
+            &path,
+            r#"{"version":2,"tgid":0,"ip":1,"user":false,"symbol":"bad","offset":0}
+"#,
+        )
+        .unwrap();
+        assert!(
+            PcSymbols::load(&path)
+                .unwrap_err()
+                .to_string()
+                .contains("unsupported symbol sidecar version 2")
+        );
     }
 
     #[test]

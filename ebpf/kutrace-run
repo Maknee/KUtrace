@@ -1,0 +1,250 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+usage() {
+  cat <<'EOF'
+Usage: ebpf/kutrace-run [OPTIONS] -- COMMAND [ARG...]
+
+Trace one command with KUtrace eBPF, symbolize sampled PCs, convert the
+capture, and serve the modern UI.
+
+Options:
+  --listen ADDRESS   UI address (default: 127.0.0.1:3000)
+  --output-dir DIR   Keep artifacts in DIR (default: a new /tmp directory)
+  --sample-hz HZ     PC sampling frequency (default: 99; 0 disables it)
+  --title TITLE      Trace title shown in the UI
+  --no-ui            Create the capture and JSON without starting the UI
+  -h, --help         Show this help
+
+Example:
+  ebpf/kutrace-run -- /usr/bin/printf 'Hello, world!\n'
+EOF
+}
+
+die() {
+  echo "kutrace-run: $*" >&2
+  exit 1
+}
+
+script_dir=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+repo_dir=$(cd "$script_dir/.." && pwd)
+listen=127.0.0.1:3000
+output_dir=
+sample_hz=99
+title=
+serve_ui=1
+
+while (($#)); do
+  case "$1" in
+    --listen)
+      (($# >= 2)) || die "--listen requires an address"
+      listen=$2
+      shift 2
+      ;;
+    --output-dir)
+      (($# >= 2)) || die "--output-dir requires a directory"
+      output_dir=$2
+      shift 2
+      ;;
+    --sample-hz)
+      (($# >= 2)) || die "--sample-hz requires a non-negative integer"
+      sample_hz=$2
+      [[ "$sample_hz" =~ ^[0-9]+$ ]] || die "--sample-hz must be a non-negative integer"
+      shift 2
+      ;;
+    --title)
+      (($# >= 2)) || die "--title requires text"
+      title=$2
+      shift 2
+      ;;
+    --no-ui)
+      serve_ui=0
+      shift
+      ;;
+    -h|--help)
+      usage
+      exit 0
+      ;;
+    --)
+      shift
+      break
+      ;;
+    *)
+      die "unknown option '$1' (put -- before the command)"
+      ;;
+  esac
+done
+
+(($#)) || { usage >&2; exit 2; }
+
+for required_command in bash c++ make sort sudo; do
+  command -v "$required_command" >/dev/null || die "missing required command: $required_command"
+done
+
+collector="$script_dir/target/release/kutrace-collector"
+transform="$script_dir/target/release/kutrace-transform"
+workspace="$script_dir/target/release/kutrace-ui"
+ebpf_object="$script_dir/kutrace-ebpf/target/bpfel-unknown-none/release/kutrace-ebpf"
+span_builder="$script_dir/target/release/eventtospan3"
+span_builder_source="$repo_dir/postproc/eventtospan3.cc"
+legacy_builder="$script_dir/target/release/makeself"
+legacy_builder_source="$repo_dir/postproc/makeself.cc"
+
+if [[ ! -x "$collector" || ! -x "$transform" || ! -x "$workspace" || ! -f "$ebpf_object" ]]; then
+  echo "Building KUtrace userspace and eBPF artifacts..." >&2
+  make -C "$script_dir" build build-ebpf
+fi
+
+if [[ ! -x "$span_builder" || "$span_builder_source" -nt "$span_builder" ]]; then
+  echo "Building the legacy-compatible span converter..." >&2
+  mkdir -p "$script_dir/target/release"
+  c++ -O2 "$span_builder_source" -o "$span_builder"
+fi
+
+if [[ ! -x "$legacy_builder" || "$legacy_builder_source" -nt "$legacy_builder" ]]; then
+  echo "Building the original KUtrace HTML packager..." >&2
+  mkdir -p "$script_dir/target/release"
+  c++ -O2 "$legacy_builder_source" -o "$legacy_builder"
+fi
+
+if [[ -z "$output_dir" ]]; then
+  output_dir=$(mktemp -d /tmp/kutrace-run.XXXXXX)
+else
+  mkdir -p "$output_dir"
+  output_dir=$(cd "$output_dir" && pwd)
+  for artifact in capture.kuevents capture.events capture.json capture.html capture.sqlite capture.symbols.jsonl collector.log collector.pid; do
+    [[ ! -e "$output_dir/$artifact" ]] || die "$output_dir/$artifact already exists"
+  done
+fi
+
+capture="$output_dir/capture.kuevents"
+events="$output_dir/capture.events"
+json="$output_dir/capture.json"
+legacy_html="$output_dir/capture.html"
+database="$output_dir/capture.sqlite"
+symbols="$output_dir/capture.symbols.jsonl"
+collector_log="$output_dir/collector.log"
+collector_pidfile="$output_dir/collector.pid"
+agent_shm="$output_dir/agent.shm"
+agent_socket="$output_dir/agent.sock"
+
+if [[ -z "$title" ]]; then
+  title="KUtrace: $(basename "$1")"
+fi
+
+command_pid=
+collector_pid=
+collector_job_pid=
+
+cleanup() {
+  status=$?
+  trap - EXIT
+  if [[ -n "$command_pid" ]] && kill -0 "$command_pid" 2>/dev/null; then
+    kill -CONT "$command_pid" 2>/dev/null || true
+    kill -TERM "$command_pid" 2>/dev/null || true
+    wait "$command_pid" 2>/dev/null || true
+  fi
+  if [[ -n "$collector_pid" ]] && sudo kill -0 "$collector_pid" 2>/dev/null; then
+    sudo kill -INT "$collector_pid" 2>/dev/null || true
+  fi
+  if [[ -n "$collector_job_pid" ]]; then
+    wait "$collector_job_pid" 2>/dev/null || true
+  fi
+  exit "$status"
+}
+trap cleanup EXIT
+
+printf 'Tracing:'
+printf ' %q' "$@"
+printf '\nArtifacts: %s\n' "$output_dir"
+
+sudo -v
+
+# Stop the child before exec so the collector can attach to its final TGID
+# before the first command syscall is issued.
+bash -c 'kill -STOP "$$"; exec "$@"' kutrace-command "$@" &
+command_pid=$!
+
+for _ in $(seq 1 200); do
+  command_state=$(ps -o stat= -p "$command_pid" 2>/dev/null || true)
+  [[ "$command_state" == *T* ]] && break
+  kill -0 "$command_pid" 2>/dev/null || die "command exited before capture started"
+  sleep 0.01
+done
+[[ "$command_state" == *T* ]] || die "timed out while pausing the command"
+
+: > "$collector_pidfile"
+sudo bash -c 'printf "%s\n" "$$" > "$1"; shift; exec "$@"' \
+  kutrace-collector "$collector_pidfile" "$collector" \
+  --ebpf "$ebpf_object" \
+  --output "$capture" \
+  --agent-shm "$agent_shm" \
+  --agent-socket "$agent_socket" \
+  --pid "$command_pid" \
+  --symbols "$symbols" \
+  --sample-hz "$sample_hz" > /dev/null 2> "$collector_log" &
+collector_job_pid=$!
+
+for _ in $(seq 1 400); do
+  if [[ -s "$collector_pidfile" ]]; then
+    collector_pid=$(<"$collector_pidfile")
+  fi
+  [[ -e "$agent_shm" ]] && break
+  if ! kill -0 "$collector_job_pid" 2>/dev/null; then
+    cat "$collector_log" >&2
+    die "collector exited before attachment completed"
+  fi
+  sleep 0.025
+done
+[[ -e "$agent_shm" ]] || die "timed out while attaching the collector"
+
+kill -CONT "$command_pid"
+set +e
+wait "$command_pid"
+command_status=$?
+set -e
+command_pid=
+
+sudo kill -INT "$collector_pid"
+set +e
+wait "$collector_job_pid"
+collector_status=$?
+set -e
+collector_job_pid=
+collector_pid=
+rm -f -- "$collector_pidfile"
+
+if ((collector_status != 0)); then
+  cat "$collector_log" >&2
+  die "collector failed with status $collector_status"
+fi
+
+tail -n 1 "$collector_log" >&2
+if ((command_status != 0)); then
+  echo "kutrace-run: command exited with status $command_status; showing its trace anyway" >&2
+fi
+
+"$transform" events "$capture" --symbols "$symbols" | LC_ALL=C sort -n > "$events"
+"$span_builder" "$title" < "$events" > "$json"
+(
+  cd "$repo_dir/postproc"
+  "$legacy_builder" show_cpu.html "$json" "$legacy_html"
+)
+[[ -s "$legacy_html" ]] || die "failed to package the original KUtrace HTML"
+
+echo "Trace JSON: $json"
+echo "Original KUtrace HTML: $legacy_html"
+echo "Symbols: $symbols"
+if ((serve_ui == 0)); then
+  trap - EXIT
+  exit "$command_status"
+fi
+
+echo "KUtrace workspace: http://$listen"
+echo "Press Ctrl-C to stop the workspace; artifacts remain in $output_dir"
+trap - EXIT
+exec "$workspace" "$json" \
+  --database "$database" \
+  --legacy-html "$legacy_html" \
+  --listen "$listen" \
+  --rebuild

@@ -1,4 +1,4 @@
-.PHONY: build build-ebpf bench-ui bench-ui-scale bench-uprobe check-arm64 test test-ui verify-arm64-live verify-live-differential smoke
+.PHONY: build build-ebpf bench-profiler-overhead bench-ui bench-ui-scale bench-uprobe check-arm64 test test-ui verify-arm64-live verify-live-differential smoke
 
 build:
 	cargo build --release --workspace
@@ -35,6 +35,9 @@ bench-ui-scale: build
 
 bench-uprobe: build build-ebpf
 	./bench_uprobe_overhead.sh
+
+bench-profiler-overhead: build build-ebpf
+	./bench_profiler_comparison.sh
 
 verify-live-differential: build build-ebpf
 	./verify_live_differential.sh

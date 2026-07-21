@@ -11,7 +11,8 @@ bytemuck.workspace = true
 chrono.workspace = true
 clap.workspace = true
 kutrace-common = { path = "../kutrace-common" }
+serde.workspace = true
+serde_json.workspace = true
 
 [dev-dependencies]
-serde_json.workspace = true
 tempfile.workspace = true
