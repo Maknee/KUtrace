@@ -240,13 +240,13 @@ test('builds a range-scoped flamegraph with clickable frames', async ({page}) =>
   await expect(page.locator('#range-label')).not.toHaveText(rangeBefore);
 });
 
-test('shows CPU and PID groups together and can isolate either group', async ({page}) => {
+test('shows auto-pruned KUtrace CPU, PID, RPC, and resource groups', async ({page}) => {
   const groupingQueries=[];
   await page.route('**/api/query',async route=>{const request=route.request();if(request.method()==='POST'){const sql=request.postDataJSON().sql;if(sql.startsWith('SELECT DISTINCT cpu FROM events')||sql.startsWith('SELECT DISTINCT pid FROM events'))groupingQueries.push(sql)}await route.continue()});
   await page.reload();
   const timeline = page.locator('#timeline');
   await expect(timeline).toHaveAttribute('data-track-mode', 'cpu_pid');
-  await expect(timeline).toHaveAttribute('data-track-groups', 'cpu,pid');
+  await expect(timeline).toHaveAttribute('data-track-groups', 'cpu,pid,rpc,res');
   await expect(timeline).toHaveAttribute('data-visible-tracks',/.+/);
   await expect(page.locator('#track-mode')).toHaveValue('cpu_pid');
   expect(groupingQueries.find(sql=>sql.startsWith('SELECT DISTINCT cpu'))).toContain('dur>0 AND pid>0 AND cpu>=0');
@@ -254,9 +254,12 @@ test('shows CPU and PID groups together and can isolate either group', async ({p
   const linkedTracks=(await timeline.getAttribute('data-visible-tracks')).split(',');
   expect(linkedTracks.some(track=>track.startsWith('cpu:'))).toBe(true);
   expect(linkedTracks.some(track=>track.startsWith('pid:'))).toBe(true);
+  expect(linkedTracks.some(track=>track.startsWith('rpc:'))).toBe(true);
+  expect(linkedTracks.some(track=>track.startsWith('res:'))).toBe(true);
   await page.locator('[data-track-group="process"]').click();
   await expect(timeline).toHaveAttribute('data-ready','true');
-  await expect(timeline).toHaveAttribute('data-visible-tracks','');
+  await expect.poll(async()=>timeline.getAttribute('data-visible-tracks')).not.toContain('cpu:');
+  await expect.poll(async()=>timeline.getAttribute('data-visible-tracks')).not.toContain('pid:');
   await page.locator('[data-track-group="process"]').click();
   await expect(timeline).toHaveAttribute('data-ready','true');
   await page.locator('#track-mode').selectOption('pid');
@@ -268,7 +271,21 @@ test('shows CPU and PID groups together and can isolate either group', async ({p
   await expect(timeline).toHaveAttribute('data-track-mode', 'cpu');
   await expect(timeline).toHaveAttribute('data-track-groups', 'cpu');
   await page.locator('#track-mode').selectOption('cpu_pid');
-  await expect(timeline).toHaveAttribute('data-track-groups', 'cpu,pid');
+  await expect(timeline).toHaveAttribute('data-track-groups', 'cpu,pid,rpc,res');
+});
+
+test('shift click toggles a visible track highlight', async ({page}) => {
+  const timeline=page.locator('#timeline');
+  const point=await page.evaluate(()=>{const hit=state.hitRegions.find(region=>String(region.track).startsWith('cpu:'));return {x:hit.x+Math.max(1,hit.w/2),y:hit.y+Math.max(1,hit.h/2),track:String(hit.track)}});
+  const box=await timeline.boundingBox();
+  await page.keyboard.down('Shift');
+  await page.mouse.click(box.x+point.x,box.y+point.y);
+  await page.keyboard.up('Shift');
+  await expect(timeline).toHaveAttribute('data-highlighted-tracks',point.track);
+  await page.keyboard.down('Shift');
+  await page.mouse.click(box.x+point.x,box.y+point.y);
+  await page.keyboard.up('Shift');
+  await expect(timeline).toHaveAttribute('data-highlighted-tracks','');
 });
 
 test('searches the visible trace, inverts matches, and toggles KUtrace overlays', async ({page}) => {

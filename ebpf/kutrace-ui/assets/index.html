@@ -43,11 +43,13 @@
       <section>
         <h2>Tracks</h2>
         <label class="field-label">Group by
-          <select id="track-mode"><option value="cpu_pid">PIDs + active cores</option><option value="cpu">CPU cores</option><option value="pid">Process / thread</option></select>
+          <select id="track-mode"><option value="cpu_pid">KUtrace groups</option><option value="cpu">CPU cores</option><option value="pid">Process / thread</option></select>
         </label>
         <div class="track-groups" aria-label="Track groups">
           <button class="track-group active" data-track-group="cpu">▾ CPUs</button>
           <button class="track-group active" data-track-group="process">▾ Processes</button>
+          <button class="track-group active" data-track-group="rpc">▾ RPCs</button>
+          <button class="track-group active" data-track-group="resource">▾ Resources</button>
           <button class="track-group active" data-track-group="kernel">▾ Kernel &amp; scheduler</button>
           <button class="track-group active" data-track-group="agent">▾ Agent reasoning</button>
         </div>
@@ -91,14 +93,14 @@
             <div class="renderer-tabs" role="tablist" aria-label="Timeline renderer"><button class="renderer-tab active" data-renderer="kutrace" role="tab" aria-selected="true">Native KUtrace</button><button class="renderer-tab" data-renderer="lanes" role="tab" aria-selected="false">Event lanes</button></div>
           </div>
           <div id="kutrace-renderer" class="timeline-renderer modern-renderer active">
-            <div class="modern-renderer-head"><span id="timeline-mode" class="mode-badge">Exact events</span><span id="range-label"></span><div class="timeline-actions"><button id="zoom-selection" disabled>Zoom selection</button><button id="clear-selection" disabled>Clear selection</button><span class="shortcut-help">drag select · Shift+drag pan · Ctrl+wheel zoom · WASD navigate</span></div></div>
+            <div class="modern-renderer-head"><span id="timeline-mode" class="mode-badge">Exact events</span><span id="range-label"></span><div class="timeline-actions"><button id="zoom-selection" disabled>Zoom selection</button><button id="clear-selection" disabled>Clear selection</button><span class="shortcut-help">drag select · Shift+click highlight · Alt+drag pan · Ctrl+wheel zoom · WASD</span></div></div>
             <div class="overview-shell" aria-label="Full trace overview">
               <canvas id="overview" height="72"></canvas><div id="overview-viewport"></div>
             </div>
             <div class="time-ruler"><span id="ruler-start"></span><span id="ruler-center"></span><span id="ruler-end"></span></div>
             <div class="timeline-scroll">
               <div class="timeline-shell">
-                <canvas id="timeline" height="420" tabindex="0" aria-label="Trace timeline; drag to select, Shift plus drag to pan, Ctrl plus wheel to zoom"></canvas>
+                <canvas id="timeline" height="420" tabindex="0" aria-label="Trace timeline; drag to select, Shift click to toggle highlight, Alt plus drag to pan, Ctrl plus wheel to zoom"></canvas>
                 <div id="time-selection" aria-hidden="true"></div>
                 <div id="timeline-tooltip" role="tooltip" hidden></div>
               </div>
