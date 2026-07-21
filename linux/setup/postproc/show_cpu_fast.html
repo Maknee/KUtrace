@@ -56,6 +56,72 @@
   font-family: sans-serif; 
   fill: #000000;
 }
+
+/* Searchable lane/event filters stay in ordinary HTML so typing and selecting
+ * do not rebuild the SVG. Only applying a selection redraws trace content. */
+.lane-filter-wrap { display:inline-block; position:relative; font-family:sans-serif; }
+.lane-filter-panel {
+  position:fixed; z-index:20; top:40px; left:12px; right:auto;
+  width:min(760px, calc(100vw - 24px)); padding:12px;
+  min-width:min(320px, calc(100vw - 16px)); min-height:180px;
+  max-width:calc(100vw - 8px); max-height:calc(100vh - 8px);
+  box-sizing:border-box; overflow:auto; resize:both;
+  border:1px solid #9aa4b2; border-radius:8px; background:#fff;
+  box-shadow:0 8px 24px rgba(0,0,0,.18); color:#18212f; user-select:text;
+}
+.lane-filter-panel[hidden] { display:none; }
+.lane-filter-head,.lane-filter-summary,.lane-filter-actions,.lane-filter-option {
+  display:flex; align-items:center; gap:8px;
+}
+.lane-filter-head { justify-content:space-between; margin-bottom:10px; cursor:move; touch-action:none; }
+.lane-filter-head:active { cursor:grabbing; }
+.lane-filter-head button { cursor:pointer; }
+.view-template-select { max-width:190px; border:1px solid #aeb7c4; border-radius:5px; background:#fff; }
+.advanced-search-panel { left:auto; right:12px; width:min(700px, calc(100vw - 24px)); }
+.advanced-search-controls { display:grid; grid-template-columns:1fr auto; gap:8px; align-items:center; }
+.advanced-search-results { max-height:390px; overflow:auto; border:1px solid #e4e8ee; border-radius:5px; }
+.advanced-search-option[aria-current="true"] { background:#dbe7ff; box-shadow:inset 3px 0 #2458a6; }
+.advanced-search-type { flex:none; padding:2px 5px; border-radius:4px; background:#e7eefc; color:#174ea6; font-size:10px; font-weight:700; letter-spacing:.04em; }
+.advanced-search-time { min-width:92px; font-variant-numeric:tabular-nums; }
+.advanced-search-name { min-width:0; flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.advanced-search-context { color:#5f6b7a; font-size:12px; white-space:nowrap; }
+.advanced-search-status { min-height:18px; margin:6px 0; color:#5f6b7a; font-size:12px; }
+.time-history-panel { left:50%; right:auto; width:min(520px, calc(100vw - 24px)); transform:translateX(-50%); }
+.time-history-panel.drag-positioned { transform:none; }
+.time-history-list { max-height:390px; overflow:auto; border:1px solid #e4e8ee; border-radius:5px; }
+.time-history-option[aria-current="true"] { background:#dbe7ff; box-shadow:inset 3px 0 #2458a6; }
+.time-history-index { min-width:38px; color:#5f6b7a; font-variant-numeric:tabular-nums; }
+.time-history-window { min-width:0; flex:1; font-family:ui-monospace,SFMono-Regular,Menlo,monospace; font-size:12px; }
+.lane-filter-title { font-weight:700; }
+.lane-filter-hint,.lane-filter-meta,.lane-filter-result-count { color:#5f6b7a; font-size:12px; }
+.lane-filter-grid { display:grid; grid-template-columns:minmax(0,1.35fr) minmax(0,1fr); gap:12px; }
+.lane-filter-symbols { grid-column:1 / -1; }
+.lane-filter-spans { grid-column:1 / -1; }
+.lane-filter-spans .lane-filter-list { max-height:180px; }
+.lane-filter-symbols .lane-filter-list { max-height:190px; }
+.lane-filter-symbol-status { margin:4px 0 8px; padding:6px 8px; border-radius:5px; background:#f1f4f8; color:#4d5968; font-size:12px; }
+.lane-filter-section { min-width:0; padding:10px; border:1px solid #d8dee8; border-radius:6px; background:#fbfcfe; }
+.lane-filter-section h3 { margin:0 0 7px; font-size:13px; }
+.lane-filter-input { box-sizing:border-box; width:100%; margin-bottom:7px; padding:6px 8px; border:1px solid #aeb7c4; border-radius:5px; }
+.lane-filter-list { max-height:244px; overflow:auto; border-top:1px solid #e4e8ee; }
+.lane-filter-option { width:100%; padding:6px 4px; border:0; border-bottom:1px solid #edf0f4; background:transparent; text-align:left; cursor:pointer; }
+.lane-filter-option:hover,.lane-filter-option:focus { background:#edf2ff; outline:none; }
+.lane-filter-option[aria-pressed="true"] { background:#e2eaff; }
+.lane-filter-check { width:16px; color:#174ea6; font-weight:bold; }
+.lane-filter-primary { min-width:0; flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-size:13px; }
+.lane-filter-id { flex:none; color:#354052; font-family:ui-monospace,SFMono-Regular,Menlo,monospace; font-size:12px; }
+.lane-filter-summary { flex-wrap:wrap; margin:9px 0 4px; }
+.lane-filter-chip { padding:3px 7px; border:1px solid #8ea9d8; border-radius:999px; background:#eef3ff; color:#183b70; cursor:pointer; font-size:12px; }
+.lane-filter-actions { flex-wrap:wrap; margin:7px 0; }
+.lane-filter-actions button,.lane-filter-close { border:1px solid #aeb7c4; border-radius:5px; background:#fff; cursor:pointer; }
+.lane-filter-close { font-size:16px; }
+@media (max-width:680px) {
+  .lane-filter-panel { top:52px; left:8px; right:8px; width:auto; max-height:calc(100vh - 60px); }
+  .advanced-search-panel { left:8px; right:8px; width:auto; }
+  .time-history-panel { left:8px; right:8px; width:auto; transform:none; }
+  .lane-filter-grid { grid-template-columns:1fr; }
+  .lane-filter-list { max-height:180px; }
+}
  
 .graphline {
   fill: none;
@@ -387,7 +453,7 @@
 //----------------------------------------------------------------------------//
 
 // Version control for this HTML file
-var script_edit_date = "(ver2024-07-14)";  // Shown in secondary menu for identification
+var script_edit_date = "(ver2026-07-21)";  // Shown in secondary menu for identification
 
 var book = false;		// Set true to get defaults for creating book diagrams
 
@@ -864,6 +930,41 @@ var reddot;
 
 var searchlist = [];
 
+// Metadata indexes are built once. Arrays are saved with views; Sets provide
+// constant-time checks while drawing very large traces.
+var filterPidOptions = [];
+var filterCpuOptions = [];
+var filterSymbolOptions = [];
+var filterSpanOptions = [];
+var selectedPidSet = new Set();
+var selectedCpuSet = new Set();
+var selectedSymbolSet = new Set();
+var selectedSpanSet = new Set();
+var spanNameByEvent = new WeakMap();
+var pidCpuCache = new Map();
+var filteredEventIndices = null;
+const filterResultLimit = 100;
+var pidSpanActivity = new Map();
+var cpuSpanActivity = new Map();
+var cpuPidSpanActivity = new Map();
+const laneFilterUiStorageKey = "kutrace.laneFilter.ui.v1";
+var laneFilterLastFocusId = "pidFilterSearch";
+var spanSearchRecords = [];
+var spanSearchMatches = [];
+var spanSearchEventSet = new Set();
+var spanSearchSelectedIndex = -1;
+var spanSearchError = "";
+const spanSearchRenderLimit = 120;
+const advancedSearchUiStorageKey = "kutrace.advancedSpanSearch.ui.v1";
+var advancedSearchLastFocusId = "spanRegexSearch";
+var spanSearchTimerHandle = null;
+var timeViewHistory = [];
+var timeViewHistoryCursor = -1;
+var timeViewHistoryApplying = false;
+const timeViewHistoryLimit = 200;
+const timeViewHistoryRenderLimit = 100;
+const timeHistoryUiStorageKey = "kutrace.timeHistory.ui.v1";
+
 
 //----------------------------------------------------------------------------//
 // Globals for X-axis                                                         //
@@ -1203,6 +1304,15 @@ var state2 = {
   //Part of a view. Reconstruct hilite_event_array from here
   rowToHilite: [],
 
+  // Searchable filters. Empty means show every value.
+  filter_pid_values: [],
+  filter_cpu_values: [],
+  filter_symbol_values: [],
+  filter_span_values: [],
+  view_template_value: 0,
+  span_search_text: "",
+  span_filter_enabled: 0,
+
   dummy: 0			// No comma here
 };
 
@@ -1291,6 +1401,7 @@ var mx1, my1;			// First point for mousemove drag
 var originalx, originaly;	// Initial values for delta updates callout drag
 var dragging_bubble;		// Callout drag
 var dragging_spike;		// Callout drag 
+var measurement_dragged = false;	// Shift-drag moved far enough to create a measurement
 var d1, d2;		// First and second marked data objects
 
 
@@ -1448,6 +1559,14 @@ console.log("initializeState");
   state2.search_text = "";
   state2.usec_lo_time = 0;
   state2.usec_hi_time = 0;
+  state2.filter_pid_values = [];
+  state2.filter_cpu_values = [];
+  state2.filter_symbol_values = [];
+  state2.filter_span_values = [];
+  state2.view_template_value = 0;
+  state2.span_search_text = "";
+  state2.span_filter_enabled = 0;
+  syncFilterSetsFromState();
   ////state.textmultiplier_value = 0;
   state2.basetime0_value = 0;
   state2.xleft_ts = 0;
@@ -1919,6 +2038,7 @@ function onscreen_y(d) {
 // Returns true based on CPU or PID or RPC. 
 // NO. Overlays, cpu < 0, are always true (wait_xxx, etc.)
 function onscreen_all_y(d) {
+  if (!passesLaneFilters(d)) {return false;}
   // Always do CPUs
   var row = eventToRow[prefixCpu * 65536 + low16of(cpu(d))];
   var track = rowToTrack[row];
@@ -2385,7 +2505,10 @@ function draw_annotateall() {
   var min_ts = 0;	// But only one per xsecperpix; assumes sorted by ts
   var ignore_min_ts = RowsArePresorted();
   if (data == null) {return;}
-  for (var i = 0; i < data.events.length; ++i) {
+  var candidateCount = filteredEventIndices == null ?
+      data.events.length : filteredEventIndices.length;
+  for (var eventPos = 0; eventPos < candidateCount; ++eventPos) {
+    var i = filteredEventIndices == null ? eventPos : filteredEventIndices[eventPos];
     var d = data.events[i];
     var gray = !eventHilite(i);
     var skip = gray || dont_annotate[ev(d)] || is_mark(d) || is_pc_samp(d) || 
@@ -3014,8 +3137,9 @@ function draw_pstate(d, x0, y0, x1, gray, height) {
 // Draw one PC sample
 function draw_pc_samp(d, x0, y0, x1, gray, height) {
   if (state2.samp_value <= 0) {return;}	// PC samples off or unavailable
-  if ((state2.samp_value == 2) && (pid(d) == 0)) {return;}  // Event is pc_samp, but pid 0 = idle
-  if ((state2.samp_value == 1) && (pid(d) != 0)) {return;}  // Event is pc_samp, and pid 0 = idle
+  var selectedSymbol = selectedSymbolSet.has(pcSampleSymbol(d));
+  if (!selectedSymbol && (state2.samp_value == 2) && (pid(d) == 0)) {return;}  // hide idle
+  if (!selectedSymbol && (state2.samp_value == 1) && (pid(d) != 0)) {return;}  // idle only
   var samp_px = x1 - x0;
   if (samp_px < 2) {return};		// Avoid short pixel clutter
   if ((3 * height) < 0.5) {return;}	// Avoid too thin to see 
@@ -3830,7 +3954,10 @@ function fastdrawevents() {
   // Draw everything on screen except overlays
   var row = 0;
   var overlay_set = new Set();
-  for (var i = 0; i < data.events.length; ++i) {
+  var candidateCount = filteredEventIndices == null ?
+      data.events.length : filteredEventIndices.length;
+  for (var eventPos = 0; eventPos < candidateCount; ++eventPos) {
+    var i = filteredEventIndices == null ? eventPos : filteredEventIndices[eventPos];
     var d = data.events[i];
     if (is_lr_mark(d)) {continue;}
     if (!onscreen_x(d)) {continue;}
@@ -4218,10 +4345,27 @@ function packupState() {
   return CompressStringify(state2);
 }
 
+function padLaneFilterState(st) {
+  if (!Array.isArray(st.filter_pid_values)) {st.filter_pid_values = [];}
+  if (!Array.isArray(st.filter_cpu_values)) {st.filter_cpu_values = [];}
+  if (!Array.isArray(st.filter_symbol_values)) {st.filter_symbol_values = [];}
+  if (!Array.isArray(st.filter_span_values)) {st.filter_span_values = [];}
+  if ((st.view_template_value !== 2) && (st.view_template_value !== 1) &&
+      (st.view_template_value !== 0)) {
+    st.view_template_value = 0;
+  }
+  if (typeof st.span_search_text !== "string") {st.span_search_text = "";}
+  if (st.span_filter_enabled !== 1) {st.span_filter_enabled = 0;}
+  return st;
+}
+
 // After restoring state, put Sets and derived main state variables back
 function unpackState(savedstr) {
 //console.log("unpackState", savedstr);
-  state2 = DecompressUnstringify(savedstr);
+  state2 = padLaneFilterState(DecompressUnstringify(savedstr));
+  syncFilterSetsFromState();
+  rebuildSpanSearchMatches(false);
+  rebuildLaneFilterEventIndex();
   CheckHilites("Unpack", state2.rowToHilite);
   RecalcDerivedState();
 }
@@ -5213,6 +5357,7 @@ function mousedown_x() {
     // Set up for possible drag
     dragging_bubble = false;
     dragging_spike = false;
+    measurement_dragged = false;
     svgdotg.on("mousemove", mousemove_x);
 }
  
@@ -5247,6 +5392,7 @@ function mousemove_x() {
     if (i < 0) {return;}
 
     d2 = data.events[i];
+    measurement_dragged = true;
     // Draw and label vertical line at start of object
     var short = false;
     var rotate = false;
@@ -5309,6 +5455,14 @@ function mouseup_x() {
     dragging_bubble = false;
     dragging_spike = false;
     svgdotg.on("mousemove", mousemove_region3);
+
+    // A real Shift-drag is a measurement. Keep its line and delta visible on
+    // mouse-up even while Shift is still held; the next redraw/measurement
+    // replaces it. Preserve the older Shift-click behavior below.
+    if (measurement_dragged) {
+      measurement_dragged = false;
+      return;
+    }
 
     // If shift key is still down, remove all rubberlines and clear annots
     if (d3.event.shiftKey) {
@@ -6287,6 +6441,27 @@ function redrawEvents() {
   svgdotg.on("mousemove", mousemove_region3);
 }
 
+// Label a sparse sample of explicitly selected PC symbols. Spacing and a hard
+// cap prevent symbolization from turning dense sample traces into text soup.
+function annotateFilteredSymbols() {
+  if (!selectedSymbolSet.size) {return;}
+  var nextLabelTime = new Map();
+  var candidateCount = filteredEventIndices == null ? data.events.length : filteredEventIndices.length;
+  var labelsDrawn = 0;
+  for (var eventPos = 0; eventPos < candidateCount; ++eventPos) {
+    var i = filteredEventIndices == null ? eventPos : filteredEventIndices[eventPos];
+    var d = data.events[i];
+    if (!is_pc_samp(d) || !strictly_startsonscreen_x(d) || !onscreen_all_y(d)) {continue;}
+    var row = getfirstrow(d);
+    if (row < 0) {continue;}
+    var sampleTime = tsend(d);
+    if (sampleTime < (nextLabelTime.get(row) || -1)) {continue;}
+    annotatespan(d, "symbolfilter", false, -1, true);
+    nextLabelTime.set(row, sampleTime + 140 * xsecperpix);
+    if (++labelsDrawn >= 80) {break;}
+  }
+}
+
 
 //// Called when starting all over with new window size
 // Outer and inner SVGs exist but are empty
@@ -6325,6 +6500,7 @@ function redrawEventsEtc() {
 
   // Draw all events onscreen, plus marks, plus IPC
   redrawEvents();
+  annotateFilteredSymbols();
 
   // If there is a previous single annotation and it is onscreen, draw it
   if (state2.annotated_one_d != -1) {
@@ -6332,7 +6508,7 @@ function redrawEventsEtc() {
     state.annotated_d = [];
     state.annotated_d.push(state2.annotated_one_d);  // Keep
     var d = data.events[state2.annotated_one_d];
-    if (startsonscreen_x(d)) {
+    if (startsonscreen_x(d) && passesLaneFilters(d)) {
       var short = false;
       var rotate = true;
       // Force full name even if using simple annots
@@ -6354,6 +6530,7 @@ function delayed_redraw_events_axes() {
   redrawEventsEtc();
   redrawXaxis();
   redrawYlabels();
+  recordTimeViewHistory();
 }
 
 function redraw_events_axes() {
@@ -6772,6 +6949,12 @@ function redrawUI() {
     }
   }
 
+  updateLaneFilterButton();
+  updateAdvancedSearchButton();
+  updateTimeHistoryControls();
+  var templateControl = document.getElementById("viewTemplateSelect");
+  if (templateControl != null) {templateControl.value = state2.view_template_value || 0;}
+
   if (debug) {
     resetText(document.getElementById("DebugRegion2Chars"), textsize.region2chars);
     resetText(document.getElementById("DebugRegion2Px"), textsize.region2px);
@@ -6874,6 +7057,898 @@ function doToggleLock(e) {
 }
 
 // If shift-click, toggle hack_value instead
+function applyLaneFilters() {
+  syncFilterSetsFromState();
+  rebuildLaneFilterEventIndex();
+  if (selectedCpuSet.size) {state2.groupcompress[prefixCpu] = compress_value_max;}
+  if (selectedPidSet.size) {state2.groupcompress[prefixPid] = compress_value_max;}
+  state.just_reset = false;
+
+  // Recompute vertical tracks in place. The saved X and Y transforms are not
+  // replaced, so filtering does not throw away the user's time window.
+  updateTracks();
+  y.domain([0, Math.max(1, maxTrack)]);
+  resetRangeDomain();
+  calcPixHeightsPerTrack(ypixpertrack);
+  redrawEventsEtc();
+  redrawXaxis();
+  redrawYlabels();
+  renderLaneFilterPanel();
+  renderAdvancedSearchPanel();
+}
+
+function applyViewTemplate(e) {
+  var value = +(e && e.target ? e.target.value : state2.view_template_value);
+  state2.view_template_value = (value == 1 || value == 2) ? value : 0;
+  state2.groupcompress = state2.view_template_value != 0 ? [2, 2, 0, 0] : [2, 0, 0, 0];
+  if (selectedCpuSet.size) {state2.groupcompress[prefixCpu] = compress_value_max;}
+  if (selectedPidSet.size) {state2.groupcompress[prefixPid] = compress_value_max;}
+
+  // A template changes the lane layout, so start with all matching lanes in
+  // view while retaining the exact horizontal time transform.
+  state2.savedtransformY = d3.zoomIdentity;
+  if (panzoomrect_y != null) {panzoomrect_y.property("__zoom", state2.savedtransformY);}
+  applyLaneFilters();
+}
+
+function toggleLaneFilterValue(kind, value) {
+  var values = laneFilterValues(kind).slice();
+  var index = values.indexOf(value);
+  if (index < 0) {values.push(value);} else {values.splice(index, 1);}
+  if (kind == "pid") {state2.filter_pid_values = values;}
+  else if (kind == "cpu") {state2.filter_cpu_values = values;}
+  else if (kind == "symbol") {state2.filter_symbol_values = values;}
+  else {state2.filter_span_values = values;}
+  applyLaneFilters();
+}
+
+function clearLaneFilters(kind) {
+  if ((typeof kind === "undefined") || (kind == "pid")) {state2.filter_pid_values = [];}
+  if ((typeof kind === "undefined") || (kind == "cpu")) {state2.filter_cpu_values = [];}
+  if ((typeof kind === "undefined") || (kind == "symbol")) {state2.filter_symbol_values = [];}
+  if ((typeof kind === "undefined") || (kind == "span")) {state2.filter_span_values = [];}
+  applyLaneFilters();
+}
+
+function selectAllLaneFilters(kind) {
+  var values = laneFilterOptions(kind).map(function(option) {return option.value;});
+  if (kind == "pid") {state2.filter_pid_values = values;}
+  else if (kind == "cpu") {state2.filter_cpu_values = values;}
+  else if (kind == "symbol") {state2.filter_symbol_values = values;}
+  else {state2.filter_span_values = values;}
+  applyLaneFilters();
+}
+
+function optionMatchesFilter(option, query) {
+  var q = query.trim().toLowerCase();
+  if (!q.length) {return true;}
+  var haystack = (option.searchText || (option.value + " " + option.name)).toLowerCase();
+  return q.split(/\s+/).every(function(word) {return haystack.indexOf(word) >= 0;});
+}
+
+function renderLaneFilterOptions(kind) {
+  var input = document.getElementById(kind + "FilterSearch");
+  var list = document.getElementById(kind + "FilterResults");
+  var count = document.getElementById(kind + "FilterResultCount");
+  if ((input == null) || (list == null) || (count == null)) {return;}
+  var selected = laneFilterSet(kind);
+  var matches = laneFilterOptions(kind).filter(function(option) {return optionMatchesFilter(option, input.value);});
+  count.textContent = "Showing " + Math.min(filterResultLimit, matches.length) + " of " + matches.length + " matches";
+  list.textContent = "";
+  var fragment = document.createDocumentFragment();
+  matches.slice(0, filterResultLimit).forEach(function(option) {
+    var active = selected.has(option.value);
+    var button = document.createElement("button");
+    button.type = "button";
+    button.className = "lane-filter-option";
+    button.setAttribute("aria-pressed", active ? "true" : "false");
+    button.title = (active ? "Remove " : "Select ") + option.name;
+
+    var check = document.createElement("span");
+    check.className = "lane-filter-check";
+    check.textContent = active ? "\u2713" : "";
+    var primary = document.createElement("span");
+    primary.className = "lane-filter-primary";
+    primary.textContent = option.name;
+    var id = document.createElement("span");
+    id.className = "lane-filter-id";
+    id.textContent = kind == "pid" ? "PID " + option.value : (kind == "cpu" ? option.value : option.kind);
+    var meta = document.createElement("span");
+    meta.className = "lane-filter-meta";
+    meta.textContent = kind == "symbol" ? option.count.toLocaleString() + " samples" +
+      (option.threads ? " · " + option.threads : "") : (kind == "span" ?
+      option.count.toLocaleString() + " spans · " + option.pids + " PIDs · " +
+      option.cpus + " CPUs" : option.count.toLocaleString() + " events");
+    button.appendChild(check); button.appendChild(primary); button.appendChild(id); button.appendChild(meta);
+    button.addEventListener("click", function() {toggleLaneFilterValue(kind, option.value);});
+    fragment.appendChild(button);
+  });
+  list.appendChild(fragment);
+}
+
+function renderLaneFilterChips(kind) {
+  var container = document.getElementById(kind + "FilterSelected");
+  if (container == null) {return;}
+  container.textContent = "";
+  var values = laneFilterValues(kind);
+  var names = new Map(laneFilterOptions(kind).map(function(option) {return [option.value, option.name];}));
+  if (!values.length) {
+    var empty = document.createElement("span");
+    empty.className = "lane-filter-hint";
+    empty.textContent = kind == "pid" ? "All PIDs are visible." : (kind == "cpu" ?
+      "All CPUs are visible." : (kind == "span" ? "All span names are visible." :
+      "All PC symbols are visible."));
+    container.appendChild(empty);
+    return;
+  }
+  values.slice(0, 24).forEach(function(value) {
+    var chip = document.createElement("button");
+    chip.type = "button";
+    chip.className = "lane-filter-chip";
+    var prefix = kind == "pid" ? "PID " : (kind == "cpu" ? "CPU " : "");
+    chip.textContent = prefix + value + ((kind == "pid" && names.has(value)) ? " · " + names.get(value) : "") + " ×";
+    chip.addEventListener("click", function() {toggleLaneFilterValue(kind, value);});
+    container.appendChild(chip);
+  });
+  if (values.length > 24) {
+    var more = document.createElement("span"); more.className = "lane-filter-hint";
+    more.textContent = "+" + (values.length - 24) + " more"; container.appendChild(more);
+  }
+}
+
+function updateLaneFilterButton() {
+  var button = document.getElementById("showfilters");
+  if (button == null) {return;}
+  var active = selectedPidSet.size || selectedCpuSet.size || selectedSymbolSet.size || selectedSpanSet.size;
+  button.textContent = active ? "Filter (Span " + selectedSpanSet.size + " · PID " +
+    selectedPidSet.size + " · CPU " + (selectedCpuSet.size || "all") +
+    " · Sym " + selectedSymbolSet.size + ")" : "Filter";
+  decorateButton(button, active ? 1 : 0);
+}
+
+function renderLaneFilterPanel() {
+  updateLaneFilterButton();
+  var viewTemplateSelect = document.getElementById("viewTemplateSelect");
+  if (viewTemplateSelect != null) {viewTemplateSelect.value = state2.view_template_value || 0;}
+  var panel = document.getElementById("laneFilterPanel");
+  if ((panel == null) || panel.hidden) {return;}
+  document.getElementById("clearPidFilters").disabled = selectedPidSet.size == 0;
+  document.getElementById("clearCpuFilters").disabled = selectedCpuSet.size == 0;
+  document.getElementById("clearSymbolFilters").disabled = selectedSymbolSet.size == 0;
+  document.getElementById("clearSpanFilters").disabled = selectedSpanSet.size == 0;
+  document.getElementById("selectAllPidFilters").disabled =
+      filterPidOptions.length == selectedPidSet.size;
+  document.getElementById("selectAllCpuFilters").disabled =
+      filterCpuOptions.length == selectedCpuSet.size;
+  document.getElementById("selectAllSymbolFilters").disabled =
+      filterSymbolOptions.length == selectedSymbolSet.size;
+  document.getElementById("selectAllSpanFilters").disabled =
+      filterSpanOptions.length == selectedSpanSet.size;
+  document.getElementById("clearAllLaneFilters").disabled = !selectedPidSet.size &&
+      !selectedCpuSet.size && !selectedSymbolSet.size && !selectedSpanSet.size;
+  document.getElementById("cpusForPids").disabled = selectedPidSet.size == 0;
+  document.getElementById("cpusForSymbols").disabled = selectedSymbolSet.size == 0;
+  var resolved = filterSymbolOptions.filter(function(option) {return !option.raw;}).length;
+  document.getElementById("symbolFilterStatus").textContent = filterSymbolOptions.length ?
+    resolved + " symbolized names · " + (filterSymbolOptions.length - resolved) +
+      " unresolved addresses. Results include thread context." : "No PC samples are present in this trace.";
+  ["span", "pid", "cpu", "symbol"].forEach(function(kind) {
+    renderLaneFilterChips(kind); renderLaneFilterOptions(kind);
+  });
+}
+
+function loadLaneFilterUiState() {
+  try {
+    var saved = JSON.parse(localStorage.getItem(laneFilterUiStorageKey) || "{}");
+    var panel = document.getElementById("laneFilterPanel");
+    if (typeof saved.left === "number") {panel.style.left = saved.left + "px";}
+    if (typeof saved.top === "number") {panel.style.top = saved.top + "px";}
+    if (typeof saved.width === "number") {panel.style.width = saved.width + "px";}
+    if (typeof saved.height === "number") {panel.style.height = saved.height + "px";}
+    if (typeof saved.focusId === "string") {laneFilterLastFocusId = saved.focusId;}
+  } catch (ignore) {}
+}
+
+function saveLaneFilterUiState() {
+  var panel = document.getElementById("laneFilterPanel");
+  if (panel == null) {return;}
+  var rect = panel.getBoundingClientRect();
+  try {
+    localStorage.setItem(laneFilterUiStorageKey, JSON.stringify({
+      left:rect.left, top:rect.top, width:rect.width, height:rect.height,
+      focusId:laneFilterLastFocusId
+    }));
+  } catch (ignore) {}
+}
+
+function clampLaneFilterPanel() {
+  var panel = document.getElementById("laneFilterPanel");
+  if ((panel == null) || panel.hidden) {return;}
+  var rect = panel.getBoundingClientRect();
+  var left = Math.max(0, Math.min(Math.max(0, window.innerWidth - rect.width), rect.left));
+  var top = Math.max(0, Math.min(Math.max(0, window.innerHeight - Math.min(rect.height, window.innerHeight)), rect.top));
+  panel.style.left = left + "px";
+  panel.style.top = top + "px";
+  panel.style.right = "auto";
+}
+
+function focusLastLaneFilterControl() {
+  var control = document.getElementById(laneFilterLastFocusId) || document.getElementById("pidFilterSearch");
+  if (control != null && !control.disabled) {control.focus();}
+}
+
+function openLaneFilterPanelAndFocus() {
+  var panel = document.getElementById("laneFilterPanel");
+  if (panel == null) {return;}
+  var advancedPanel = document.getElementById("advancedSearchPanel");
+  if ((advancedPanel != null) && !advancedPanel.hidden) {
+    saveAdvancedSearchUiState();
+    advancedPanel.hidden = true;
+  }
+  var historyPanel = document.getElementById("timeHistoryPanel");
+  if ((historyPanel != null) && !historyPanel.hidden) {
+    saveTimeHistoryUiState();
+    historyPanel.hidden = true;
+  }
+  panel.hidden = false;
+  renderLaneFilterPanel();
+  clampLaneFilterPanel();
+  focusLastLaneFilterControl();
+}
+
+function doToggleLaneFilterPanel() {
+  var panel = document.getElementById("laneFilterPanel");
+  if (panel == null) {return;}
+  if (panel.hidden) {openLaneFilterPanelAndFocus();}
+  else {panel.hidden = true;}
+}
+
+function laneFilterShortcut(e) {
+  var target = e.target || {};
+  var tag = (target.tagName || "").toUpperCase();
+  var key = (e.key || "").toLowerCase();
+  if (key == "escape") {
+    var panel = document.getElementById("laneFilterPanel");
+    if ((panel != null) && !panel.hidden) {
+      saveLaneFilterUiState();
+      panel.hidden = true;
+      document.getElementById("showfilters").focus();
+      e.preventDefault();
+    }
+    return;
+  }
+  if (tag == "INPUT" || tag == "TEXTAREA" || tag == "SELECT" || target.isContentEditable) {return;}
+  if (e.ctrlKey || e.metaKey || e.altKey || key != "i") {return;}
+  openLaneFilterPanelAndFocus();
+  e.preventDefault();
+}
+
+function installLaneFilterDrag() {
+  var panel = document.getElementById("laneFilterPanel");
+  var handle = document.getElementById("laneFilterDragHandle");
+  if ((panel == null) || (handle == null)) {return;}
+  var drag = null;
+  loadLaneFilterUiState();
+  panel.addEventListener("pointerup", saveLaneFilterUiState);
+
+  panel.addEventListener("focusin", function(e) {
+    if (e.target && e.target.id && e.target.matches("input, select")) {
+      laneFilterLastFocusId = e.target.id;
+      saveLaneFilterUiState();
+    }
+  });
+
+  handle.addEventListener("pointerdown", function(e) {
+    if (e.target.closest("button, input, a")) {return;}
+    var rect = panel.getBoundingClientRect();
+    panel.style.position = "fixed";
+    panel.style.width = rect.width + "px";
+    panel.style.left = rect.left + "px";
+    panel.style.top = rect.top + "px";
+    panel.style.right = "auto";
+    drag = {pointerId:e.pointerId, dx:e.clientX - rect.left, dy:e.clientY - rect.top};
+    handle.setPointerCapture(e.pointerId);
+    e.preventDefault();
+  });
+
+  handle.addEventListener("pointermove", function(e) {
+    if ((drag == null) || (drag.pointerId != e.pointerId)) {return;}
+    var rect = panel.getBoundingClientRect();
+    var maxLeft = Math.max(0, window.innerWidth - rect.width);
+    var maxTop = Math.max(0, window.innerHeight - Math.min(rect.height, window.innerHeight));
+    var left = Math.max(0, Math.min(maxLeft, e.clientX - drag.dx));
+    var top = Math.max(0, Math.min(maxTop, e.clientY - drag.dy));
+    panel.style.left = left + "px";
+    panel.style.top = top + "px";
+    e.preventDefault();
+  });
+
+  function stopDrag(e) {
+    if ((drag == null) || (drag.pointerId != e.pointerId)) {return;}
+    if (handle.hasPointerCapture(e.pointerId)) {handle.releasePointerCapture(e.pointerId);}
+    drag = null;
+    clampLaneFilterPanel();
+    saveLaneFilterUiState();
+  }
+  handle.addEventListener("pointerup", stopDrag);
+  handle.addEventListener("pointercancel", stopDrag);
+}
+
+function formatSpanSearchTime(seconds) {
+  if (!Number.isFinite(seconds)) {return "";}
+  if (Math.abs(seconds) < 0.001) {return (seconds * 1000000).toFixed(3) + " us";}
+  if (Math.abs(seconds) < 1) {return (seconds * 1000).toFixed(3) + " ms";}
+  return seconds.toFixed(6) + " s";
+}
+
+// Search is deliberately separated from drawing. Each captured span gets one
+// compact searchable record, then the renderer consumes only matching indices.
+function rebuildSpanSearchMatches(redraw) {
+  var previousEventIndex = (0 <= spanSearchSelectedIndex &&
+      spanSearchSelectedIndex < spanSearchMatches.length) ?
+      spanSearchMatches[spanSearchSelectedIndex].eventIndex : -1;
+  var expression = null;
+  var error = "";
+  try {
+    expression = new RegExp(state2.span_search_text || "", "i");
+  } catch (exception) {
+    error = exception.message || "Invalid regular expression";
+  }
+  spanSearchError = error;
+
+  spanSearchMatches = [];
+  spanSearchEventSet = new Set();
+  if (expression != null) {
+    for (var i = 0; i < spanSearchRecords.length; ++i) {
+      var record = spanSearchRecords[i];
+      if (expression.test(record.searchText)) {
+        spanSearchMatches.push(record);
+        var eventIndices = record.eventIndices || [record.eventIndex];
+        for (var eventPos = 0; eventPos < eventIndices.length; ++eventPos) {
+          spanSearchEventSet.add(eventIndices[eventPos]);
+        }
+      }
+    }
+  }
+  spanSearchSelectedIndex = -1;
+  if (spanSearchMatches.length) {
+    spanSearchSelectedIndex = 0;
+    if (0 <= previousEventIndex) {
+      for (var j = 0; j < spanSearchMatches.length; ++j) {
+        if (spanSearchMatches[j].eventIndex == previousEventIndex) {
+          spanSearchSelectedIndex = j;
+          break;
+        }
+      }
+    }
+  }
+  renderAdvancedSearchPanel(error);
+  if (redraw && state2.span_filter_enabled == 1) {applyLaneFilters();}
+  else if (redraw) {updateAdvancedSearchButton();}
+}
+
+function updateAdvancedSearchButton() {
+  var button = document.getElementById("showAdvancedSearch");
+  if (button == null) {return;}
+  var active = state2.span_filter_enabled == 1;
+  button.textContent = active ? "Span search (" + spanSearchMatches.length + ")" : "Span search";
+  decorateButton(button, active ? 1 : 0);
+}
+
+function renderAdvancedSearchPanel(error) {
+  if (typeof error === "undefined") {error = spanSearchError;}
+  updateAdvancedSearchButton();
+  var panel = document.getElementById("advancedSearchPanel");
+  if ((panel == null) || panel.hidden) {return;}
+  var input = document.getElementById("spanRegexSearch");
+  var checkbox = document.getElementById("spanFilterEnabled");
+  if ((input != null) && (input.value != state2.span_search_text)) {
+    input.value = state2.span_search_text;
+  }
+  if (checkbox != null) {checkbox.checked = state2.span_filter_enabled == 1;}
+
+  var status = document.getElementById("spanSearchStatus");
+  if (error) {
+    status.textContent = "Regex error: " + error;
+    status.style.color = "#b3261e";
+  } else {
+    status.textContent = spanSearchMatches.length.toLocaleString() + " matching spans across " +
+        spanSearchRecords.length.toLocaleString() + " captured spans";
+    status.style.color = "";
+  }
+
+  var list = document.getElementById("spanSearchResults");
+  list.textContent = "";
+  if (error || !spanSearchMatches.length) {return;}
+  var first = Math.max(0, spanSearchSelectedIndex - Math.floor(spanSearchRenderLimit / 2));
+  first = Math.min(first, Math.max(0, spanSearchMatches.length - spanSearchRenderLimit));
+  var last = Math.min(spanSearchMatches.length, first + spanSearchRenderLimit);
+  var fragment = document.createDocumentFragment();
+  for (var i = first; i < last; ++i) {
+    var record = spanSearchMatches[i];
+    var button = document.createElement("button");
+    button.type = "button";
+    button.className = "lane-filter-option advanced-search-option";
+    button.setAttribute("role", "option");
+    button.setAttribute("aria-current", i == spanSearchSelectedIndex ? "true" : "false");
+    button.setAttribute("aria-selected", i == spanSearchSelectedIndex ? "true" : "false");
+    button.dataset.resultIndex = i;
+    button.title = "Jump to " + record.name;
+
+    var type = document.createElement("span");
+    type.className = "advanced-search-type";
+    type.textContent = "SPAN";
+    type.title = record.markerSpan ? "Paired marker span" : "Duration span";
+    var time = document.createElement("span");
+    time.className = "advanced-search-time lane-filter-id";
+    time.textContent = formatSpanSearchTime(record.start);
+    var primary = document.createElement("span");
+    primary.className = "advanced-search-name";
+    primary.textContent = record.name;
+    var context = document.createElement("span");
+    context.className = "advanced-search-context";
+    context.textContent = "PID " + record.pid + " · " + record.thread + " · CPU " +
+        record.cpu + " · " + formatSpanSearchTime(record.duration);
+    button.appendChild(type);
+    button.appendChild(time);
+    button.appendChild(primary);
+    button.appendChild(context);
+    button.addEventListener("click", (function(index) {
+      return function() {selectSpanSearchResult(index, true);};
+    })(i));
+    fragment.appendChild(button);
+  }
+  list.appendChild(fragment);
+}
+
+function spanSearchWindow(record) {
+  var fullWidth = Math.max(NSEC10, dataTsHi - dataTsLo);
+  var width = Math.max(record.duration * 8, fullWidth / 2500, NSEC10 * 100);
+  width = Math.min(fullWidth, width);
+  var left = record.start - Math.max(0, (width - record.duration) / 2);
+  left = Math.max(dataTsLo, Math.min(dataTsHi - width, left));
+  return {left:left, width:width};
+}
+
+function selectSpanSearchResult(index, navigate) {
+  if (!spanSearchMatches.length) {return;}
+  index = Math.max(0, Math.min(spanSearchMatches.length - 1, index));
+  spanSearchSelectedIndex = index;
+  var record = spanSearchMatches[index];
+  if (navigate && (data != null)) {
+    state2.annotated_one_d = record.eventIndex;
+    var target = spanSearchWindow(record);
+    ZoomToLeftWidth(target.left, target.width);
+  }
+  renderAdvancedSearchPanel();
+  var selected = document.querySelector("#spanSearchResults [data-result-index=\"" + index + "\"]");
+  if (selected != null) {selected.scrollIntoView({block:"nearest"});}
+}
+
+function moveSpanSearchSelection(delta) {
+  if (!spanSearchMatches.length) {return;}
+  var index = spanSearchSelectedIndex < 0 ? 0 : spanSearchSelectedIndex + delta;
+  selectSpanSearchResult(index, true);
+}
+
+function overviewSpanSearchMatches() {
+  if (!spanSearchMatches.length || (data == null)) {return;}
+  var left = Infinity, right = -Infinity;
+  for (var i = 0; i < spanSearchMatches.length; ++i) {
+    left = Math.min(left, spanSearchMatches[i].start);
+    right = Math.max(right, spanSearchMatches[i].end);
+  }
+  var fullWidth = Math.max(NSEC10, dataTsHi - dataTsLo);
+  var padding = Math.max(NSEC10 * 10, (right - left) * 0.04);
+  left = Math.max(dataTsLo, left - padding);
+  right = Math.min(dataTsHi, right + padding);
+  if (right - left >= fullWidth) {left = dataTsLo; right = dataTsHi;}
+  ZoomToLeftWidth(left, Math.max(NSEC10, right - left));
+}
+
+function spanSearchInputChanged() {
+  state2.span_search_text = document.getElementById("spanRegexSearch").value;
+  if (spanSearchTimerHandle != null) {clearTimeout(spanSearchTimerHandle);}
+  spanSearchTimerHandle = setTimeout(function() {
+    spanSearchTimerHandle = null;
+    rebuildSpanSearchMatches(true);
+  }, 80);
+}
+
+function spanSearchKeyboard(e) {
+  if (e.key == "ArrowDown") {moveSpanSearchSelection(1); e.preventDefault();}
+  else if (e.key == "ArrowUp") {moveSpanSearchSelection(-1); e.preventDefault();}
+  else if (e.key == "Enter" && (e.target.id == "spanRegexSearch" ||
+      e.target.id == "spanSearchResults" || e.target.closest(".advanced-search-option"))) {
+    selectSpanSearchResult(Math.max(0, spanSearchSelectedIndex), true); e.preventDefault();
+  }
+  else if (e.key == "Home" && e.target.closest("#spanSearchResults")) {selectSpanSearchResult(0, true); e.preventDefault();}
+  else if (e.key == "End" && e.target.closest("#spanSearchResults")) {
+    selectSpanSearchResult(spanSearchMatches.length - 1, true); e.preventDefault();
+  }
+}
+
+function loadAdvancedSearchUiState() {
+  try {
+    var saved = JSON.parse(localStorage.getItem(advancedSearchUiStorageKey) || "{}");
+    var panel = document.getElementById("advancedSearchPanel");
+    if (typeof saved.left === "number") {panel.style.left = saved.left + "px"; panel.style.right = "auto";}
+    if (typeof saved.top === "number") {panel.style.top = saved.top + "px";}
+    if (typeof saved.width === "number") {panel.style.width = saved.width + "px";}
+    if (typeof saved.height === "number") {panel.style.height = saved.height + "px";}
+    if (typeof saved.focusId === "string") {advancedSearchLastFocusId = saved.focusId;}
+  } catch (ignore) {}
+}
+
+function saveAdvancedSearchUiState() {
+  var panel = document.getElementById("advancedSearchPanel");
+  if (panel == null) {return;}
+  var rect = panel.getBoundingClientRect();
+  try {
+    localStorage.setItem(advancedSearchUiStorageKey, JSON.stringify({
+      left:rect.left, top:rect.top, width:rect.width, height:rect.height,
+      focusId:advancedSearchLastFocusId
+    }));
+  } catch (ignore) {}
+}
+
+function clampAdvancedSearchPanel() {
+  var panel = document.getElementById("advancedSearchPanel");
+  if ((panel == null) || panel.hidden) {return;}
+  var rect = panel.getBoundingClientRect();
+  panel.style.left = Math.max(0, Math.min(Math.max(0, window.innerWidth - rect.width), rect.left)) + "px";
+  panel.style.top = Math.max(0, Math.min(Math.max(0, window.innerHeight - Math.min(rect.height, window.innerHeight)), rect.top)) + "px";
+  panel.style.right = "auto";
+}
+
+function openAdvancedSearchPanel() {
+  var panel = document.getElementById("advancedSearchPanel");
+  if (panel == null) {return;}
+  var lanePanel = document.getElementById("laneFilterPanel");
+  if ((lanePanel != null) && !lanePanel.hidden) {saveLaneFilterUiState(); lanePanel.hidden = true;}
+  var historyPanel = document.getElementById("timeHistoryPanel");
+  if ((historyPanel != null) && !historyPanel.hidden) {saveTimeHistoryUiState(); historyPanel.hidden = true;}
+  panel.hidden = false;
+  renderAdvancedSearchPanel();
+  clampAdvancedSearchPanel();
+  var control = document.getElementById(advancedSearchLastFocusId) || document.getElementById("spanRegexSearch");
+  if (control != null) {control.focus();}
+}
+
+function doToggleAdvancedSearchPanel() {
+  var panel = document.getElementById("advancedSearchPanel");
+  if (panel == null) {return;}
+  if (panel.hidden) {openAdvancedSearchPanel();}
+  else {saveAdvancedSearchUiState(); panel.hidden = true;}
+}
+
+function advancedSearchShortcut(e) {
+  var panel = document.getElementById("advancedSearchPanel");
+  var key = (e.key || "").toLowerCase();
+  if (key == "escape" && (panel != null) && !panel.hidden) {
+    saveAdvancedSearchUiState();
+    panel.hidden = true;
+    document.getElementById("showAdvancedSearch").focus();
+    e.preventDefault();
+    return;
+  }
+  var target = e.target || {};
+  var tag = (target.tagName || "").toUpperCase();
+  if (tag == "INPUT" || tag == "TEXTAREA" || tag == "SELECT" || target.isContentEditable) {return;}
+  if (e.ctrlKey || e.metaKey || e.altKey || key != "u") {return;}
+  openAdvancedSearchPanel();
+  e.preventDefault();
+}
+
+function installAdvancedSearchDrag() {
+  var panel = document.getElementById("advancedSearchPanel");
+  var handle = document.getElementById("advancedSearchDragHandle");
+  if ((panel == null) || (handle == null)) {return;}
+  var drag = null;
+  loadAdvancedSearchUiState();
+  panel.addEventListener("pointerup", saveAdvancedSearchUiState);
+  panel.addEventListener("focusin", function(e) {
+    if (e.target && e.target.id && e.target.matches("input, [tabindex]")) {
+      advancedSearchLastFocusId = e.target.id;
+      saveAdvancedSearchUiState();
+    }
+  });
+  handle.addEventListener("pointerdown", function(e) {
+    if (e.target.closest("button, input, a")) {return;}
+    var rect = panel.getBoundingClientRect();
+    panel.style.width = rect.width + "px";
+    panel.style.left = rect.left + "px";
+    panel.style.top = rect.top + "px";
+    panel.style.right = "auto";
+    drag = {pointerId:e.pointerId, dx:e.clientX - rect.left, dy:e.clientY - rect.top};
+    handle.setPointerCapture(e.pointerId);
+    e.preventDefault();
+  });
+  handle.addEventListener("pointermove", function(e) {
+    if ((drag == null) || drag.pointerId != e.pointerId) {return;}
+    var rect = panel.getBoundingClientRect();
+    panel.style.left = Math.max(0, Math.min(Math.max(0, window.innerWidth - rect.width), e.clientX - drag.dx)) + "px";
+    panel.style.top = Math.max(0, Math.min(Math.max(0, window.innerHeight - Math.min(rect.height, window.innerHeight)), e.clientY - drag.dy)) + "px";
+    e.preventDefault();
+  });
+  function stopAdvancedDrag(e) {
+    if ((drag == null) || drag.pointerId != e.pointerId) {return;}
+    if (handle.hasPointerCapture(e.pointerId)) {handle.releasePointerCapture(e.pointerId);}
+    drag = null;
+    clampAdvancedSearchPanel();
+    saveAdvancedSearchUiState();
+  }
+  handle.addEventListener("pointerup", stopAdvancedDrag);
+  handle.addEventListener("pointercancel", stopAdvancedDrag);
+}
+
+function sameTimeHistoryWindow(a, b) {
+  if ((a == null) || (b == null)) {return false;}
+  var scale = Math.max(NSEC10, Math.abs(a.right - a.left), Math.abs(b.right - b.left));
+  var epsilon = scale * 0.00000001;
+  return Math.abs(a.left - b.left) <= epsilon && Math.abs(a.right - b.right) <= epsilon;
+}
+
+function currentTimeHistoryWindow() {
+  return {left:realxleft, right:realxright};
+}
+
+// Called only after a horizontal view has settled. This keeps history work out
+// of the mousemove and SVG drawing hot paths.
+function recordTimeViewHistory() {
+  if ((data == null) || !Number.isFinite(realxleft) || !Number.isFinite(realxright) ||
+      realxright <= realxleft) {return;}
+  if (timeViewHistoryApplying) {
+    timeViewHistoryApplying = false;
+    renderTimeHistoryPanel();
+    return;
+  }
+  var next = currentTimeHistoryWindow();
+  var current = timeViewHistory[timeViewHistoryCursor];
+  if (sameTimeHistoryWindow(current, next)) {renderTimeHistoryPanel(); return;}
+
+  if (timeViewHistoryCursor + 1 < timeViewHistory.length) {
+    timeViewHistory.splice(timeViewHistoryCursor + 1);
+  }
+  timeViewHistory.push(next);
+  if (timeViewHistory.length > timeViewHistoryLimit) {timeViewHistory.shift();}
+  timeViewHistoryCursor = timeViewHistory.length - 1;
+  renderTimeHistoryPanel();
+}
+
+function resetTimeViewHistory() {
+  timeViewHistory = [];
+  timeViewHistoryCursor = -1;
+  timeViewHistoryApplying = false;
+  renderTimeHistoryPanel();
+}
+
+function goToTimeHistory(index) {
+  if (!timeViewHistory.length || (data == null)) {return;}
+  index = Math.max(0, Math.min(timeViewHistory.length - 1, index));
+  if (index == timeViewHistoryCursor) {return;}
+  timeViewHistoryCursor = index;
+  var entry = timeViewHistory[index];
+  timeViewHistoryApplying = true;
+  ZoomToLeftWidth(entry.left, entry.right - entry.left);
+  renderTimeHistoryPanel();
+}
+
+function navigateTimeHistory(delta) {
+  if (!timeViewHistory.length) {return;}
+  goToTimeHistory(timeViewHistoryCursor + delta);
+}
+
+function updateTimeHistoryControls() {
+  var toolbar = document.getElementById("showTimeHistory");
+  if (toolbar != null) {
+    toolbar.textContent = timeViewHistory.length ? "History (" +
+        (timeViewHistoryCursor + 1) + "/" + timeViewHistory.length + ")" : "History";
+  }
+  var previous = document.getElementById("previousTimeView");
+  var forward = document.getElementById("forwardTimeView");
+  if (previous != null) {previous.disabled = timeViewHistoryCursor <= 0;}
+  if (forward != null) {forward.disabled = timeViewHistoryCursor < 0 ||
+      timeViewHistoryCursor >= timeViewHistory.length - 1;}
+}
+
+function renderTimeHistoryPanel() {
+  updateTimeHistoryControls();
+  var panel = document.getElementById("timeHistoryPanel");
+  if ((panel == null) || panel.hidden) {return;}
+  var status = document.getElementById("timeHistoryStatus");
+  status.textContent = timeViewHistory.length ? timeViewHistory.length.toLocaleString() +
+      " time views retained (maximum " + timeViewHistoryLimit + ")" : "No time views recorded yet.";
+  var list = document.getElementById("timeHistoryResults");
+  list.textContent = "";
+  if (!timeViewHistory.length) {return;}
+
+  var first = Math.max(0, timeViewHistoryCursor - Math.floor(timeViewHistoryRenderLimit / 2));
+  first = Math.min(first, Math.max(0, timeViewHistory.length - timeViewHistoryRenderLimit));
+  var last = Math.min(timeViewHistory.length, first + timeViewHistoryRenderLimit);
+  var fragment = document.createDocumentFragment();
+  for (var i = last - 1; i >= first; --i) {
+    var entry = timeViewHistory[i];
+    var button = document.createElement("button");
+    button.type = "button";
+    button.className = "lane-filter-option time-history-option";
+    button.setAttribute("aria-current", i == timeViewHistoryCursor ? "true" : "false");
+    button.dataset.historyIndex = i;
+    var number = document.createElement("span");
+    number.className = "time-history-index";
+    number.textContent = "#" + (i + 1);
+    var windowText = document.createElement("span");
+    windowText.className = "time-history-window";
+    windowText.textContent = formatSpanSearchTime(entry.left) + " → " +
+        formatSpanSearchTime(entry.right) + "  (" + formatSpanSearchTime(entry.right - entry.left) + ")";
+    button.appendChild(number);
+    button.appendChild(windowText);
+    button.addEventListener("click", (function(index) {return function() {goToTimeHistory(index);};})(i));
+    fragment.appendChild(button);
+  }
+  list.appendChild(fragment);
+  var current = list.querySelector("[aria-current=\"true\"]");
+  if (current != null) {current.scrollIntoView({block:"nearest"});}
+}
+
+function loadTimeHistoryUiState() {
+  try {
+    var saved = JSON.parse(localStorage.getItem(timeHistoryUiStorageKey) || "{}");
+    var panel = document.getElementById("timeHistoryPanel");
+    if (typeof saved.left === "number") {
+      panel.style.left = saved.left + "px";
+      panel.style.right = "auto";
+      panel.classList.add("drag-positioned");
+    }
+    if (typeof saved.top === "number") {panel.style.top = saved.top + "px";}
+    if (typeof saved.width === "number") {panel.style.width = saved.width + "px";}
+    if (typeof saved.height === "number") {panel.style.height = saved.height + "px";}
+  } catch (ignore) {}
+}
+
+function saveTimeHistoryUiState() {
+  var panel = document.getElementById("timeHistoryPanel");
+  if (panel == null) {return;}
+  var rect = panel.getBoundingClientRect();
+  try {localStorage.setItem(timeHistoryUiStorageKey, JSON.stringify({
+    left:rect.left, top:rect.top, width:rect.width, height:rect.height
+  }));}
+  catch (ignore) {}
+}
+
+function clampTimeHistoryPanel() {
+  var panel = document.getElementById("timeHistoryPanel");
+  if ((panel == null) || panel.hidden) {return;}
+  var rect = panel.getBoundingClientRect();
+  panel.classList.add("drag-positioned");
+  panel.style.left = Math.max(0, Math.min(Math.max(0, window.innerWidth - rect.width), rect.left)) + "px";
+  panel.style.top = Math.max(0, Math.min(Math.max(0, window.innerHeight - Math.min(rect.height, window.innerHeight)), rect.top)) + "px";
+  panel.style.right = "auto";
+}
+
+function openTimeHistoryPanel() {
+  var panel = document.getElementById("timeHistoryPanel");
+  if (panel == null) {return;}
+  var lanePanel = document.getElementById("laneFilterPanel");
+  var advancedPanel = document.getElementById("advancedSearchPanel");
+  if ((lanePanel != null) && !lanePanel.hidden) {saveLaneFilterUiState(); lanePanel.hidden = true;}
+  if ((advancedPanel != null) && !advancedPanel.hidden) {saveAdvancedSearchUiState(); advancedPanel.hidden = true;}
+  panel.hidden = false;
+  renderTimeHistoryPanel();
+  clampTimeHistoryPanel();
+  document.getElementById("timeHistoryResults").focus();
+}
+
+function doToggleTimeHistoryPanel() {
+  var panel = document.getElementById("timeHistoryPanel");
+  if (panel == null) {return;}
+  if (panel.hidden) {openTimeHistoryPanel();}
+  else {saveTimeHistoryUiState(); panel.hidden = true;}
+}
+
+function timeHistoryShortcut(e) {
+  var panel = document.getElementById("timeHistoryPanel");
+  var key = (e.key || "").toLowerCase();
+  if (key == "escape" && (panel != null) && !panel.hidden) {
+    saveTimeHistoryUiState();
+    panel.hidden = true;
+    document.getElementById("showTimeHistory").focus();
+    e.preventDefault();
+    return;
+  }
+  var target = e.target || {};
+  var tag = (target.tagName || "").toUpperCase();
+  if (tag == "INPUT" || tag == "TEXTAREA" || tag == "SELECT" || target.isContentEditable ||
+      e.ctrlKey || e.metaKey || e.altKey) {return;}
+  if (key == "h") {openTimeHistoryPanel(); e.preventDefault();}
+  else if (key == "j") {navigateTimeHistory(-1); e.preventDefault();}
+  else if (key == "k") {navigateTimeHistory(1); e.preventDefault();}
+}
+
+function installTimeHistoryDrag() {
+  var panel = document.getElementById("timeHistoryPanel");
+  var handle = document.getElementById("timeHistoryDragHandle");
+  if ((panel == null) || (handle == null)) {return;}
+  var drag = null;
+  loadTimeHistoryUiState();
+  panel.addEventListener("pointerup", saveTimeHistoryUiState);
+  handle.addEventListener("pointerdown", function(e) {
+    if (e.target.closest("button, input, a")) {return;}
+    var rect = panel.getBoundingClientRect();
+    panel.classList.add("drag-positioned");
+    panel.style.width = rect.width + "px";
+    panel.style.left = rect.left + "px";
+    panel.style.top = rect.top + "px";
+    panel.style.right = "auto";
+    drag = {pointerId:e.pointerId, dx:e.clientX - rect.left, dy:e.clientY - rect.top};
+    handle.setPointerCapture(e.pointerId);
+    e.preventDefault();
+  });
+  handle.addEventListener("pointermove", function(e) {
+    if ((drag == null) || drag.pointerId != e.pointerId) {return;}
+    var rect = panel.getBoundingClientRect();
+    panel.style.left = Math.max(0, Math.min(Math.max(0, window.innerWidth - rect.width), e.clientX - drag.dx)) + "px";
+    panel.style.top = Math.max(0, Math.min(Math.max(0, window.innerHeight - Math.min(rect.height, window.innerHeight)), e.clientY - drag.dy)) + "px";
+    e.preventDefault();
+  });
+  function stopTimeHistoryDrag(e) {
+    if ((drag == null) || drag.pointerId != e.pointerId) {return;}
+    if (handle.hasPointerCapture(e.pointerId)) {handle.releasePointerCapture(e.pointerId);}
+    drag = null;
+    clampTimeHistoryPanel();
+    saveTimeHistoryUiState();
+  }
+  handle.addEventListener("pointerup", stopTimeHistoryDrag);
+  handle.addEventListener("pointercancel", stopTimeHistoryDrag);
+}
+
+function applyCpuRangeFilter() {
+  var input = document.getElementById("cpuRangeFilter");
+  var status = document.getElementById("cpuRangeStatus");
+  var available = new Set(filterCpuOptions.map(function(option) {return option.value;}));
+  var selected = new Set();
+  var invalid = [];
+  input.value.trim().split(/[\s,]+/).filter(Boolean).forEach(function(part) {
+    var match = part.match(/^(\d+)(?:-(\d+))?$/);
+    if (match == null) {invalid.push(part); return;}
+    var lo = +match[1], hi = typeof match[2] === "undefined" ? lo : +match[2];
+    if (lo > hi) {var temp = lo; lo = hi; hi = temp;}
+    for (var cpuValue = lo; cpuValue <= hi; ++cpuValue) {if (available.has(cpuValue)) {selected.add(cpuValue);}}
+  });
+  if (invalid.length) {status.textContent = "Ignored: " + invalid.join(", "); return;}
+  status.textContent = "";
+  state2.filter_cpu_values = Array.from(selected);
+  applyLaneFilters();
+}
+
+function selectCpusForFilteredPids() {
+  if (!selectedPidSet.size) {return;}
+  var missing = new Set();
+  selectedPidSet.forEach(function(pidValue) {
+    if (!pidCpuCache.has(pidValue)) {pidCpuCache.set(pidValue, new Set()); missing.add(pidValue);}
+  });
+  if (missing.size) {
+    data.events.forEach(function(d) {
+      var pidValue = low16of(pid(d));
+      if ((0 < pid(d)) && missing.has(pidValue) && (0 <= cpu(d))) {pidCpuCache.get(pidValue).add(low16of(cpu(d)));}
+    });
+  }
+  var cpus = new Set();
+  selectedPidSet.forEach(function(pidValue) {pidCpuCache.get(pidValue).forEach(function(cpuValue) {cpus.add(cpuValue);});});
+  state2.filter_cpu_values = Array.from(cpus);
+  applyLaneFilters();
+}
+
+function selectCpusForFilteredSymbols() {
+  if (!selectedSymbolSet.size) {return;}
+  var cpus = new Set();
+  filterSymbolOptions.forEach(function(option) {
+    if (selectedSymbolSet.has(option.value)) {option.cpus.forEach(function(cpuValue) {cpus.add(cpuValue);});}
+  });
+  state2.filter_cpu_values = Array.from(cpus);
+  applyLaneFilters();
+}
+
 function doToggleCb(e) {
   if (e.shiftKey) {
     state2.hack_value = doToggle(e.shiftKey, state2.hack_value, hack_value_max);
@@ -7415,6 +8490,32 @@ function getGroupcompress(row) {
   return state2.groupcompress[getGroup(row)];
 }
 
+function rowPassesLaneFilters(row, activeWindow) {
+  if ((row < 0) || (sortNum[row] < 0)) {return true;}
+  var group = getGroup(row);
+  if (group == prefixCpu) {
+    if ((state2.view_template_value == 1) &&
+        !laneHasSpanInWindow(cpuSpanActivity, sortNum[row], activeWindow.left, activeWindow.right)) {
+      return false;
+    }
+    if (state2.view_template_value == 2) {
+      if (!laneHasSpanInWindow(
+          cpuPidSpanActivity, sortNum[row], activeWindow.left, activeWindow.right)) {return false;}
+    }
+    return (state2.view_template_value == 2) || (selectedCpuSet.size == 0) ||
+        selectedCpuSet.has(sortNum[row]);
+  }
+  if (group == prefixPid) {
+    if ((state2.view_template_value != 0) &&
+        !laneHasSpanInWindow(pidSpanActivity, sortNum[row], activeWindow.left, activeWindow.right)) {
+      return false;
+    }
+    return (state2.view_template_value == 2) || (selectedPidSet.size == 0) ||
+        selectedPidSet.has(sortNum[row]);
+  }
+  return state2.view_template_value == 0;
+}
+
 
 // We want group labels always to be high enough that the next label does not run into them.
 // BUT we are updating tracks before we know max track, but we need maxTrack to calculate 
@@ -7424,6 +8525,7 @@ function getGroupcompress(row) {
 
 function AdjustHeight(sortnum, rowheight, group_tracks) {
   if (sortnum < 0) {
+    if (rowheight == 0) {return 0;}
     // Group label. We want its height to be at least the number of tracks that cover fontsize
     return Math.max(rowheight, group_tracks);
   }
@@ -7438,17 +8540,23 @@ function AdjustHeight(sortnum, rowheight, group_tracks) {
 // Height is 0/0/5/20 based on group compress 
 //
 function updateTracks() {
+  var activeWindow = currentViewTemplateWindow();
   for (var row = 0; row < sortNum.length; ++row) {
     var groupcmpr = getGroupcompress(row);
 //console.log("updateTracks row compress", row, groupcmpr, grayHeight[groupcmpr], 
 //rowHilite(row));
     if (sortNum[row] < 0) {
-      rowToHeight[row] = maxTrackHeight / 2;  	// group labels are short
+      var labelGroup = -sortNum[row] - 1;
+      rowToHeight[row] = ((state2.view_template_value != 0) &&
+          (labelGroup != prefixCpu) && (labelGroup != prefixPid)) ? 0 : maxTrackHeight / 2;
     } else if (groupcmpr == 0) {
       rowToHeight[row] = 0;			// Group is not expanded
+    } else if (!rowPassesLaneFilters(row, activeWindow)) {
+      rowToHeight[row] = 0;			// Hidden by picker or active-span template
     } else if (rowFullsize(row)) {
       rowToHeight[row] = maxTrackHeight;	// Row has highlighted events
-    } else if (!rangeonscreen_x(rowToMinT[row], rowToMaxT[row])) {
+    } else if ((state2.view_template_value == 0) &&
+        !rangeonscreen_x(rowToMinT[row], rowToMaxT[row])) {
       rowToHeight[row] = 0;			// Auto-prune if not onscreen
     } else {
       rowToHeight[row] = grayHeight[groupcmpr];	// non-highlighted
@@ -7517,19 +8625,287 @@ function low16of(x) {
   return x & 0xFFFF;
 }
 
+function isLaneActivitySpan(d) {
+  return (dur(d) > NSEC10) && !is_any_overlay(d) && !is_pc_samp(d) &&
+      !is_mark(d) && !is_pstate(d) && !is_lock_line(d);
+}
+
+function addLaneActivitySpan(activityMap, laneValue, d) {
+  if (!activityMap.has(laneValue)) {activityMap.set(laneValue, []);}
+  activityMap.get(laneValue).push([ts(d), tsend(d)]);
+}
+
+function finalizeLaneActivity(activityMap) {
+  activityMap.forEach(function(intervals, laneValue) {
+    intervals.sort(function(a, b) {return a[0] - b[0];});
+    var starts = new Array(intervals.length);
+    var maxEnds = new Array(intervals.length);
+    var maxEnd = -Infinity;
+    for (var i = 0; i < intervals.length; ++i) {
+      starts[i] = intervals[i][0];
+      maxEnd = Math.max(maxEnd, intervals[i][1]);
+      maxEnds[i] = maxEnd;
+    }
+    activityMap.set(laneValue, {starts:starts, maxEnds:maxEnds});
+  });
+}
+
+function laneHasSpanInWindow(activityMap, laneValue, leftTime, rightTime) {
+  var lane = activityMap.get(laneValue);
+  if ((lane == null) || !lane.starts.length) {return false;}
+  var lo = 0, hi = lane.starts.length;
+  while (lo < hi) {
+    var mid = (lo + hi) >> 1;
+    if (lane.starts[mid] <= rightTime) {lo = mid + 1;} else {hi = mid;}
+  }
+  var lastStartBeforeRight = lo - 1;
+  return (0 <= lastStartBeforeRight) && (leftTime <= lane.maxEnds[lastStartBeforeRight]);
+}
+
+function currentViewTemplateWindow() {
+  if ((typeof x !== "undefined") && (x != null) &&
+      state2.savedtransformX && (typeof panzoomInvertX === "function")) {
+    return {
+      left:x.invert(panzoomInvertX(axesmargin, state2.savedtransformX)),
+      right:x.invert(panzoomInvertX(region3width - axesmargin, state2.savedtransformX))
+    };
+  }
+  return {left:realxleft, right:realxright};
+}
+
+function buildSpanSearchIndex() {
+  var pidLabels = new Map(filterPidOptions.map(function(option) {return [option.value, option.name];}));
+  spanSearchRecords = [];
+  spanNameByEvent = new WeakMap();
+  var openMarks = new Map();
+  for (var i = 0; i < data.events.length; ++i) {
+    var d = data.events[i];
+    var pidValue = 0 < pid(d) ? low16of(pid(d)) : 0;
+    var cpuValue = 0 <= cpu(d) ? low16of(cpu(d)) : -1;
+    var threadName = pidLabels.get(pidValue) || (pidValue ? "PID " + pidValue : "-idle-");
+    if (isLaneActivitySpan(d)) {
+      spanSearchRecords.push({
+        eventIndex:i, eventIndices:[i], start:ts(d), end:tsend(d), duration:dur(d),
+        pid:pidValue, cpu:cpuValue, name:name(d), thread:threadName,
+        searchText:(name(d) + " " + threadName + " pid " + pidValue +
+            " cpu " + cpuValue + " event " + ev(d)).toLowerCase()
+      });
+      continue;
+    }
+
+    // MARK_A/MARK_B (and named MARK_E) encode duration spans as a pair of
+    // zero-width boundaries: "hello" followed by "/hello". Index the pair as
+    // one logical span, but retain both event indices so filtering still draws
+    // the complete bracket.
+    if (!(is_mark_a(d) || is_mark_b(d) || is_mark_e(d))) {continue;}
+    var rawMarkLabel = is_mark_e(d) ? name(d) : Base40ToChar(arg0(d));
+    var closing = rawMarkLabel.substr(0, 1) == "/";
+    var markLabel = closing ? rawMarkLabel.substr(1) : rawMarkLabel;
+    var markKey = ev(d) + "|" + pidValue + "|" + markLabel;
+    if (!closing) {
+      if (!openMarks.has(markKey)) {openMarks.set(markKey, []);}
+      openMarks.get(markKey).push({eventIndex:i, event:d, cpu:cpuValue,
+        pid:pidValue, thread:threadName, raw:rawMarkLabel});
+      continue;
+    }
+    var stack = openMarks.get(markKey);
+    if ((stack == null) || !stack.length) {continue;}
+    var opening = stack.pop();
+    var spanEnd = Math.max(ts(d), ts(opening.event) + NSEC10);
+    spanSearchRecords.push({
+      eventIndex:opening.eventIndex, eventIndices:[opening.eventIndex, i],
+      start:ts(opening.event), end:spanEnd, duration:spanEnd - ts(opening.event),
+      pid:opening.pid, cpu:opening.cpu, name:markLabel, thread:opening.thread,
+      markerSpan:true,
+      searchText:(markLabel + " /" + markLabel + " " + opening.raw + " " +
+          rawMarkLabel + " " + opening.thread + " pid " + opening.pid +
+          " cpu " + opening.cpu + " mark span").toLowerCase()
+    });
+  }
+  spanSearchRecords.sort(function(a, b) {return a.start - b.start || a.end - b.end;});
+  var spanOptions = new Map();
+  for (var recordIndex = 0; recordIndex < spanSearchRecords.length; ++recordIndex) {
+    var record = spanSearchRecords[recordIndex];
+    var recordEventIndices = record.eventIndices || [record.eventIndex];
+    for (var eventIndexPos = 0; eventIndexPos < recordEventIndices.length; ++eventIndexPos) {
+      spanNameByEvent.set(data.events[recordEventIndices[eventIndexPos]], record.name);
+    }
+    if (!spanOptions.has(record.name)) {
+      spanOptions.set(record.name, {value:record.name, name:record.name, count:0,
+        pids:new Set(), cpus:new Set(), markerCount:0});
+    }
+    var option = spanOptions.get(record.name);
+    ++option.count;
+    option.pids.add(record.pid);
+    option.cpus.add(record.cpu);
+    if (record.markerSpan) {++option.markerCount;}
+  }
+  filterSpanOptions = Array.from(spanOptions.values()).map(function(option) {
+    var markerOnly = option.markerCount == option.count;
+    var kind = markerOnly ? "marker span" : (option.markerCount ? "span + marker" : "span");
+    return {value:option.value, name:option.name, count:option.count,
+      pids:option.pids.size, cpus:option.cpus.size, markerCount:option.markerCount, kind:kind,
+      searchText:option.name + " " + kind + " pid " + Array.from(option.pids).join(" pid ") +
+          " cpu " + Array.from(option.cpus).join(" cpu ")};
+  });
+  filterSpanOptions.sort(function(a, b) {
+    if (a.markerCount != b.markerCount) {return b.markerCount - a.markerCount;}
+    if (a.count != b.count) {return b.count - a.count;}
+    return a.name.localeCompare(b.name);
+  });
+  syncFilterSetsFromState();
+  rebuildSpanSearchMatches(false);
+}
+
+function normalizeFilterValues(values) {
+  if (!Array.isArray(values)) {return [];}
+  var seen = new Set();
+  var retval = [];
+  values.forEach(function(value) {
+    var numberValue = +value;
+    if (Number.isInteger(numberValue) && (0 <= numberValue) && !seen.has(numberValue)) {
+      seen.add(numberValue);
+      retval.push(numberValue);
+    }
+  });
+  retval.sort(function(a, b) {return a - b;});
+  return retval;
+}
+
+function normalizeStringFilterValues(values) {
+  if (!Array.isArray(values)) {return [];}
+  var seen = new Set();
+  var retval = [];
+  values.forEach(function(value) {
+    var textValue = String(value);
+    if (textValue.length && !seen.has(textValue)) {
+      seen.add(textValue);
+      retval.push(textValue);
+    }
+  });
+  retval.sort();
+  return retval;
+}
+
+function pcSampleSymbol(d) {
+  if (!is_pc_samp(d)) {return "";}
+  var sampleName = name(d);
+  return sampleName.indexOf("PC=") == 0 ? sampleName.substr(3) : sampleName;
+}
+
+function isRawPcAddress(symbolName) {
+  return /^(?:0x)?[0-9a-f]{6,16}$/i.test(symbolName);
+}
+
+function laneFilterValues(kind) {
+  if (kind == "pid") {return state2.filter_pid_values;}
+  if (kind == "cpu") {return state2.filter_cpu_values;}
+  if (kind == "symbol") {return state2.filter_symbol_values;}
+  return state2.filter_span_values;
+}
+
+function laneFilterOptions(kind) {
+  if (kind == "pid") {return filterPidOptions;}
+  if (kind == "cpu") {return filterCpuOptions;}
+  if (kind == "symbol") {return filterSymbolOptions;}
+  return filterSpanOptions;
+}
+
+function laneFilterSet(kind) {
+  if (kind == "pid") {return selectedPidSet;}
+  if (kind == "cpu") {return selectedCpuSet;}
+  if (kind == "symbol") {return selectedSymbolSet;}
+  return selectedSpanSet;
+}
+
+function syncFilterSetsFromState() {
+  state2.filter_pid_values = normalizeFilterValues(state2.filter_pid_values);
+  state2.filter_cpu_values = normalizeFilterValues(state2.filter_cpu_values);
+  state2.filter_symbol_values = normalizeStringFilterValues(state2.filter_symbol_values);
+  state2.filter_span_values = normalizeStringFilterValues(state2.filter_span_values);
+  if (data != null) {
+    var availablePids = new Set(filterPidOptions.map(function(option) {return option.value;}));
+    var availableCpus = new Set(filterCpuOptions.map(function(option) {return option.value;}));
+    var availableSymbols = new Set(filterSymbolOptions.map(function(option) {return option.value;}));
+    var availableSpans = new Set(filterSpanOptions.map(function(option) {return option.value;}));
+    state2.filter_pid_values = state2.filter_pid_values.filter(function(value) {return availablePids.has(value);});
+    state2.filter_cpu_values = state2.filter_cpu_values.filter(function(value) {return availableCpus.has(value);});
+    state2.filter_symbol_values = state2.filter_symbol_values.filter(function(value) {return availableSymbols.has(value);});
+    state2.filter_span_values = state2.filter_span_values.filter(function(value) {return availableSpans.has(value);});
+  }
+  selectedPidSet = new Set(state2.filter_pid_values);
+  selectedCpuSet = new Set(state2.filter_cpu_values);
+  selectedSymbolSet = new Set(state2.filter_symbol_values);
+  selectedSpanSet = new Set(state2.filter_span_values);
+  if ((selectedSymbolSet.size != 0) && (state2.samp_value >= 0)) {state2.samp_value = 2;}
+}
+
+// PID, CPU and symbol selections intersect. Arcs survive when either endpoint
+// matches, preserving the context needed to understand a wakeup/transfer.
+function passesLaneFilters(d) {
+  var useLaneSelections = state2.view_template_value != 2;
+  if (useLaneSelections && (selectedCpuSet.size != 0)) {
+    var cpuMatch = selectedCpuSet.has(low16of(cpu(d)));
+    if (is_arc(d) || is_ipi(d)) {cpuMatch = cpuMatch || selectedCpuSet.has(low16of(cpu2(d)));}
+    if (!cpuMatch) {return false;}
+  }
+  if (useLaneSelections && (selectedPidSet.size != 0)) {
+    var pidMatch = selectedPidSet.has(low16of(pid(d)));
+    if (is_arc(d)) {pidMatch = pidMatch || selectedPidSet.has(low16of(pid2(d)));}
+    if (!pidMatch) {return false;}
+  }
+  if ((selectedSymbolSet.size != 0) && !selectedSymbolSet.has(pcSampleSymbol(d))) {return false;}
+  if ((selectedSpanSet.size != 0) && !selectedSpanSet.has(spanNameByEvent.get(d))) {return false;}
+  return true;
+}
+
+function rebuildLaneFilterEventIndex() {
+  var useLaneSelections = state2.view_template_value != 2;
+  var useSpanFilter = state2.span_filter_enabled == 1;
+  if ((data == null) || ((!useLaneSelections || ((selectedPidSet.size == 0) &&
+      (selectedCpuSet.size == 0))) && (selectedSymbolSet.size == 0) &&
+      (selectedSpanSet.size == 0) && !useSpanFilter)) {
+    filteredEventIndices = null;
+    return;
+  }
+  filteredEventIndices = [];
+  for (var i = 0; i < data.events.length; ++i) {
+    if (passesLaneFilters(data.events[i]) &&
+        (!useSpanFilter || spanSearchEventSet.has(i))) {filteredEventIndices.push(i);}
+  }
+}
+
 // True for rowsumm and allsumm files with presorted rows and not-sorted timestamps
 function RowsArePresorted() {
   if (typeof data.presorted === 'undefined') {return false;}
   return data.presorted; 
 }
 
+function resolvedPidLabel(pidValue, fallback) {
+  if ((data == null) || (data.pidNames == null)) {return fallback;}
+  var entry = data.pidNames[String(pidValue)];
+  if (entry == null) {return fallback;}
+  if (typeof entry === "string") {return entry || fallback;}
+  var names = [];
+  if (entry.thread) {names.push(entry.thread);}
+  if (entry.process && (names.indexOf(entry.process) < 0)) {names.push(entry.process);}
+  return names.length ? names.join(" · ") : fallback;
+}
+
 // Pick out all the unique CPU, PID. RPCID, and Resource values with their names
 function getDataMetadata(data) {
   // First pass over all the data
+  pidCpuCache.clear();
+  pidSpanActivity.clear();
+  cpuSpanActivity.clear();
+  cpuPidSpanActivity.clear();
   let uniqCpu = new Map();
   let uniqPid = new Map();
   let uniqRpc = new Map();
   let uniqRes = new Map();
+  let cpuEventCount = new Map();
+  let pidEventCount = new Map();
+  let symbolSamples = new Map();
   // Ignore all -1 items
   data.events.forEach(function(d) {
     var cpu16 = low16of(cpu(d));
@@ -7539,6 +8915,30 @@ function getDataMetadata(data) {
       rpc16 = low16of(arg0(d));	// Just for REQ/RESP/MID rpcid
     }
     var res16 = low16of(res(d));
+
+    if (0 <= cpu(d)) {cpuEventCount.set(cpu16, (cpuEventCount.get(cpu16) || 0) + 1);}
+    if (0 < pid(d)) {pidEventCount.set(pid16, (pidEventCount.get(pid16) || 0) + 1);}
+    if (isLaneActivitySpan(d)) {
+      if (0 <= cpu(d)) {addLaneActivitySpan(cpuSpanActivity, cpu16, d);}
+      if (0 < pid(d)) {addLaneActivitySpan(pidSpanActivity, pid16, d);}
+      if ((0 <= cpu(d)) && (0 < pid(d))) {
+        addLaneActivitySpan(cpuPidSpanActivity, cpu16, d);
+      }
+    }
+    if (is_pc_samp(d)) {
+      var symbolValue = pcSampleSymbol(d);
+      if (symbolValue.length != 0) {
+        if (!symbolSamples.has(symbolValue)) {
+          symbolSamples.set(symbolValue, {value:symbolValue, count:0, userCount:0,
+            kernelCount:0, pidCounts:new Map(), cpus:new Set()});
+        }
+        var symbolEntry = symbolSamples.get(symbolValue);
+        ++symbolEntry.count;
+        if (ev(d) == 0x281) {++symbolEntry.kernelCount;} else {++symbolEntry.userCount;}
+        if (0 <= pid(d)) {symbolEntry.pidCounts.set(pid16, (symbolEntry.pidCounts.get(pid16) || 0) + 1);}
+        if (0 <= cpu(d)) {symbolEntry.cpus.add(cpu16);}
+      }
+    }
 
     // Captures name at first use. Without !has test, would get last use
     // All events go into CPU set
@@ -7585,6 +8985,9 @@ function getDataMetadata(data) {
   var sortPid = [...uniqPid];
   var sortRpc = [...uniqRpc];
   var sortRes = [...uniqRes];
+  sortPid = sortPid.map(function(entry) {
+    return [entry[0], resolvedPidLabel(entry[0], entry[1])];
+  });
 
   // If not presorted, sort CPU by number, sort PID by number, leave RPC unchanged
   if (!RowsArePresorted()) {
@@ -7610,6 +9013,42 @@ function getDataMetadata(data) {
 
   var sortResNum = sortRes.map(function(v){ return v[0] });
   var sortResName = sortRes.map(function(v){ return v[1] });
+
+  filterCpuOptions = sortCpu.map(function(v) {
+    return {value:v[0], name:"CPU " + v[0], count:cpuEventCount.get(v[0]) || 0,
+      searchText:"cpu " + v[0]};
+  });
+  filterPidOptions = sortPid.map(function(v) {
+    return {value:v[0], name:v[1] || "(unnamed thread)", count:pidEventCount.get(v[0]) || 0,
+      searchText:v[0] + " " + (v[1] || "unnamed thread")};
+  });
+  var pidNameLookup = new Map(sortPid);
+  pidNameLookup.set(0, "-idle-");
+  filterSymbolOptions = Array.from(symbolSamples.values()).map(function(entry) {
+    var topPids = Array.from(entry.pidCounts).sort(function(a, b) {return b[1] - a[1];});
+    var threadNames = topPids.slice(0, 2).map(function(pidCount) {
+      return pidNameLookup.get(pidCount[0]) || ("PID " + pidCount[0]);
+    });
+    if (topPids.length > 2) {threadNames.push("+" + (topPids.length - 2) + " threads");}
+    var mode = entry.kernelCount && entry.userCount ? "mixed" : (entry.kernelCount ? "kernel" : "user");
+    var raw = isRawPcAddress(entry.value);
+    var kind = mode + (raw ? " · unresolved" : " · symbol");
+    var threads = threadNames.join(", ");
+    return {value:entry.value, name:entry.value, count:entry.count, kind:kind,
+      threads:threads, raw:raw, cpus:Array.from(entry.cpus),
+      searchText:entry.value + " " + kind + " " + threads + " " +
+        topPids.map(function(pidCount) {return pidCount[0];}).join(" ")};
+  });
+  filterSymbolOptions.sort(function(a, b) {
+    if (a.raw != b.raw) {return a.raw ? 1 : -1;}
+    if (a.count != b.count) {return b.count - a.count;}
+    return a.name.localeCompare(b.name);
+  });
+  finalizeLaneActivity(cpuSpanActivity);
+  finalizeLaneActivity(pidSpanActivity);
+  finalizeLaneActivity(cpuPidSpanActivity);
+  syncFilterSetsFromState();
+  buildSpanSearchIndex();
 
 //console.log(sortPidNum);
 //console.log(sortPidName);
@@ -7765,6 +9204,7 @@ Sets outside of state:
 function newdata2(data2) {
   //console.log("newdata2:", data2);
   initializeState();	// With new data, start entirely clean on state
+  resetTimeViewHistory();
  
   // format the data
   var has_pc_samples = false;
@@ -8862,6 +10302,7 @@ console.log("allocOuterSvgEtc");
 //console.log("5 state2.savedtransformY", state2.savedtransformY);
 
   draw_callout_mouse();
+  if (!timeViewHistory.length) {recordTimeViewHistory();}
 }
 
 // Start over with new data but old window
@@ -8907,6 +10348,52 @@ function initAll() {
   document.getElementById("showipc").onclick = doToggleIpc;
   document.getElementById("showsamp").onclick = doToggleSamp;
   document.getElementById("showcb").onclick = doToggleCb;
+  document.getElementById("showfilters").onclick = doToggleLaneFilterPanel;
+  document.getElementById("showAdvancedSearch").onclick = doToggleAdvancedSearchPanel;
+  document.getElementById("showTimeHistory").onclick = doToggleTimeHistoryPanel;
+  document.getElementById("viewTemplateSelect").onchange = applyViewTemplate;
+  installLaneFilterDrag();
+  installAdvancedSearchDrag();
+  installTimeHistoryDrag();
+  document.addEventListener("keydown", laneFilterShortcut);
+  document.addEventListener("keydown", advancedSearchShortcut);
+  document.addEventListener("keydown", timeHistoryShortcut);
+  document.getElementById("closeLaneFilters").onclick = doToggleLaneFilterPanel;
+  document.getElementById("closeAdvancedSearch").onclick = doToggleAdvancedSearchPanel;
+  document.getElementById("closeTimeHistory").onclick = doToggleTimeHistoryPanel;
+  document.getElementById("previousTimeView").onclick = function() {navigateTimeHistory(-1);};
+  document.getElementById("forwardTimeView").onclick = function() {navigateTimeHistory(1);};
+  document.getElementById("spanRegexSearch").addEventListener("input", spanSearchInputChanged);
+  // Handle result navigation once at the panel boundary so Up/Down works
+  // regardless of which control inside the panel currently owns focus.
+  document.getElementById("advancedSearchPanel").addEventListener("keydown", spanSearchKeyboard);
+  document.getElementById("spanFilterEnabled").addEventListener("change", function(e) {
+    state2.span_filter_enabled = e.target.checked ? 1 : 0;
+    applyLaneFilters();
+  });
+  document.getElementById("previousSpanMatch").onclick = function() {moveSpanSearchSelection(-1);};
+  document.getElementById("nextSpanMatch").onclick = function() {moveSpanSearchSelection(1);};
+  document.getElementById("overviewSpanMatches").onclick = overviewSpanSearchMatches;
+  document.getElementById("clearPidFilters").onclick = function() {clearLaneFilters("pid");};
+  document.getElementById("clearCpuFilters").onclick = function() {clearLaneFilters("cpu");};
+  document.getElementById("clearSymbolFilters").onclick = function() {clearLaneFilters("symbol");};
+  document.getElementById("clearSpanFilters").onclick = function() {clearLaneFilters("span");};
+  document.getElementById("selectAllPidFilters").onclick = function() {selectAllLaneFilters("pid");};
+  document.getElementById("selectAllCpuFilters").onclick = function() {selectAllLaneFilters("cpu");};
+  document.getElementById("selectAllSymbolFilters").onclick = function() {selectAllLaneFilters("symbol");};
+  document.getElementById("selectAllSpanFilters").onclick = function() {selectAllLaneFilters("span");};
+  document.getElementById("clearAllLaneFilters").onclick = function() {clearLaneFilters();};
+  document.getElementById("applyCpuRange").onclick = applyCpuRangeFilter;
+  document.getElementById("cpusForPids").onclick = selectCpusForFilteredPids;
+  document.getElementById("cpusForSymbols").onclick = selectCpusForFilteredSymbols;
+  ["span", "pid", "cpu", "symbol"].forEach(function(kind) {
+    document.getElementById(kind + "FilterSearch").addEventListener("input", function() {
+      renderLaneFilterOptions(kind);
+    });
+  });
+  document.getElementById("cpuRangeFilter").addEventListener("keydown", function(e) {
+    if (e.key == "Enter") {applyCpuRangeFilter();}
+  });
 
   document.getElementById("searchnot").onclick = doToggleSearchnot;
   document.getElementById("minmax_units").onclick = doToggleUnits;
@@ -8919,6 +10406,9 @@ function initAll() {
 
   // Set listener for windowsize
   window.addEventListener("resize", resizeWindowEtc);
+  window.addEventListener("resize", clampLaneFilterPanel);
+  window.addEventListener("resize", clampAdvancedSearchPanel);
+  window.addEventListener("resize", clampTimeHistoryPanel);
   // Load initial data, if any
   if (typeof(myString) !== 'undefined') {
     // const compressedData = Uint8Array.from(myString, c => c.charCodeAt(0));
@@ -9024,6 +10514,145 @@ function unloadSaveState() {
 <button id="showsamp"  style="border-radius:6px";>Samp</button>
 <button id="showcb"  style="border-radius:6px";>CB</button>
 
+<span class="lane-filter-wrap">
+  <button id="showfilters" type="button" style="border-radius:6px">Filter</button>
+  <div id="laneFilterPanel" class="lane-filter-panel" role="dialog"
+       aria-label="Filter trace lanes and events" hidden>
+    <div id="laneFilterDragHandle" class="lane-filter-head" title="Drag to move this panel">
+      <div>
+        <div class="lane-filter-title">Filter lanes and events</div>
+        <div class="lane-filter-hint">Selections intersect. Time zoom and pan stay unchanged.</div>
+      </div>
+      <button id="closeLaneFilters" class="lane-filter-close" type="button" aria-label="Close">&#x00d7;</button>
+    </div>
+    <div class="lane-filter-grid">
+      <section class="lane-filter-section lane-filter-spans" aria-labelledby="spanFilterHeading">
+        <h3 id="spanFilterHeading">Span name</h3>
+        <input id="spanFilterSearch" class="lane-filter-input" type="search"
+               placeholder="Search captured span or paired marker name" autocomplete="off">
+        <div id="spanFilterSelected" class="lane-filter-summary"></div>
+        <div class="lane-filter-actions">
+          <button id="selectAllSpanFilters" type="button">Select all captured</button>
+          <button id="clearSpanFilters" type="button">Deselect all</button>
+        </div>
+        <div id="spanFilterResultCount" class="lane-filter-result-count"></div>
+        <div id="spanFilterResults" class="lane-filter-list" role="listbox" aria-multiselectable="true"></div>
+      </section>
+      <section class="lane-filter-section" aria-labelledby="pidFilterHeading">
+        <h3 id="pidFilterHeading">PID / thread name</h3>
+        <input id="pidFilterSearch" class="lane-filter-input" type="search"
+               placeholder="Search name or PID" autocomplete="off">
+        <div id="pidFilterSelected" class="lane-filter-summary"></div>
+        <div class="lane-filter-actions">
+          <button id="selectAllPidFilters" type="button">Select all captured</button>
+          <button id="clearPidFilters" type="button">Deselect all</button>
+          <button id="cpusForPids" type="button">Use associated CPUs</button>
+        </div>
+        <div id="pidFilterResultCount" class="lane-filter-result-count"></div>
+        <div id="pidFilterResults" class="lane-filter-list" role="listbox" aria-multiselectable="true"></div>
+      </section>
+      <section class="lane-filter-section" aria-labelledby="cpuFilterHeading">
+        <h3 id="cpuFilterHeading">CPU</h3>
+        <input id="cpuFilterSearch" class="lane-filter-input" type="search"
+               placeholder="Search CPU number" autocomplete="off">
+        <div id="cpuFilterSelected" class="lane-filter-summary"></div>
+        <div class="lane-filter-actions">
+          <button id="selectAllCpuFilters" type="button">Select all captured</button>
+          <button id="clearCpuFilters" type="button">Deselect all</button>
+        </div>
+        <div class="lane-filter-actions">
+          <input id="cpuRangeFilter" class="lane-filter-input" type="text"
+                 placeholder="Ranges: 0-7,16,32-39" autocomplete="off">
+          <button id="applyCpuRange" type="button">Apply ranges</button>
+        </div>
+        <div id="cpuRangeStatus" class="lane-filter-hint"></div>
+        <div id="cpuFilterResultCount" class="lane-filter-result-count"></div>
+        <div id="cpuFilterResults" class="lane-filter-list" role="listbox" aria-multiselectable="true"></div>
+      </section>
+      <section class="lane-filter-section lane-filter-symbols" aria-labelledby="symbolFilterHeading">
+        <h3 id="symbolFilterHeading">PC symbol / address</h3>
+        <div id="symbolFilterStatus" class="lane-filter-symbol-status"></div>
+        <input id="symbolFilterSearch" class="lane-filter-input" type="search"
+               placeholder="Search symbol, address, thread, or PID" autocomplete="off">
+        <div id="symbolFilterSelected" class="lane-filter-summary"></div>
+        <div class="lane-filter-actions">
+          <button id="selectAllSymbolFilters" type="button">Select all captured</button>
+          <button id="clearSymbolFilters" type="button">Deselect all</button>
+          <button id="cpusForSymbols" type="button">Use sampled CPUs</button>
+        </div>
+        <div id="symbolFilterResultCount" class="lane-filter-result-count"></div>
+        <div id="symbolFilterResults" class="lane-filter-list" role="listbox" aria-multiselectable="true"></div>
+      </section>
+    </div>
+    <div class="lane-filter-actions" style="justify-content:flex-end; margin-bottom:0">
+      <button id="clearAllLaneFilters" type="button">Clear all filters</button>
+    </div>
+  </div>
+</span>
+
+<span class="lane-filter-wrap">
+  <button id="showAdvancedSearch" type="button" style="border-radius:6px"
+          title="Advanced span search (U)">Span search</button>
+  <div id="advancedSearchPanel" class="lane-filter-panel advanced-search-panel" role="dialog"
+       aria-label="Advanced search across all captured spans" hidden>
+    <div id="advancedSearchDragHandle" class="lane-filter-head" title="Drag to move this panel">
+      <div>
+        <div class="lane-filter-title">Advanced span search</div>
+        <div class="lane-filter-hint">Regex searches every captured span across the entire timeline.</div>
+      </div>
+      <button id="closeAdvancedSearch" class="lane-filter-close" type="button" aria-label="Close">&#x00d7;</button>
+    </div>
+    <div class="advanced-search-controls">
+      <input id="spanRegexSearch" class="lane-filter-input" type="search"
+             placeholder="Regex: function, PID, thread, CPU..." autocomplete="off">
+      <button id="overviewSpanMatches" type="button">Overview matches</button>
+    </div>
+    <div class="lane-filter-actions">
+      <label><input id="spanFilterEnabled" type="checkbox"> Filter timeline to matching spans</label>
+      <button id="previousSpanMatch" type="button" title="Previous match (Up arrow)">&#x2191; Previous</button>
+      <button id="nextSpanMatch" type="button" title="Next match (Down arrow)">&#x2193; Next</button>
+    </div>
+    <div id="spanSearchStatus" class="advanced-search-status" aria-live="polite"></div>
+    <div id="spanSearchResults" class="advanced-search-results" role="listbox"
+         aria-label="Matching spans" tabindex="0"></div>
+    <div class="lane-filter-hint" style="margin-top:7px">
+      Up/Down jumps between matches. Esc closes this panel without clearing it.
+    </div>
+  </div>
+</span>
+
+<span class="lane-filter-wrap">
+  <button id="showTimeHistory" type="button" style="border-radius:6px"
+          title="Time-view history (H)">History</button>
+  <div id="timeHistoryPanel" class="lane-filter-panel time-history-panel" role="dialog"
+       aria-label="Time-view history" hidden>
+    <div id="timeHistoryDragHandle" class="lane-filter-head" title="Drag to move this panel">
+      <div>
+        <div class="lane-filter-title">Time-view history</div>
+        <div class="lane-filter-hint">Every settled horizontal pan, zoom, and search jump is retained.</div>
+      </div>
+      <button id="closeTimeHistory" class="lane-filter-close" type="button" aria-label="Close">&#x00d7;</button>
+    </div>
+    <div class="lane-filter-actions">
+      <button id="previousTimeView" type="button" title="Previous time view (J)">J · Previous</button>
+      <button id="forwardTimeView" type="button" title="Forward time view (K)">K · Forward</button>
+    </div>
+    <div id="timeHistoryStatus" class="advanced-search-status" aria-live="polite"></div>
+    <div id="timeHistoryResults" class="time-history-list" role="listbox"
+         aria-label="Recorded time views" tabindex="0"></div>
+    <div class="lane-filter-hint" style="margin-top:7px">
+      H opens this panel. J goes back; K goes forward. A new move after going back replaces the forward branch.
+    </div>
+  </div>
+</span>
+
+&nbsp;&nbsp;View:
+<select id="viewTemplateSelect" class="view-template-select" title="Choose a lane-layout template">
+  <option value="0">Default</option>
+  <option value="1">Active spans: PIDs + CPUs</option>
+  <option value="2">Viewable PIDs + associated CPUs</option>
+</select>
+
 &nbsp;&nbsp;&nbsp;Search: 
 <button id="searchnot"; 
  style="background-color:#FFFFFF; color:#808080; borderColor:#C0C0C0; border-radius:6px";
@@ -9114,6 +10743,18 @@ function unloadSaveState() {
      IPC  instructions per cycle off/both/user/kernel
      Samp PC samples		 off/on
      CB   color blind colors	 off/on
+     Filter searchable PID/thread, CPU, and PC-symbol selections
+     View Active spans		 show only CPU/PID lanes with spans in the time window
+     View Viewable PIDs	 show viewable PID spans and only their associated CPUs
+     I				 open Filter and focus its last-used control
+     Esc			 close Filter without clearing it
+     U				 open Advanced span search across the full timeline
+     Advanced span search	 regex results; arrows jump, Overview frames all matches
+     Filter matching spans	 draw only spans returned by the advanced regex
+     Esc			 close Advanced span search without clearing it
+     H				 open time-view history
+     J / K			 previous / forward time view
+     Filter/Search/History	 drag by title; resize from the lower-right corner
 
      Search:    regex string match 
      !	        invert search	 off/on, like grep -v
