@@ -8843,11 +8843,13 @@ function syncFilterSetsFromState() {
 // PID, CPU and symbol selections intersect. Arcs survive when either endpoint
 // matches, preserving the context needed to understand a wakeup/transfer.
 function laneSelectionRestricts(kind) {
-  var selected = kind == "pid" ? selectedPidSet : selectedCpuSet;
-  var options = kind == "pid" ? filterPidOptions : filterCpuOptions;
-  // Selecting every captured lane means no lane restriction. In particular,
-  // this preserves PID 0/idle and CPU-less wait/context events that do not
-  // appear as selectable PID or CPU options.
+  var selected = kind == "pid" ? selectedPidSet :
+      (kind == "cpu" ? selectedCpuSet : selectedSpanSet);
+  var options = kind == "pid" ? filterPidOptions :
+      (kind == "cpu" ? filterCpuOptions : filterSpanOptions);
+  // Selecting every captured value means no restriction. For lanes this
+  // preserves PID 0/idle and CPU-less context; for spans it preserves marks,
+  // arcs, samples, and other context that is not itself a selectable span.
   return selected.size != 0 && selected.size < options.length;
 }
 
@@ -8864,7 +8866,7 @@ function passesLaneFilters(d) {
     if (!pidMatch) {return false;}
   }
   if ((selectedSymbolSet.size != 0) && !selectedSymbolSet.has(pcSampleSymbol(d))) {return false;}
-  if ((selectedSpanSet.size != 0) && !selectedSpanSet.has(spanNameByEvent.get(d))) {return false;}
+  if (laneSelectionRestricts("span") && !selectedSpanSet.has(spanNameByEvent.get(d))) {return false;}
   return true;
 }
 
@@ -8873,8 +8875,9 @@ function rebuildLaneFilterEventIndex() {
   var useSpanFilter = state2.span_filter_enabled == 1;
   var usePidFilter = useLaneSelections && laneSelectionRestricts("pid");
   var useCpuFilter = useLaneSelections && laneSelectionRestricts("cpu");
+  var useSpanNameFilter = laneSelectionRestricts("span");
   if ((data == null) || ((!usePidFilter && !useCpuFilter) && (selectedSymbolSet.size == 0) &&
-      (selectedSpanSet.size == 0) && !useSpanFilter)) {
+      !useSpanNameFilter && !useSpanFilter)) {
     filteredEventIndices = null;
     return;
   }
