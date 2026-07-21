@@ -87,7 +87,7 @@
       <section id="timeline-view" class="view-pane active">
         <section class="timeline-card">
           <div class="section-head timeline-title">
-            <div><h2>Continuous system timeline</h2><span id="range-label"></span></div>
+            <div><h2>Continuous system timeline</h2><span id="timeline-mode" class="mode-badge">Exact events</span><span id="range-label"></span></div>
             <div class="timeline-actions"><button id="zoom-selection" disabled>Zoom selection</button><button id="clear-selection" disabled>Clear selection</button><span class="shortcut-help">drag select · Shift+drag pan · Ctrl+wheel zoom · WASD navigate</span></div>
           </div>
           <div class="overview-shell" aria-label="Full trace overview">
@@ -98,6 +98,7 @@
             <div class="timeline-shell">
               <canvas id="timeline" height="420" tabindex="0" aria-label="Trace timeline; drag to select, Shift plus drag to pan, Ctrl plus wheel to zoom"></canvas>
               <div id="time-selection" aria-hidden="true"></div>
+              <div id="timeline-tooltip" role="tooltip" hidden></div>
             </div>
           </div>
           <div class="legend"><i class="agent"></i>agent <i class="syscall"></i>syscall <i class="kernel"></i>kernel <i class="user"></i>user <i class="scheduler"></i>scheduler <i class="special"></i>other <span id="perf-legend"></span></div>
@@ -146,7 +147,7 @@ LIMIT 50</textarea>
         </section>
       </section>
       <section id="legacy-view" class="view-pane legacy-pane" hidden>
-        <div class="legacy-head"><div><h2>Exact KUtrace viewer</h2><span>Untouched original renderer and controls</span></div><a href="/legacy" target="_blank">Open standalone ↗</a></div>
+        <div class="legacy-head"><div><h2>Exact KUtrace viewer</h2><span>Original renderer · WASD/arrow navigation enabled here</span></div><a href="/legacy" target="_blank">Open standalone ↗</a></div>
         <iframe id="legacy-frame" title="Exact KUtrace viewer" data-src="/legacy"></iframe>
       </section>
     </div>

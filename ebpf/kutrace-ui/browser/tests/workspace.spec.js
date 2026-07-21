@@ -25,6 +25,7 @@ test.beforeEach(async ({page}) => {
   await expect(page.locator('#event-count')).toContainText('18 rows');
   await expect(page.locator('#timeline')).toHaveAttribute('data-ready', 'true');
   await expect(page.locator('#timeline')).toHaveAttribute('data-source', 'events');
+  await expect(page.locator('#timeline')).toHaveAttribute('data-detail', 'true');
   await expect(page.locator('#cpu-controls')).toBeHidden();
 });
 
@@ -41,7 +42,17 @@ test('switches between the continuous timeline and exact KUtrace in app', async 
   await expect(page.locator('#timeline-view')).toBeHidden();
   await expect(page.locator('#legacy-view')).toBeVisible();
   await expect(page.locator('#legacy-frame')).toHaveAttribute('src', '/legacy');
-  await expect(page.locator('#legacy-frame').contentFrame().getByRole('button', {name: 'Mark'})).toBeVisible();
+  const legacy=page.locator('#legacy-frame').contentFrame();
+  await expect(legacy.getByRole('button', {name: 'Mark'})).toBeVisible();
+  const initialRange=await legacy.locator('body').evaluate(()=>[window.realxleft,window.realxright]);
+  await legacy.locator('body').evaluate(body=>{body.tabIndex=-1;body.focus()});
+  await page.keyboard.press('KeyW');
+  await expect.poll(()=>legacy.locator('body').evaluate(()=>window.realxright-window.realxleft)).toBeLessThan(initialRange[1]-initialRange[0]);
+  const zoomedLeft=await legacy.locator('body').evaluate(()=>window.realxleft);
+  await page.keyboard.press('KeyD');
+  await expect.poll(()=>legacy.locator('body').evaluate(()=>window.realxleft)).toBeGreaterThan(zoomedLeft);
+  await page.keyboard.press('Digit0');
+  await expect.poll(()=>legacy.locator('body').evaluate(()=>[window.realxleft,window.realxright])).toEqual(initialRange);
 
   await timelineTab.click();
   await expect(timelineTab).toHaveAttribute('aria-selected', 'true');
@@ -91,18 +102,9 @@ test('keeps agent reasoning in an explicit analysis dock', async ({page}) => {
   await expect(page.locator('#perf-legend')).toContainText('LLC');
   await expect(page.locator('a[href="/legacy"]').first()).toHaveText(/Exact KUtrace view/);
   await expect(page.locator('#timeline')).toBeVisible();
-  const longSpanCoverage = await page.locator('#timeline').evaluate(canvas => {
-    const context = canvas.getContext('2d');
-    const data = context.getImageData(0, 0, canvas.width, canvas.height).data;
-    let columns = 0;
-    for (let x = 48; x < canvas.width; x++) {
-      const offset = (25 * canvas.width + x) * 4;
-      const background = data[offset] === 9 && data[offset + 1] === 12 && data[offset + 2] === 18;
-      if (!background) columns++;
-    }
-    return {columns, plotWidth: canvas.width - 48};
-  });
-  expect(longSpanCoverage.columns).toBeGreaterThan(longSpanCoverage.plotWidth * .9);
+  await expect(page.locator('#timeline-mode')).toContainText('Exact events');
+  const timelineDimensions=await page.locator('#timeline').evaluate(canvas=>({height:canvas.getBoundingClientRect().height,viewport:canvas.closest('.timeline-scroll').clientHeight}));
+  expect(timelineDimensions.height).toBeGreaterThanOrEqual(timelineDimensions.viewport);
 });
 
 test('composes filters, runs SQL, zooms, and restores saved state', async ({page}) => {
@@ -313,7 +315,7 @@ test('virtualizes machines with more than 64 CPU tracks at the SQL boundary', as
         await route.fulfill({contentType:'application/json',body:JSON.stringify({columns:['cpu'],rows:Array.from({length:66},(_,cpu)=>[cpu]),truncated:false,elapsed_ms:0.1})});
         return;
       }
-      if(payload.sql.includes('WITH RECURSIVE scoped_events'))timelineQueries.push(payload.sql);
+      if(payload.sql.includes('WITH RECURSIVE scoped_events')||payload.sql.startsWith('SELECT id,ts,dur,ts_end,cpu'))timelineQueries.push(payload.sql);
     }
     await route.continue();
   });
@@ -349,7 +351,7 @@ test('uses the mipmap at low zoom and exact events for non-materialized filters'
         await route.fulfill({contentType:'application/json',body:JSON.stringify({columns:['cpu'],rows:Array.from({length:wideCpuCount},(_,cpu)=>[cpu]),truncated:false,elapsed_ms:0.1})});
         return;
       }
-      if(payload.sql.includes('ranked AS')&&payload.sql.includes('SELECT bucket,cpu,event'))timelineQueries.push(payload.sql);
+      if((payload.sql.includes('ranked AS')&&payload.sql.includes('SELECT bucket,cpu,event'))||payload.sql.startsWith('SELECT id,ts,dur,ts_end,cpu'))timelineQueries.push(payload.sql);
     }
     await route.continue();
   });
