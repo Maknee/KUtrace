@@ -150,6 +150,16 @@ test('composes filters, runs SQL, zooms, and restores saved state', async ({page
   await page.keyboard.press('Home');
   await expect(page.locator('#range-label')).toHaveText(initialRange);
 
+  const immediate = await page.evaluate(() => {
+    const before=document.querySelector('#range-label').textContent;
+    window.dispatchEvent(new KeyboardEvent('keydown',{key:'w',bubbles:true}));
+    return {before,after:document.querySelector('#range-label').textContent,preview:document.querySelector('#timeline').dataset.preview};
+  });
+  expect(immediate.after).not.toBe(immediate.before);
+  expect(immediate.preview).toBe('true');
+  await expect(page.locator('#timeline')).toHaveAttribute('data-ready','true');
+  await page.keyboard.press('Home');
+
   await page.locator('#save-workspace').click();
   await page.reload();
   await expect(page.locator('#filter-chips')).toContainText('category = agent');
@@ -218,15 +228,20 @@ test('builds a range-scoped flamegraph with clickable frames', async ({page}) =>
   await expect(page.locator('#range-label')).not.toHaveText(rangeBefore);
 });
 
-test('switches between CPU and process/thread track grouping', async ({page}) => {
+test('shows CPU and PID groups together and can isolate either group', async ({page}) => {
   const timeline = page.locator('#timeline');
-  await expect(timeline).toHaveAttribute('data-track-mode', 'cpu');
+  await expect(timeline).toHaveAttribute('data-track-mode', 'cpu_pid');
+  await expect(timeline).toHaveAttribute('data-track-groups', 'cpu,pid');
   await page.locator('#track-mode').selectOption('pid');
   await expect(timeline).toHaveAttribute('data-ready', 'true');
   await expect(timeline).toHaveAttribute('data-track-mode', 'pid');
+  await expect(timeline).toHaveAttribute('data-track-groups', 'pid');
   await expect(page.locator('#cpu-controls')).toBeHidden();
   await page.locator('#track-mode').selectOption('cpu');
   await expect(timeline).toHaveAttribute('data-track-mode', 'cpu');
+  await expect(timeline).toHaveAttribute('data-track-groups', 'cpu');
+  await page.locator('#track-mode').selectOption('cpu_pid');
+  await expect(timeline).toHaveAttribute('data-track-groups', 'cpu,pid');
 });
 
 test('searches the visible trace, inverts matches, and toggles KUtrace overlays', async ({page}) => {
@@ -328,6 +343,7 @@ test('virtualizes machines with more than 64 CPU tracks at the SQL boundary', as
     await route.continue();
   });
   await page.reload();
+  await page.locator('#track-mode').selectOption('cpu');
   await page.locator('.renderer-tab[data-renderer="lanes"]').click();
   await expect(page.locator('#timeline')).toHaveAttribute('data-ready','true');
   await expect(page.locator('#cpu-controls')).toBeVisible();
@@ -365,6 +381,7 @@ test('uses the mipmap at low zoom and exact events for non-materialized filters'
     await route.continue();
   });
   await page.reload();
+  await page.locator('#track-mode').selectOption('cpu');
   await page.locator('.renderer-tab[data-renderer="lanes"]').click();
   await expect(page.locator('#timeline')).toHaveAttribute('data-ready','true');
   await expect(page.locator('#timeline')).toHaveAttribute('data-source','mipmap');
@@ -374,6 +391,7 @@ test('uses the mipmap at low zoom and exact events for non-materialized filters'
 
   wideCpuCount=64;
   await page.reload();
+  await page.locator('#track-mode').selectOption('cpu');
   await page.locator('.renderer-tab[data-renderer="lanes"]').click();
   await expect(page.locator('#timeline')).toHaveAttribute('data-ready','true');
   await expect(page.locator('#timeline')).toHaveAttribute('data-mipmap-level','coarse');
