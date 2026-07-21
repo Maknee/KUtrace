@@ -631,28 +631,40 @@ async fn schema(State(state): State<AppState>) -> impl IntoResponse {
 
 async fn index() -> impl IntoResponse {
     (
-        [(header::CONTENT_TYPE, "text/html; charset=utf-8")],
+        [
+            (header::CONTENT_TYPE, "text/html; charset=utf-8"),
+            (header::CACHE_CONTROL, "no-store"),
+        ],
         include_str!("../assets/index.html"),
     )
 }
 
 async fn javascript() -> impl IntoResponse {
     (
-        [(header::CONTENT_TYPE, "text/javascript; charset=utf-8")],
+        [
+            (header::CONTENT_TYPE, "text/javascript; charset=utf-8"),
+            (header::CACHE_CONTROL, "no-store"),
+        ],
         include_str!("../assets/app.js"),
     )
 }
 
 async fn stylesheet() -> impl IntoResponse {
     (
-        [(header::CONTENT_TYPE, "text/css; charset=utf-8")],
+        [
+            (header::CONTENT_TYPE, "text/css; charset=utf-8"),
+            (header::CACHE_CONTROL, "no-store"),
+        ],
         include_str!("../assets/style.css"),
     )
 }
 
 async fn legacy_keyboard() -> impl IntoResponse {
     (
-        [(header::CONTENT_TYPE, "text/javascript; charset=utf-8")],
+        [
+            (header::CONTENT_TYPE, "text/javascript; charset=utf-8"),
+            (header::CACHE_CONTROL, "no-store"),
+        ],
         include_str!("../assets/legacy-keyboard.js"),
     )
 }
@@ -666,6 +678,7 @@ async fn legacy(State(state): State<AppState>) -> Response {
             bytes.extend_from_slice(b"\n<script src=\"/legacy-keyboard.js\"></script>\n");
             Response::builder()
                 .header(header::CONTENT_TYPE, "text/html; charset=utf-8")
+                .header(header::CACHE_CONTROL, "no-store")
                 .body(Body::from(bytes))
                 .unwrap()
         }

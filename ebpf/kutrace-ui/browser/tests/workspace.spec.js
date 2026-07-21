@@ -20,7 +20,8 @@ async function dragTimelineRange(page, from = .3, to = .7) {
 }
 
 test.beforeEach(async ({page}) => {
-  await page.goto('/');
+  const response=await page.goto('/');
+  expect(response.headers()['cache-control']).toBe('no-store');
   await expect(page.locator('#trace-title')).toContainText('Agent reasoning fixture');
   await expect(page.locator('#event-count')).toContainText('18 rows');
   await expect(page.locator('#timeline')).toHaveAttribute('data-ready', 'true');
