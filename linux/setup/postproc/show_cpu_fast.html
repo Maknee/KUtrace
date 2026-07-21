@@ -7119,6 +7119,19 @@ function selectAllLaneFilters(kind) {
   applyLaneFilters();
 }
 
+function selectMatchingLaneFilters(kind) {
+  var input = document.getElementById(kind + "FilterSearch");
+  if (input == null) {return;}
+  var values = laneFilterOptions(kind).filter(function(option) {
+    return optionMatchesFilter(option, input.value);
+  }).map(function(option) {return option.value;});
+  if (kind == "pid") {state2.filter_pid_values = values;}
+  else if (kind == "cpu") {state2.filter_cpu_values = values;}
+  else if (kind == "symbol") {state2.filter_symbol_values = values;}
+  else {state2.filter_span_values = values;}
+  applyLaneFilters();
+}
+
 function optionMatchesFilter(option, query) {
   var q = query.trim().toLowerCase();
   if (!q.length) {return true;}
@@ -7133,6 +7146,13 @@ function renderLaneFilterOptions(kind) {
   if ((input == null) || (list == null) || (count == null)) {return;}
   var selected = laneFilterSet(kind);
   var matches = laneFilterOptions(kind).filter(function(option) {return optionMatchesFilter(option, input.value);});
+  var kindTitle = kind.charAt(0).toUpperCase() + kind.substr(1);
+  var selectMatches = document.getElementById("selectMatching" + kindTitle + "Filters");
+  if (selectMatches != null) {
+    selectMatches.disabled = matches.length == 0;
+    selectMatches.textContent = "Select " + matches.length.toLocaleString() + " search " +
+        (matches.length == 1 ? "match" : "matches");
+  }
   count.textContent = "Showing " + Math.min(filterResultLimit, matches.length) + " of " + matches.length + " matches";
   list.textContent = "";
   var fragment = document.createDocumentFragment();
@@ -10403,6 +10423,10 @@ function initAll() {
     document.getElementById(kind + "FilterSearch").addEventListener("input", function() {
       renderLaneFilterOptions(kind);
     });
+    var kindTitle = kind.charAt(0).toUpperCase() + kind.substr(1);
+    document.getElementById("selectMatching" + kindTitle + "Filters").onclick = function() {
+      selectMatchingLaneFilters(kind);
+    };
   });
   document.getElementById("cpuRangeFilter").addEventListener("keydown", function(e) {
     if (e.key == "Enter") {applyCpuRangeFilter();}
@@ -10545,6 +10569,7 @@ function unloadSaveState() {
                placeholder="Search captured span or paired marker name" autocomplete="off">
         <div id="spanFilterSelected" class="lane-filter-summary"></div>
         <div class="lane-filter-actions">
+          <button id="selectMatchingSpanFilters" type="button">Select search matches</button>
           <button id="selectAllSpanFilters" type="button">Select all captured</button>
           <button id="clearSpanFilters" type="button">Deselect all</button>
         </div>
@@ -10557,6 +10582,7 @@ function unloadSaveState() {
                placeholder="Search name or PID" autocomplete="off">
         <div id="pidFilterSelected" class="lane-filter-summary"></div>
         <div class="lane-filter-actions">
+          <button id="selectMatchingPidFilters" type="button">Select search matches</button>
           <button id="selectAllPidFilters" type="button">Select all captured</button>
           <button id="clearPidFilters" type="button">Deselect all</button>
           <button id="cpusForPids" type="button">Use associated CPUs</button>
@@ -10570,6 +10596,7 @@ function unloadSaveState() {
                placeholder="Search CPU number" autocomplete="off">
         <div id="cpuFilterSelected" class="lane-filter-summary"></div>
         <div class="lane-filter-actions">
+          <button id="selectMatchingCpuFilters" type="button">Select search matches</button>
           <button id="selectAllCpuFilters" type="button">Select all captured</button>
           <button id="clearCpuFilters" type="button">Deselect all</button>
         </div>
@@ -10589,6 +10616,7 @@ function unloadSaveState() {
                placeholder="Search symbol, address, thread, or PID" autocomplete="off">
         <div id="symbolFilterSelected" class="lane-filter-summary"></div>
         <div class="lane-filter-actions">
+          <button id="selectMatchingSymbolFilters" type="button">Select search matches</button>
           <button id="selectAllSymbolFilters" type="button">Select all captured</button>
           <button id="clearSymbolFilters" type="button">Deselect all</button>
           <button id="cpusForSymbols" type="button">Use sampled CPUs</button>
