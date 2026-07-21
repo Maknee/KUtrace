@@ -17,7 +17,7 @@ use aya::programs::{
     perf_event::{HardwareEvent, PerfEventConfig, PerfEventScope, SamplePolicy, SoftwareEvent},
 };
 use aya::{
-    Ebpf,
+    Ebpf, EbpfLoader,
     maps::{Array, HashMap as BpfHashMap, Map, PerCpuArray, RingBuf},
     programs::{
         CgroupAttachMode, CgroupSkb, CgroupSkbAttachType, TracePoint, UProbe,
@@ -30,13 +30,15 @@ use clap::Parser;
 use kutrace_common::{
     CLIENT_MAGIC, ClientEvent, CompactSyscallEvent, EVENT_CLIENT_LEGACY_MARKER,
     EVENT_SYSCALL_ENTER, EVENT_SYSCALL_EXIT, Event, FLAG_IPC_ENABLED, FLAG_PAGE_FAULT_RETURN_PROBE,
-    FileHeader, FilterConfig, KUTRACE_FLAG_IPC, PairedSyscallEvent, ProbeConfig,
+    FLAG_SAMPLE_STACKS_ENABLED, FileHeader, FilterConfig, KUTRACE_FLAG_IPC, PairedSyscallEvent,
+    ProbeConfig,
 };
 use tokio::io::unix::AsyncFd;
 use tokio::net::UnixDatagram;
 
 mod mappings;
 mod shared_ring;
+mod stacks;
 mod usdt;
 use mappings::MappingRecorder;
 use shared_ring::SharedConsumer;
@@ -205,6 +207,13 @@ struct Args {
     /// Snapshot kallsyms for post-processing sampled kernel PCs.
     #[arg(long, value_name = "PATH")]
     kallsyms: Option<PathBuf>,
+    /// Snapshot sampled callchains into a versioned JSON-lines sidecar.
+    /// This is x86_64-only and remains disabled unless explicitly requested.
+    #[arg(long, value_name = "PATH")]
+    stacks: Option<PathBuf>,
+    /// Maximum distinct user and kernel stacks retained by each BPF map.
+    #[arg(long, default_value_t = 8192, requires = "stacks", value_parser = clap::value_parser!(u32).range(1..=65536))]
+    stack_map_entries: u32,
     /// Correlate every captured event with pinned hardware cycles and retired
     /// instructions, emitting KUtrace's four-bit IPC value.
     #[arg(long)]
@@ -1098,12 +1107,32 @@ fn seed_scoped_tids(bpf: &mut Ebpf, tgid: u32) -> Result<usize> {
 #[tokio::main]
 async fn main() -> Result<()> {
     let args = Args::parse();
-    if args.mappings.as_ref() == Some(&args.output) || args.kallsyms.as_ref() == Some(&args.output)
+    if args.mappings.as_ref() == Some(&args.output)
+        || args.kallsyms.as_ref() == Some(&args.output)
+        || args.stacks.as_ref() == Some(&args.output)
     {
         bail!("metadata sidecars must not name the capture output file");
     }
-    if args.mappings.is_some() && args.mappings == args.kallsyms {
-        bail!("--mappings and --kallsyms must name different files");
+    let sidecars = [
+        args.mappings.as_ref(),
+        args.kallsyms.as_ref(),
+        args.stacks.as_ref(),
+    ]
+    .into_iter()
+    .flatten()
+    .collect::<Vec<_>>();
+    if sidecars
+        .iter()
+        .enumerate()
+        .any(|(index, path)| sidecars[index + 1..].contains(path))
+    {
+        bail!("metadata sidecars must name different files");
+    }
+    if args.stacks.is_some() && args.sample_hz == 0 {
+        bail!("--stacks requires a nonzero --sample-hz");
+    }
+    if args.stacks.is_some() && !cfg!(target_arch = "x86_64") {
+        bail!("sampled stack capture is currently supported only on x86_64");
     }
     let mut external_probes = args.uprobes.clone();
     if let (Some(binary), Some(symbol)) = (&args.uprobe_binary, &args.uprobe_symbol) {
@@ -1146,8 +1175,15 @@ async fn main() -> Result<()> {
             .with_context(|| format!("snapshot kernel symbols to {}", path.display()))?;
     }
 
-    let mut bpf =
-        Ebpf::load_file(&args.ebpf).with_context(|| format!("load {}", args.ebpf.display()))?;
+    let mut loader = EbpfLoader::new();
+    if args.stacks.is_some() {
+        loader
+            .map_max_entries("USER_STACKS", args.stack_map_entries)
+            .map_max_entries("KERNEL_STACKS", args.stack_map_entries);
+    }
+    let mut bpf = loader
+        .load_file(&args.ebpf)
+        .with_context(|| format!("load {}", args.ebpf.display()))?;
     {
         let mut config = Array::<_, FilterConfig>::try_from(
             bpf.map_mut("CONFIG").context("missing CONFIG map")?,
@@ -1204,7 +1240,12 @@ async fn main() -> Result<()> {
                     FLAG_PAGE_FAULT_RETURN_PROBE
                 } else {
                     0
-                }) | (if args.ipc { FLAG_IPC_ENABLED } else { 0 }),
+                }) | (if args.ipc { FLAG_IPC_ENABLED } else { 0 })
+                    | (if args.stacks.is_some() {
+                        FLAG_SAMPLE_STACKS_ENABLED
+                    } else {
+                        0
+                    }),
                 target_cgroup_id: args.cgroup_id,
                 excluded_tgid: std::process::id(),
                 reserved: 0,
@@ -1271,6 +1312,19 @@ async fn main() -> Result<()> {
         bpf.take_map("PROBE_DROPPED")
             .context("missing PROBE_DROPPED map")?,
     )?;
+    let stack_dropped = if args.stacks.is_some() {
+        Some(PerCpuArray::<_, u64>::try_from(
+            bpf.take_map("STACK_DROPPED")
+                .context("missing STACK_DROPPED map; use the stack-enabled eBPF object")?,
+        )?)
+    } else {
+        None
+    };
+    let stack_maps = if args.stacks.is_some() {
+        Some(stacks::StackMaps::take(&mut bpf)?)
+    } else {
+        None
+    };
     let syscall_starts = PerCpuArray::<_, CompactSyscallEvent>::try_from(
         bpf.take_map("SYSCALL_STARTS")
             .context("missing SYSCALL_STARTS map")?,
@@ -1398,11 +1452,19 @@ async fn main() -> Result<()> {
     };
     let dropped_events: u64 = dropped.get(&0, 0)?.iter().copied().sum();
     let probe_dropped_events: u64 = probe_dropped.get(&0, 0)?.iter().copied().sum();
+    let stack_dropped_samples: u64 = match stack_dropped.as_ref() {
+        Some(dropped) => dropped.get(&0, 0)?.iter().copied().sum(),
+        None => 0,
+    };
+    let (user_stacks, kernel_stacks) = match (args.stacks.as_deref(), stack_maps.as_ref()) {
+        (Some(path), Some(maps)) => maps.write(path)?,
+        _ => (0, 0),
+    };
     let client_shm_dropped = shared_ring.dropped();
     let paired_syscall_records_received = ring_stats.paired_syscall_records_received;
     let compact_syscall_records_received = ring_stats.compact_syscall_records_received;
     eprintln!(
-        "capture complete; bpf_dropped_events={dropped_events}; probe_dropped_events={probe_dropped_events}; client_events_received={client_events_received}; client_shm_dropped={client_shm_dropped}; paired_syscall_records_received={paired_syscall_records_received}; compact_syscall_records_received={compact_syscall_records_received}; pending_syscall_entries_flushed={pending_syscall_entries_flushed}; mappings_recorded={mappings_recorded}; mapping_misses={mapping_misses}"
+        "capture complete; bpf_dropped_events={dropped_events}; probe_dropped_events={probe_dropped_events}; stack_dropped_samples={stack_dropped_samples}; user_stacks={user_stacks}; kernel_stacks={kernel_stacks}; client_events_received={client_events_received}; client_shm_dropped={client_shm_dropped}; paired_syscall_records_received={paired_syscall_records_received}; compact_syscall_records_received={compact_syscall_records_received}; pending_syscall_entries_flushed={pending_syscall_entries_flushed}; mappings_recorded={mappings_recorded}; mapping_misses={mapping_misses}"
     );
     std::fs::remove_file(&args.agent_socket)?;
     std::fs::remove_file(&args.agent_shm)?;

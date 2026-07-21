@@ -1,0 +1,8 @@
+[build]
+target = "index.html"
+dist = "../kutrace-ui/assets/wasm"
+public_url = "/wasm/"
+filehash = false
+
+[watch]
+ignore = ["../kutrace-ui/assets/wasm"]

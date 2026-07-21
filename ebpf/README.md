@@ -12,11 +12,14 @@ remain the authority for viewer compatibility while capture moves to eBPF.
 
 ## Build and smoke test
 
-Aya's eBPF target currently needs Rust's `rust-src` component and `bpf-linker`:
+Aya's eBPF target currently needs Rust's `rust-src` component and `bpf-linker`.
+The Yew browser workspace additionally needs the WebAssembly target and Trunk:
 
 ```sh
 rustup component add rust-src
 cargo install bpf-linker
+rustup target add wasm32-unknown-unknown
+cargo install --locked trunk
 make -C ebpf build build-ebpf test
 ```
 
@@ -40,6 +43,25 @@ produce capture artifacts without starting the server, `--output-dir DIR` to
 choose their location, and `--listen ADDRESS` to select another interface or
 port.
 
+On x86_64, add `--sample-stacks` alongside a nonzero sampling rate to retain
+callchains as well as the top PC:
+
+```sh
+ebpf/kutrace-run --sample-hz 99 --sample-stacks --no-ui -- ./workload
+```
+
+This writes `capture.stacks.jsonl`, a versioned sidecar whose instruction
+pointers are leaf-first. The transformer resolves each frame after capture and
+emits standard folded `root;...;leaf` sample names. Stack capture is off by
+default and selects the separately compiled
+`kutrace-ebpf/target/stack-traces/bpfel-unknown-none/release/kutrace-ebpf`
+object. The default object contains no stack maps, so ordinary tracing and
+top-PC sampling do not allocate or validate kernel stack-trace storage. The
+stack-enabled object uses separate bounded user/kernel BPF stack maps and does
+not change the 112-byte `KUEBPF01` record ABI. The event's reserved
+`args[2]`/`args[3]` slots carry a sidecar stack ID only when the corresponding
+validity flag is set.
+
 The individual pipeline stages remain available when explicit control is
 needed:
 
@@ -47,6 +69,12 @@ needed:
 
 sudo ebpf/target/release/kutrace-collector \
   --ebpf ebpf/kutrace-ebpf/target/bpfel-unknown-none/release/kutrace-ebpf \
+  --output capture.kuevents
+
+# For --stacks only, use the separately built stack-enabled object:
+sudo ebpf/target/release/kutrace-collector \
+  --ebpf ebpf/kutrace-ebpf/target/stack-traces/bpfel-unknown-none/release/kutrace-ebpf \
+  --sample-hz 99 --stacks capture.stacks.jsonl \
   --output capture.kuevents
 
 ebpf/target/release/kutrace-transform events capture.kuevents \
@@ -68,6 +96,10 @@ perf-event program samples user and kernel PCs when `--sample-hz HZ` is
 nonzero, emitting the exact legacy `PC_U`/`PC_K` contract. Normal KUtrace
 capture is event-driven and leaves PC profiling disabled; hardware cycles
 automatically fall back to the software CPU clock when profiling is requested.
+Optional x86_64 callchain collection uses `bpf_get_stackid`; the collector logs
+stack-map/verifier lookup failures separately as `stack_dropped_samples` and
+snapshots both maps only after producers stop. Frame-pointer availability and
+kernel unwinding policy determine how complete those callchains are.
 `--ipc` additionally opens a pinned hardware cycles/retired-instructions group
 on every online CPU and emits KUtrace's historical four-bit IPC scale. It is
 opt-in because it adds two perf-counter reads to every retained hook. Pinned
@@ -371,17 +403,22 @@ the machine-readable `comparison.json` report.
 ## Query-backed UI
 
 `kutrace-ui` imports the unchanged version-3 JSON into an indexed SQLite
-database and serves a continuous, human-first timeline. A full-trace overview,
-shared ruler and range, CPU/PID tracks, search and display controls feed a
-dock containing exact event details, a span flamegraph, SQL, and optional agent
-context. The flamegraph groups real timed spans; sampled PCs are symbolized
-leaves because the current capture ABI does not contain call stacks. Recursive
-agent/tool-call trees and query/observation/decision/result context remain
-available in the dock instead of dominating the visualization. SQL can be
-retained as one of 32 validated named read-only views in the portable version-2
-workspace format; version-1 files remain importable. The original self-contained
-viewer is a first-class tab and is served unchanged when `--legacy-html` is
-supplied:
+database and serves a continuous, human-first timeline. The browser application
+is implemented in Rust with Yew and WebAssembly; there is no maintained
+handwritten application JavaScript. Trunk/`wasm-bindgen` generate only the WASM
+loader. The native KUtrace timeline is SVG, so held-key navigation, wheel zoom,
+and Alt-drag pan recompute vector geometry instead of scaling a cached bitmap.
+
+A full-trace overview, shared ruler and range, visible CPU/PID tracks, search,
+selection, Shift-click highlighting, and display controls feed a dock containing
+event details, SQL, and a sampled-stack flamegraph. Ordinary sampled PCs are
+symbolized leaves. Opt-in callchains become normalized `profile_samples` and
+`profile_frames` rows and render as a sample-weighted prefix tree; traces
+without callchains get an explicit event-hierarchy fallback rather than
+synthetic stacks. SQL can be retained as one of 32 validated named read-only
+views in the portable version-2 workspace format; version-1 files remain
+importable. The original self-contained viewer is a separate compatibility tab
+and is served unchanged when `--legacy-html` is supplied:
 
 ```sh
 ebpf/target/release/kutrace-ui capture.json \
@@ -396,8 +433,9 @@ The importer keeps failure-atomic staging and streams through a bounded 256 KiB
 reader with 64-event SQLite batches. Materialized 1 ms and 16 ms timeline mipmap levels keep
 low-zoom queries bounded while merging long spans from the raw table; compatible
 category/CPU/event filters use the aggregate, while PID/RPC/name and high-zoom
-queries remain exact. Schema version 9 deliberately keeps names out of the
-mipmap grouping so high-cardinality labels do not inflate it.
+queries remain exact. Schema version 10 adds normalized sampled callchains and
+still deliberately keeps names out of mipmap grouping so high-cardinality
+labels do not inflate it.
 `bench_ui_import.sh` generates a configurable event set,
 verifies the exact imported count, measures wall time and peak RSS, and runs the
 production 8,000-row bucket query across every generated event through the HTTP
@@ -419,13 +457,11 @@ checks exact name cardinality plus lookup in 134.7 ms; see
 SQLite index workers remain an explicit `--index-workers` memory/speed tradeoff
 and default to zero.
 
-The deterministic Chromium and Firefox regression projects cover tracks,
-filters, SQL, keyboard navigation, print media, portable/saved state, agent
-relationships, bounded pointer/trackpad navigation, and the live legacy
-renderer. The legacy gate first requires byte identity, then exercises marks,
-color-blind mode, mutually exclusive annotations, search/inversion, wheel zoom,
-and red-dot reset. Chromium owns the visual
-snapshot; both engines run the functional assertions:
+The deterministic Chromium and Firefox projects cover the Yew/WASM entry
+point, SVG geometry during repeated held-key updates, wheel zoom, Alt-drag pan,
+selection, Shift highlighting, Escape, filters, search, SQL/schema inspection,
+portable/saved state, symbolized callchains, honest flamegraph fallback, and
+the live legacy compatibility route:
 
 ```sh
 make -C ebpf test-ui

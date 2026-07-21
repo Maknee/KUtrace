@@ -1,0 +1,22 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>KUtrace Workspace</title>
+  <link rel="stylesheet" href="/style.css">
+
+<script type="module">
+import init, * as bindings from '/wasm/kutrace-ui-web.js';
+const wasm = await init({ module_or_path: '/wasm/kutrace-ui-web_bg.wasm' });
+
+
+window.wasmBindings = bindings;
+
+
+dispatchEvent(new CustomEvent("TrunkApplicationStarted", {detail: {wasm}}));
+
+</script>
+<link rel="modulepreload" href="/wasm/kutrace-ui-web.js" crossorigin="anonymous" integrity="sha384-W+0biQsvNLztk9OXxFnkHG2FptkSjTaPvTYMT9Az01xelqiv9Prx1Mr181qrVes3"><link rel="preload" href="/wasm/kutrace-ui-web_bg.wasm" crossorigin="anonymous" integrity="sha384-M7rMiRmV0sLIvGswRoCnwdT9SNLm+OuEHzV89dv59sWEKp9HQuEaIrEP95jAc2/T" as="fetch" type="application/wasm"></head>
+<body></body>
+</html>

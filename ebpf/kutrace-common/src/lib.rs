@@ -43,12 +43,17 @@ pub const CLIENT_SHM_DROPPED_OFFSET: usize = 40;
 pub const FLAG_FILTER_TGID: u32 = 1 << 0;
 pub const FLAG_PAGE_FAULT_RETURN_PROBE: u32 = 1 << 1;
 pub const FLAG_IPC_ENABLED: u32 = 1 << 2;
+pub const FLAG_SAMPLE_STACKS_ENABLED: u32 = 1 << 3;
 pub const EVENT_FLAG_USER: u32 = 1 << 0;
 pub const EVENT_FLAG_IPC_VALID: u32 = 1 << 1;
 pub const EVENT_FLAG_IPC_SHIFT: u32 = 8;
 pub const EVENT_FLAG_IPC_MASK: u32 = 0x0f << EVENT_FLAG_IPC_SHIFT;
 pub const EVENT_FLAG_IPC_SPAN_SHIFT: u32 = 12;
 pub const EVENT_FLAG_IPC_SPAN_MASK: u32 = 0x0f << EVENT_FLAG_IPC_SPAN_SHIFT;
+/// `args[2]` contains a user stack ID from the optional stack sidecar.
+pub const EVENT_FLAG_USER_STACK_VALID: u32 = 1 << 16;
+/// `args[3]` contains a kernel stack ID from the optional stack sidecar.
+pub const EVENT_FLAG_KERNEL_STACK_VALID: u32 = 1 << 17;
 pub const MAX_UPROBES: u32 = 64;
 
 /// User-space legacy point events that are safe to pass through the agent
@@ -454,5 +459,10 @@ mod tests {
             EVENT_FLAG_IPC_VALID | (9 << EVENT_FLAG_IPC_SHIFT) | (13 << EVENT_FLAG_IPC_SPAN_SHIFT);
         assert_eq!(event_ipc(flags), 9);
         assert_eq!(event_ipc_byte(flags), 0xd9);
+        assert_eq!(
+            (EVENT_FLAG_USER_STACK_VALID | EVENT_FLAG_KERNEL_STACK_VALID)
+                & (EVENT_FLAG_IPC_MASK | EVENT_FLAG_IPC_SPAN_MASK),
+            0
+        );
     }
 }

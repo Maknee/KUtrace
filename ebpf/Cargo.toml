@@ -12,7 +12,7 @@ members = [
   "kutrace-differential-fixture",
   "kutrace-ui",
 ]
-exclude = ["kutrace-ebpf"]
+exclude = ["kutrace-ebpf", "kutrace-ui-web"]
 
 [workspace.package]
 version = "0.1.0"

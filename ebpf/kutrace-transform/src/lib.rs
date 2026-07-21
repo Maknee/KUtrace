@@ -18,10 +18,11 @@ use chrono::{DateTime, Utc};
 use kutrace_common::{
     ARCH_AARCH64, ARCH_RISCV64, ARCH_X86_64, EVENT_CLIENT_ANNOTATION, EVENT_CLIENT_LEGACY_MARKER,
     EVENT_CLIENT_SPAN_BEGIN, EVENT_CLIENT_SPAN_END, EVENT_CPU_FREQUENCY, EVENT_CPU_IDLE,
-    EVENT_FLAG_USER, EVENT_IRQ_ENTER, EVENT_IRQ_EXIT, EVENT_PACKET_RX, EVENT_PACKET_TX,
-    EVENT_PAGE_FAULT, EVENT_PC_SAMPLE, EVENT_SCHED_SWITCH, EVENT_SCHED_WAKEUP, EVENT_SOFTIRQ_ENTER,
-    EVENT_SOFTIRQ_EXIT, EVENT_SYSCALL_ENTER, EVENT_SYSCALL_EXIT, EVENT_TRAP_ENTER, EVENT_TRAP_EXIT,
-    Event, FILE_MAGIC, FILE_VERSION, FileHeader, event_ipc, event_ipc_byte,
+    EVENT_FLAG_KERNEL_STACK_VALID, EVENT_FLAG_USER, EVENT_FLAG_USER_STACK_VALID, EVENT_IRQ_ENTER,
+    EVENT_IRQ_EXIT, EVENT_PACKET_RX, EVENT_PACKET_TX, EVENT_PAGE_FAULT, EVENT_PC_SAMPLE,
+    EVENT_SCHED_SWITCH, EVENT_SCHED_WAKEUP, EVENT_SOFTIRQ_ENTER, EVENT_SOFTIRQ_EXIT,
+    EVENT_SYSCALL_ENTER, EVENT_SYSCALL_EXIT, EVENT_TRAP_ENTER, EVENT_TRAP_EXIT, Event, FILE_MAGIC,
+    FILE_VERSION, FileHeader, event_ipc, event_ipc_byte,
 };
 use serde::Deserialize;
 
@@ -136,6 +137,83 @@ struct PcSymbolRecord {
     offset: u64,
 }
 
+#[derive(Debug, Deserialize)]
+struct StackRecord {
+    version: u8,
+    stack_id: u32,
+    user: bool,
+    ips: Vec<u64>,
+}
+
+/// Raw callchains copied out of the BPF stack-trace maps at capture end.
+#[derive(Clone, Debug, Default)]
+pub struct SampleStacks {
+    stacks: HashMap<(bool, u32), Vec<u64>>,
+}
+
+impl SampleStacks {
+    pub fn load(path: impl AsRef<Path>) -> Result<Self> {
+        let path = path.as_ref();
+        let contents = std::fs::read_to_string(path)
+            .with_context(|| format!("read stack sidecar {}", path.display()))?;
+        let mut stacks = HashMap::new();
+        for (index, line) in contents.lines().enumerate() {
+            if line.trim().is_empty() {
+                continue;
+            }
+            let record: StackRecord = serde_json::from_str(line).with_context(|| {
+                format!("parse stack sidecar {} line {}", path.display(), index + 1)
+            })?;
+            if record.version != 1 {
+                bail!(
+                    "unsupported stack sidecar version {} on line {}",
+                    record.version,
+                    index + 1
+                );
+            }
+            if record.ips.len() > 127 {
+                bail!(
+                    "stack sidecar line {} exceeds Linux's maximum depth",
+                    index + 1
+                );
+            }
+            if record.ips.is_empty() || record.ips.contains(&0) {
+                continue;
+            }
+            if stacks
+                .insert((record.user, record.stack_id), record.ips)
+                .is_some()
+            {
+                bail!("duplicate stack ID on line {}", index + 1);
+            }
+        }
+        Ok(Self { stacks })
+    }
+
+    pub fn len(&self) -> usize {
+        self.stacks.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.stacks.is_empty()
+    }
+
+    fn frames<'a>(&'a self, event: &Event) -> Option<(bool, &'a [u64])> {
+        let (user, valid, argument) = if event.flags & EVENT_FLAG_USER != 0 {
+            (true, EVENT_FLAG_USER_STACK_VALID, 2usize)
+        } else {
+            (false, EVENT_FLAG_KERNEL_STACK_VALID, 3usize)
+        };
+        if event.flags & valid == 0 {
+            return None;
+        }
+        let stack_id = u32::try_from(event.args[argument]).ok()?;
+        self.stacks
+            .get(&(user, stack_id))
+            .map(|frames| (user, frames.as_slice()))
+    }
+}
+
 #[derive(Clone, Debug, Deserialize)]
 struct PcMappingRecord {
     version: u8,
@@ -196,6 +274,15 @@ impl PcSymbols {
         mappings_path: Option<&Path>,
         kallsyms_path: Option<&Path>,
     ) -> Result<Self> {
+        Self::symbolize_with_stacks(capture, None, mappings_path, kallsyms_path)
+    }
+
+    pub fn symbolize_with_stacks(
+        capture: &Capture,
+        stacks: Option<&SampleStacks>,
+        mappings_path: Option<&Path>,
+        kallsyms_path: Option<&Path>,
+    ) -> Result<Self> {
         let mappings = match mappings_path {
             Some(path) => load_mappings(path)?,
             None => HashMap::new(),
@@ -221,26 +308,33 @@ impl PcSymbols {
                 continue;
             }
             let user = event.flags & EVENT_FLAG_USER != 0;
-            let key = PcSymbolKey {
-                tgid: if user { event.tgid() } else { 0 },
-                ip: event.args[0],
-                user,
-            };
-            if !seen.insert(key) {
-                continue;
+            let mut ips = Vec::new();
+            ips.push(event.args[0]);
+            if let Some((_, frames)) = stacks.and_then(|stacks| stacks.frames(event)) {
+                ips.extend_from_slice(frames);
             }
-            let result = if user {
-                symbolize_user_pc(&symbolizer, &mappings, key)
-            } else {
-                kernel_source.as_ref().and_then(|source| {
-                    symbolizer
-                        .symbolize_single(source, Input::AbsAddr(key.ip))
-                        .ok()
-                        .and_then(display_symbol)
-                })
-            };
-            if let Some(symbol) = result {
-                names.insert(key, symbol);
+            for ip in ips {
+                let key = PcSymbolKey {
+                    tgid: if user { event.tgid() } else { 0 },
+                    ip,
+                    user,
+                };
+                if !seen.insert(key) {
+                    continue;
+                }
+                let result = if user {
+                    symbolize_user_pc(&symbolizer, &mappings, key)
+                } else {
+                    kernel_source.as_ref().and_then(|source| {
+                        symbolizer
+                            .symbolize_single(source, Input::AbsAddr(key.ip))
+                            .ok()
+                            .and_then(display_symbol)
+                    })
+                };
+                if let Some(symbol) = result {
+                    names.insert(key, symbol);
+                }
             }
         }
         Ok(Self { names })
@@ -262,6 +356,16 @@ impl PcSymbols {
             user,
         };
         self.names.get(&key).map(String::as_str)
+    }
+
+    fn get_ip(&self, tgid: u32, ip: u64, user: bool) -> Option<&str> {
+        self.names
+            .get(&PcSymbolKey {
+                tgid: if user { tgid } else { 0 },
+                ip,
+                user,
+            })
+            .map(String::as_str)
     }
 }
 
@@ -627,6 +731,16 @@ pub fn to_legacy_events_with_symbols(
     capture: &Capture,
     names: &SyscallNames,
     symbols: &PcSymbols,
+    out: impl Write,
+) -> Result<()> {
+    to_legacy_events_with_symbols_and_stacks(capture, names, symbols, &SampleStacks::default(), out)
+}
+
+pub fn to_legacy_events_with_symbols_and_stacks(
+    capture: &Capture,
+    names: &SyscallNames,
+    symbols: &PcSymbols,
+    stacks: &SampleStacks,
     mut out: impl Write,
 ) -> Result<()> {
     let dt = DateTime::<Utc>::from_timestamp_nanos(capture.header.epoch_start_ns as i64);
@@ -870,6 +984,24 @@ pub fn to_legacy_events_with_symbols(
             EVENT_PC_SAMPLE => {
                 let ip = event.args[0];
                 let user = event.flags & EVENT_FLAG_USER != 0;
+                let name = stacks
+                    .frames(event)
+                    .map(|(_, frames)| {
+                        frames
+                            .iter()
+                            .rev()
+                            .map(|frame| {
+                                symbols
+                                    .get_ip(event.tgid(), *frame, user)
+                                    .map(str::to_owned)
+                                    .unwrap_or_else(|| format!("PC={frame:012x}"))
+                            })
+                            .collect::<Vec<_>>()
+                            .join(";")
+                    })
+                    .filter(|name| !name.is_empty())
+                    .or_else(|| symbols.get(event).map(str::to_owned))
+                    .unwrap_or_else(|| format!("PC={ip:012x}"));
                 legacy_events.push(LegacyEvent {
                     ts,
                     duration: 1,
@@ -880,10 +1012,7 @@ pub fn to_legacy_events_with_symbols(
                     arg: (ip >> 6) & 0xffff,
                     retval: 0,
                     ipc: event_ipc(event.flags),
-                    name: symbols
-                        .get(event)
-                        .map(str::to_owned)
-                        .unwrap_or_else(|| format!("PC={ip:012x}")),
+                    name,
                 });
             }
             EVENT_PACKET_RX | EVENT_PACKET_TX => {
@@ -1332,6 +1461,54 @@ mod tests {
         assert!(output.contains("hello::run+0x7 (280)"));
         assert!(output.contains("schedule+0x2a (281)"));
         assert!(!output.contains("PC="));
+    }
+
+    #[test]
+    fn emits_versioned_sampled_callchains_root_to_leaf() {
+        let directory = tempfile::tempdir().unwrap();
+        let stacks_path = directory.path().join("capture.stacks.jsonl");
+        std::fs::write(
+            &stacks_path,
+            concat!(
+                r#"{"version":1,"stack_id":7,"user":true,"ips":[12288,8192,4096]}"#,
+                "\n"
+            ),
+        )
+        .unwrap();
+        let symbols_path = directory.path().join("capture.symbols.jsonl");
+        std::fs::write(
+            &symbols_path,
+            concat!(
+                r#"{"version":1,"tgid":42,"ip":4096,"user":true,"symbol":"main","offset":0}"#,
+                "\n",
+                r#"{"version":1,"tgid":42,"ip":8192,"user":true,"symbol":"work","offset":4}"#,
+                "\n",
+                r#"{"version":1,"tgid":42,"ip":12288,"user":true,"symbol":"leaf","offset":8}"#,
+                "\n"
+            ),
+        )
+        .unwrap();
+        let stacks = SampleStacks::load(&stacks_path).unwrap();
+        let symbols = PcSymbols::load(&symbols_path).unwrap();
+        let mut sample = event(EVENT_PC_SAMPLE, -1, 1_100);
+        sample.args[0] = 12_288;
+        sample.args[2] = 7;
+        sample.flags = EVENT_FLAG_USER | EVENT_FLAG_USER_STACK_VALID;
+        let capture = Capture {
+            header: FileHeader::new(1_000, 1_700_000_001_000_000_000, ARCH_X86_64),
+            events: vec![sample],
+        };
+        let mut output = Vec::new();
+        to_legacy_events_with_symbols_and_stacks(
+            &capture,
+            &SyscallNames::default(),
+            &symbols,
+            &stacks,
+            &mut output,
+        )
+        .unwrap();
+        let output = String::from_utf8(output).unwrap();
+        assert!(output.contains("main+0x0;work+0x4;leaf+0x8 (280)"));
     }
 
     #[inline(never)]

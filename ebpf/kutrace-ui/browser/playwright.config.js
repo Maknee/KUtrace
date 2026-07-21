@@ -20,11 +20,20 @@ export default defineConfig({
     timezoneId: 'UTC',
     reducedMotion: 'reduce'
   },
-  webServer: {
-    command: '../../target/release/kutrace-ui tests/fixtures/agent_trace.json --database tests/fixtures/agent.sqlite --legacy-html ../../../hello_world_demo_live.html --listen 127.0.0.1:38126 --rebuild',
-    cwd: '.',
-    url: 'http://127.0.0.1:38126/',
-    reuseExistingServer: false,
-    timeout: 30_000
-  }
+  webServer: [
+    {
+      command: '../../target/release/kutrace-ui tests/fixtures/agent_trace.json --database tests/fixtures/agent.sqlite --legacy-html ../../../hello_world_demo_live.html --listen 127.0.0.1:38126 --rebuild',
+      cwd: '.',
+      url: 'http://127.0.0.1:38126/',
+      reuseExistingServer: false,
+      timeout: 30_000
+    },
+    {
+      command: '../../target/release/kutrace-ui tests/fixtures/stack_trace.json --database tests/fixtures/stack.sqlite --listen 127.0.0.1:38127 --rebuild',
+      cwd: '.',
+      url: 'http://127.0.0.1:38127/',
+      reuseExistingServer: false,
+      timeout: 30_000
+    }
+  ]
 });

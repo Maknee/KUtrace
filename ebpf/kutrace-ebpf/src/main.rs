@@ -12,6 +12,8 @@ use aya_ebpf::{
     maps::{Array, HashMap, LruHashMap, PerCpuArray, PerfEventArray, RingBuf},
     programs::{PerfEventContext, ProbeContext, RetProbeContext, SkBuffContext, TracePointContext},
 };
+#[cfg(feature = "stack-traces")]
+use aya_ebpf::{maps::StackTrace, programs::tracing::StackIdContext};
 use kutrace_common::{
     CompactSyscallEvent, EVENT_CLIENT_SPAN_BEGIN, EVENT_CLIENT_SPAN_END, EVENT_CPU_FREQUENCY,
     EVENT_CPU_IDLE, EVENT_FLAG_IPC_MASK, EVENT_FLAG_IPC_SHIFT, EVENT_FLAG_IPC_SPAN_SHIFT,
@@ -20,6 +22,10 @@ use kutrace_common::{
     EVENT_SOFTIRQ_ENTER, EVENT_SOFTIRQ_EXIT, EVENT_SYSCALL_ENTER, EVENT_SYSCALL_EXIT,
     EVENT_TRAP_ENTER, EVENT_TRAP_EXIT, Event, FLAG_IPC_ENABLED, FLAG_PAGE_FAULT_RETURN_PROBE,
     FilterConfig, MAX_UPROBES, PairedSyscallEvent, ProbeConfig, granular_ipc,
+};
+#[cfg(feature = "stack-traces")]
+use kutrace_common::{
+    EVENT_FLAG_KERNEL_STACK_VALID, EVENT_FLAG_USER_STACK_VALID, FLAG_SAMPLE_STACKS_ENABLED,
 };
 
 #[map]
@@ -33,6 +39,18 @@ static DROPPED: PerCpuArray<u64> = PerCpuArray::with_max_entries(1, 0);
 
 #[map]
 static PROBE_DROPPED: PerCpuArray<u64> = PerCpuArray::with_max_entries(1, 0);
+
+#[cfg(feature = "stack-traces")]
+#[map]
+static STACK_DROPPED: PerCpuArray<u64> = PerCpuArray::with_max_entries(1, 0);
+
+#[cfg(feature = "stack-traces")]
+#[map]
+static USER_STACKS: StackTrace = StackTrace::with_max_entries(8_192, 0);
+
+#[cfg(feature = "stack-traces")]
+#[map]
+static KERNEL_STACKS: StackTrace = StackTrace::with_max_entries(8_192, 0);
 
 #[map]
 static CPU_CYCLES: PerfEventArray<u64> = PerfEventArray::new(0);
@@ -367,6 +385,14 @@ fn record_drop() {
 #[inline(always)]
 fn record_probe_drop() {
     if let Some(value) = PROBE_DROPPED.get_ptr_mut(0) {
+        unsafe { *value += 1 };
+    }
+}
+
+#[cfg(feature = "stack-traces")]
+#[inline(always)]
+fn record_stack_drop() {
+    if let Some(value) = STACK_DROPPED.get_ptr_mut(0) {
         unsafe { *value += 1 };
     }
 }
@@ -943,6 +969,26 @@ fn try_pc_sample(ctx: PerfEventContext) -> Result<(), i32> {
     event.args[1] = data.sample_period;
     if ip & (1u64 << 63) == 0 {
         event.flags |= EVENT_FLAG_USER;
+    }
+    #[cfg(all(bpf_target_arch = "x86_64", feature = "stack-traces"))]
+    if CONFIG
+        .get(0)
+        .is_some_and(|config| config.flags & FLAG_SAMPLE_STACKS_ENABLED != 0)
+    {
+        let stack = if event.flags & EVENT_FLAG_USER != 0 {
+            ctx.get_stackid(&USER_STACKS, aya_ebpf::bindings::BPF_F_USER_STACK as u64)
+                .map(|id| (id, EVENT_FLAG_USER_STACK_VALID, 2usize))
+        } else {
+            ctx.get_stackid(&KERNEL_STACKS, 0)
+                .map(|id| (id, EVENT_FLAG_KERNEL_STACK_VALID, 3usize))
+        };
+        match stack {
+            Ok((id, flag, argument)) => {
+                event.args[argument] = id as u64;
+                event.flags |= flag;
+            }
+            Err(_) => record_stack_drop(),
+        }
     }
     submit(&event);
     Ok(())

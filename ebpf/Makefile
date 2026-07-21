@@ -1,11 +1,31 @@
-.PHONY: build build-ebpf bench-profiler-overhead bench-ui bench-ui-scale bench-uprobe check-arm64 test test-ui verify-arm64-live verify-live-differential smoke
+.PHONY: build build-ui build-ebpf build-ebpf-default build-ebpf-stack verify-ebpf-artifacts bench-profiler-overhead bench-ui bench-ui-scale bench-uprobe check-arm64 test test-ui verify-arm64-live verify-live-differential smoke
 
-build:
+build: build-ui
 	cargo build --release --workspace
 
-build-ebpf:
+build-ui:
+	cd kutrace-ui-web && NO_COLOR=false trunk build --release
+
+build-ebpf: build-ebpf-default build-ebpf-stack verify-ebpf-artifacts
+
+build-ebpf-default:
 	cd kutrace-ebpf && RUSTC_BOOTSTRAP=1 cargo build --release \
 		--target bpfel-unknown-none -Z build-std=core
+
+build-ebpf-stack:
+	cd kutrace-ebpf && CARGO_TARGET_DIR=target/stack-traces RUSTC_BOOTSTRAP=1 \
+		cargo build --release --features stack-traces \
+		--target bpfel-unknown-none -Z build-std=core
+
+verify-ebpf-artifacts: build-ebpf-default build-ebpf-stack
+	@! readelf -sW kutrace-ebpf/target/bpfel-unknown-none/release/kutrace-ebpf | \
+		grep -Eq 'USER_STACKS|KERNEL_STACKS|STACK_DROPPED'
+	@readelf -sW kutrace-ebpf/target/stack-traces/bpfel-unknown-none/release/kutrace-ebpf | \
+		grep -q USER_STACKS
+	@readelf -sW kutrace-ebpf/target/stack-traces/bpfel-unknown-none/release/kutrace-ebpf | \
+		grep -q KERNEL_STACKS
+	@readelf -sW kutrace-ebpf/target/stack-traces/bpfel-unknown-none/release/kutrace-ebpf | \
+		grep -q STACK_DROPPED
 
 check-arm64:
 	cargo clippy --target aarch64-unknown-linux-gnu \
@@ -33,13 +53,13 @@ bench-ui-scale: build
 	KUTRACE_UI_BENCH_MAX_RSS_KIB=65536 \
 	./bench_ui_import.sh
 
-bench-uprobe: build build-ebpf
+bench-uprobe: build build-ebpf-default
 	./bench_uprobe_overhead.sh
 
-bench-profiler-overhead: build build-ebpf
+bench-profiler-overhead: build build-ebpf-default
 	./bench_profiler_comparison.sh
 
-verify-live-differential: build build-ebpf
+verify-live-differential: build build-ebpf-default
 	./verify_live_differential.sh
 
 verify-arm64-live: build
@@ -48,5 +68,5 @@ verify-arm64-live: build
 		--target bpfel-unknown-none -Z build-std=core
 	./verify_arm64_live.sh
 
-smoke: build build-ebpf
+smoke: build build-ebpf-default
 	@echo "Run: sudo target/release/kutrace-collector --ebpf kutrace-ebpf/target/bpfel-unknown-none/release/kutrace-ebpf"

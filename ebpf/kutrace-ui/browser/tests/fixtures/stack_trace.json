@@ -1,0 +1,13 @@
+{
+  "version": 3,
+  "title": "Symbolized stack fixture",
+  "tracebase": "2026-07-21_08:00:00",
+  "flags": 0,
+  "events": [
+    [0.000000, 0.006000, 0, 4242, 0, 65537, 0, 0, 0, "worker"],
+    [0.001000, 0.001000, 0, 4242, 0, 640, 0, 0, 0, "main;dispatch;parse_request"],
+    [0.002000, 0.001000, 0, 4242, 0, 640, 0, 0, 0, "main;dispatch;parse_request"],
+    [0.003000, 0.001000, 0, 4242, 0, 640, 0, 0, 0, "main;dispatch;write_response"],
+    [0.004000, 0.001000, 0, 4242, 0, 641, 0, 0, 0, "asm_sysvec_apic_timer_interrupt;hrtimer_interrupt;scheduler_tick"]
+  ]
+}

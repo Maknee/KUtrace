@@ -22,7 +22,7 @@ use serde::{
 use serde_json::Value;
 
 type RawEvent = (f64, f64, i64, i64, i64, i64, i64, i64, i64, String);
-const UI_SCHEMA_VERSION: i64 = 9;
+const UI_SCHEMA_VERSION: i64 = 10;
 const EVENT_INSERT_BATCH: usize = 64;
 const TIMELINE_MIPMAP_WIDTH_SECONDS: f64 = 0.001;
 const TIMELINE_MIPMAP_COARSE_WIDTH_SECONDS: f64 = 0.016;
@@ -158,6 +158,21 @@ fn create_schema(connection: &Connection) -> Result<()> {
            ipc INTEGER NOT NULL,
            weight REAL NOT NULL,
            count INTEGER NOT NULL
+         );
+         CREATE TABLE profile_samples(
+           sample_id INTEGER PRIMARY KEY,
+           event_id INTEGER NOT NULL REFERENCES events(id),
+           ts REAL NOT NULL,
+           cpu INTEGER NOT NULL,
+           pid INTEGER NOT NULL,
+           stack_depth INTEGER NOT NULL,
+           has_callchain INTEGER NOT NULL
+         );
+         CREATE TABLE profile_frames(
+           sample_id INTEGER NOT NULL REFERENCES profile_samples(sample_id),
+           depth INTEGER NOT NULL,
+           name TEXT NOT NULL,
+           PRIMARY KEY(sample_id, depth)
          );",
     )?;
     Ok(())
@@ -198,6 +213,25 @@ fn finalize_schema(connection: &Connection) -> Result<()> {
          CREATE INDEX events_retval_ts ON events(retval, ts)
            WHERE retval > 0 AND event BETWEEN 522 AND 525;
          CREATE INDEX events_name_ts ON events(name, ts);
+         INSERT INTO profile_samples(sample_id,event_id,ts,cpu,pid,stack_depth,has_callchain)
+         SELECT id,id,ts,cpu,pid,0,INSTR(name,';')>0
+           FROM events WHERE category='sample' AND name!='';
+         WITH RECURSIVE frames(sample_id,depth,frame,rest) AS (
+           SELECT id,-1,'',name||';' FROM events
+            WHERE category='sample' AND name!=''
+           UNION ALL
+           SELECT sample_id,depth+1,
+                  SUBSTR(rest,1,INSTR(rest,';')-1),
+                  SUBSTR(rest,INSTR(rest,';')+1)
+             FROM frames WHERE rest!='' AND depth<127
+         )
+         INSERT INTO profile_frames(sample_id,depth,name)
+         SELECT sample_id,depth,frame FROM frames WHERE frame!='';
+         UPDATE profile_samples
+            SET stack_depth=(SELECT COUNT(*) FROM profile_frames
+                              WHERE profile_frames.sample_id=profile_samples.sample_id);
+         CREATE INDEX profile_samples_ts ON profile_samples(ts,cpu,pid);
+         CREATE INDEX profile_frames_name ON profile_frames(name,sample_id,depth);
          CREATE VIEW agent_spans AS
            SELECT id, ts, dur, ts_end, cpu, pid,
                   arg0 AS span_id, retval AS parent_span_id, name
@@ -233,6 +267,10 @@ fn finalize_schema(connection: &Connection) -> Result<()> {
                   SUM(dur) AS total_duration,
                   AVG(dur) AS average_duration
            FROM events GROUP BY event, name;
+         CREATE VIEW profile_callchains AS
+           SELECT sample.sample_id,sample.ts,sample.cpu,sample.pid,
+                  sample.stack_depth,sample.has_callchain,frame.depth,frame.name
+             FROM profile_samples sample JOIN profile_frames frame USING(sample_id);
          INSERT OR REPLACE INTO metadata(key,value) VALUES
            ('timeline_mipmap_width','{width}'),
            ('timeline_mipmap_coarse_width','{coarse_width}'),
@@ -635,17 +673,27 @@ async fn index() -> impl IntoResponse {
             (header::CONTENT_TYPE, "text/html; charset=utf-8"),
             (header::CACHE_CONTROL, "no-store"),
         ],
-        include_str!("../assets/index.html"),
+        include_str!("../assets/wasm/index.html"),
     )
 }
 
-async fn javascript() -> impl IntoResponse {
+async fn wasm_javascript() -> impl IntoResponse {
     (
         [
             (header::CONTENT_TYPE, "text/javascript; charset=utf-8"),
             (header::CACHE_CONTROL, "no-store"),
         ],
-        include_str!("../assets/app.js"),
+        include_str!("../assets/wasm/kutrace-ui-web.js"),
+    )
+}
+
+async fn wasm_binary() -> impl IntoResponse {
+    (
+        [
+            (header::CONTENT_TYPE, "application/wasm"),
+            (header::CACHE_CONTROL, "no-store"),
+        ],
+        include_bytes!("../assets/wasm/kutrace-ui-web_bg.wasm").as_slice(),
     )
 }
 
@@ -731,7 +779,8 @@ async fn main() -> Result<()> {
     };
     let app = Router::new()
         .route("/", get(index))
-        .route("/app.js", get(javascript))
+        .route("/wasm/kutrace-ui-web.js", get(wasm_javascript))
+        .route("/wasm/kutrace-ui-web_bg.wasm", get(wasm_binary))
         .route("/style.css", get(stylesheet))
         .route("/legacy", get(legacy))
         .route("/legacy-keyboard.js", get(legacy_keyboard))
@@ -896,5 +945,44 @@ mod tests {
         )
         .unwrap();
         assert_eq!(preserved.rows, vec![vec![Value::from(38_696)]]);
+    }
+
+    #[test]
+    fn imports_symbolized_sample_callchains_into_normalized_profile_tables() {
+        let directory = tempfile::tempdir().unwrap();
+        let trace = directory.path().join("stacks.json");
+        let database = directory.path().join("stacks.sqlite");
+        std::fs::write(
+            &trace,
+            r#"{"version":3,"title":"stacks","events":[[0.1,0.000001,0,42,0,640,0,0,0,"main;work;leaf"]]}"#,
+        )
+        .unwrap();
+        import_trace(&trace, &database, 0).unwrap();
+        let connection = open_read_only(&database).unwrap();
+        let sample = connection
+            .query_row(
+                "SELECT stack_depth,has_callchain FROM profile_samples",
+                [],
+                |row| Ok((row.get::<_, i64>(0)?, row.get::<_, i64>(1)?)),
+            )
+            .unwrap();
+        assert_eq!(sample, (3, 1));
+        let frames = connection
+            .prepare("SELECT depth,name FROM profile_frames ORDER BY depth")
+            .unwrap()
+            .query_map([], |row| {
+                Ok((row.get::<_, i64>(0)?, row.get::<_, String>(1)?))
+            })
+            .unwrap()
+            .collect::<rusqlite::Result<Vec<_>>>()
+            .unwrap();
+        assert_eq!(
+            frames,
+            vec![
+                (0, "main".to_owned()),
+                (1, "work".to_owned()),
+                (2, "leaf".to_owned())
+            ]
+        );
     }
 }

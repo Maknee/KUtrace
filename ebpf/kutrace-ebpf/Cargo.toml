@@ -8,6 +8,10 @@ license = "GPL-2.0-only"
 name = "kutrace-ebpf"
 path = "src/main.rs"
 
+[features]
+default = []
+stack-traces = []
+
 [dependencies]
 aya-ebpf = "0.2.1"
 kutrace-common = { path = "../kutrace-common", default-features = false }
