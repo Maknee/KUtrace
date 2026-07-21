@@ -8842,14 +8842,23 @@ function syncFilterSetsFromState() {
 
 // PID, CPU and symbol selections intersect. Arcs survive when either endpoint
 // matches, preserving the context needed to understand a wakeup/transfer.
+function laneSelectionRestricts(kind) {
+  var selected = kind == "pid" ? selectedPidSet : selectedCpuSet;
+  var options = kind == "pid" ? filterPidOptions : filterCpuOptions;
+  // Selecting every captured lane means no lane restriction. In particular,
+  // this preserves PID 0/idle and CPU-less wait/context events that do not
+  // appear as selectable PID or CPU options.
+  return selected.size != 0 && selected.size < options.length;
+}
+
 function passesLaneFilters(d) {
   var useLaneSelections = state2.view_template_value != 2;
-  if (useLaneSelections && (selectedCpuSet.size != 0)) {
+  if (useLaneSelections && laneSelectionRestricts("cpu")) {
     var cpuMatch = selectedCpuSet.has(low16of(cpu(d)));
     if (is_arc(d) || is_ipi(d)) {cpuMatch = cpuMatch || selectedCpuSet.has(low16of(cpu2(d)));}
     if (!cpuMatch) {return false;}
   }
-  if (useLaneSelections && (selectedPidSet.size != 0)) {
+  if (useLaneSelections && laneSelectionRestricts("pid")) {
     var pidMatch = selectedPidSet.has(low16of(pid(d)));
     if (is_arc(d)) {pidMatch = pidMatch || selectedPidSet.has(low16of(pid2(d)));}
     if (!pidMatch) {return false;}
@@ -8862,8 +8871,9 @@ function passesLaneFilters(d) {
 function rebuildLaneFilterEventIndex() {
   var useLaneSelections = state2.view_template_value != 2;
   var useSpanFilter = state2.span_filter_enabled == 1;
-  if ((data == null) || ((!useLaneSelections || ((selectedPidSet.size == 0) &&
-      (selectedCpuSet.size == 0))) && (selectedSymbolSet.size == 0) &&
+  var usePidFilter = useLaneSelections && laneSelectionRestricts("pid");
+  var useCpuFilter = useLaneSelections && laneSelectionRestricts("cpu");
+  if ((data == null) || ((!usePidFilter && !useCpuFilter) && (selectedSymbolSet.size == 0) &&
       (selectedSpanSet.size == 0) && !useSpanFilter)) {
     filteredEventIndices = null;
     return;
