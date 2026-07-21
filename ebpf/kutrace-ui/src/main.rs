@@ -555,7 +555,7 @@ fn sqlite_value(value: rusqlite::types::ValueRef<'_>) -> Value {
 }
 
 fn run_query(database: &Path, request: QueryRequest) -> Result<QueryResponse> {
-    let limit = request.limit.clamp(1, 10_000);
+    let limit = request.limit.clamp(1, 50_000);
     let connection = open_read_only(database)?;
     let deadline = std::time::Instant::now() + std::time::Duration::from_secs(2);
     connection.progress_handler(10_000, Some(move || std::time::Instant::now() >= deadline))?;

@@ -162,6 +162,7 @@ test('composes filters, runs SQL, zooms, and restores saved state', async ({page
   expect(immediate.preview).toBe('true');
   await expect(page.locator('#timeline')).toHaveAttribute('data-ready','true');
   await page.keyboard.press('Home');
+  await expect(page.locator('#timeline')).toHaveAttribute('data-ready','true');
 
   await page.keyboard.down('KeyW');
   await page.waitForTimeout(90);
@@ -169,6 +170,7 @@ test('composes filters, runs SQL, zooms, and restores saved state', async ({page
   await page.waitForTimeout(90);
   await expect(page.locator('#range-label')).not.toHaveText(heldRange);
   await expect(page.locator('#timeline')).toHaveAttribute('data-preview','true');
+  await expect(page.locator('#timeline')).toHaveAttribute('data-preview-mode','vector');
   await page.keyboard.up('KeyW');
   await expect(page.locator('#timeline')).toHaveAttribute('data-ready','true');
   await page.keyboard.press('Home');
