@@ -1,7 +1,11 @@
-use std::collections::{BTreeSet, HashMap, HashSet};
+use std::{
+    collections::{BTreeSet, HashMap, HashSet},
+    rc::Rc,
+};
 
+use gloo_timers::callback::Timeout;
 use wasm_bindgen::JsCast;
-use web_sys::{MouseEvent, PointerEvent, WheelEvent};
+use web_sys::{Element, MouseEvent, PointerEvent, WheelEvent};
 use yew::prelude::*;
 
 use crate::model::{Overlays, Range, TraceEvent, TrackMode};
@@ -18,7 +22,7 @@ pub struct Selection {
 
 #[derive(Properties, PartialEq)]
 pub struct TimelineProps {
-    pub events: Vec<TraceEvent>,
+    pub events: Rc<Vec<TraceEvent>>,
     pub range: Range,
     pub full: Range,
     pub mode: TrackMode,
@@ -43,6 +47,14 @@ fn event_visible(event: &TraceEvent, overlays: Overlays) -> bool {
         "sample" => overlays.samples,
         _ if event.event == 521 || event.event == 540 => overlays.frequency,
         _ => true,
+    }
+}
+
+fn event_overlaps(event: &TraceEvent, range: Range) -> bool {
+    if event.duration <= 0.0 {
+        event.start >= range.start && event.start <= range.end
+    } else {
+        event.start < range.end && event.end > range.start
     }
 }
 
@@ -140,20 +152,6 @@ fn track_keys(events: &[TraceEvent], mode: TrackMode, range: Range) -> Vec<Strin
     }
 }
 
-fn track_accepts(track: &str, event: &TraceEvent) -> bool {
-    if let Some(render_track) = &event.render_track {
-        return render_track == track;
-    }
-    track
-        .strip_prefix("cpu:")
-        .and_then(|value| value.parse::<i64>().ok())
-        .is_some_and(|cpu| cpu == event.cpu)
-        || track
-            .strip_prefix("pid:")
-            .and_then(|value| value.parse::<i64>().ok())
-            .is_some_and(|pid| pid == event.pid)
-}
-
 fn track_label(track: &str) -> String {
     if let Some(cpu) = track.strip_prefix("cpu:") {
         format!("CPU {cpu}")
@@ -168,23 +166,36 @@ fn x_at(time: f64, range: Range) -> f64 {
     LABEL_WIDTH + (time - range.start) * (VIEW_WIDTH - LABEL_WIDTH) / range.span()
 }
 
-fn pointer_time(event: &PointerEvent, range: Range) -> Option<f64> {
-    let element = event
-        .current_target()?
-        .dyn_into::<web_sys::Element>()
-        .ok()?;
+fn pointer_time(
+    event: &PointerEvent,
+    range: Range,
+    view_height: f64,
+    timeline: &NodeRef,
+) -> Option<f64> {
+    let element = timeline.cast::<Element>()?;
     let rect = element.get_bounding_client_rect();
-    let logical_x = (event.client_x() as f64 - rect.left()) * VIEW_WIDTH / rect.width();
+    let scale = (rect.width() / VIEW_WIDTH).min(rect.height() / view_height);
+    if !scale.is_finite() || scale <= f64::EPSILON {
+        return None;
+    }
+    // The default SVG viewport is xMidYMid/meet. Account for its horizontal
+    // letterbox instead of interpolating across the outer element bounds.
+    let content_left = rect.left() + (rect.width() - VIEW_WIDTH * scale) / 2.0;
+    let logical_x = (event.client_x() as f64 - content_left) / scale;
     let fraction = ((logical_x - LABEL_WIDTH) / (VIEW_WIDTH - LABEL_WIDTH)).clamp(0.0, 1.0);
     Some(range.start + range.span() * fraction)
 }
 
 #[function_component(Timeline)]
 pub fn timeline(props: &TimelineProps) -> Html {
-    let drag_start = use_state(|| None::<f64>);
-    let drag_now = use_state(|| None::<f64>);
-    let drag_pan = use_state(|| false);
-    let drag_origin = use_state(|| None::<Range>);
+    // Pointer motion is kept outside component state so a selection drag does
+    // not reconcile thousands of SVG event nodes on every mouse event.
+    let drag_start = use_mut_ref(|| None::<f64>);
+    let drag_pan = use_mut_ref(|| false);
+    let drag_origin = use_mut_ref(|| None::<Range>);
+    let suppress_click = use_mut_ref(|| false);
+    let drag_overlay = use_node_ref();
+    let timeline_node = use_node_ref();
     let tracks = track_keys(&props.events, props.mode, props.range);
     let row_index: HashMap<&str, usize> = tracks
         .iter()
@@ -206,52 +217,98 @@ pub fn timeline(props: &TimelineProps) -> Html {
     let search_count = props
         .events
         .iter()
-        .filter(|event| event_matches(event, &props.search, props.search_invert))
+        .filter(|event| {
+            event_overlaps(event, props.range)
+                && event_matches(event, &props.search, props.search_invert)
+        })
         .count();
+
+    // Associate each visible event with at most two rows in one pass. The old
+    // track × event nested scan became quadratic on many-core traces and also
+    // rendered every event in the five-viewport prefetch margin at an edge.
+    let mut rendered_events = Vec::<(String, usize, &TraceEvent)>::new();
+    for event in props
+        .events
+        .iter()
+        .filter(|event| event_overlaps(event, props.range) && event_visible(event, props.overlays))
+    {
+        let mut targets = Vec::with_capacity(2);
+        if let Some(track) = &event.render_track {
+            targets.push(track.clone());
+        } else if event.pid > 0 && event.cpu >= 0 {
+            if !matches!(props.mode, TrackMode::Pid) {
+                targets.push(format!("cpu:{}", event.cpu));
+            }
+            if !matches!(props.mode, TrackMode::Cpu) {
+                targets.push(format!("pid:{}", event.pid));
+            }
+        }
+        for track in targets {
+            if let Some(index) = row_index.get(track.as_str()).copied() {
+                rendered_events.push((track, index, event));
+            }
+        }
+    }
+    let rendered_event_count = rendered_events.len();
 
     let onpointerdown = {
         let drag_start = drag_start.clone();
-        let drag_now = drag_now.clone();
         let drag_pan = drag_pan.clone();
         let drag_origin = drag_origin.clone();
+        let suppress_click = suppress_click.clone();
+        let drag_overlay = drag_overlay.clone();
+        let timeline_node = timeline_node.clone();
         let range = props.range;
         Callback::from(move |event: PointerEvent| {
             if event.button() == 0 {
-                if let Some(time) = pointer_time(&event, range) {
+                if let Some(time) = pointer_time(&event, range, height, &timeline_node) {
                     event.prevent_default();
-                    drag_start.set(Some(time));
-                    drag_now.set(Some(time));
-                    drag_pan.set(event.alt_key());
-                    drag_origin.set(event.alt_key().then_some(range));
+                    if let Some(element) = timeline_node.cast::<Element>() {
+                        element.set_pointer_capture(event.pointer_id()).ok();
+                    }
+                    *drag_start.borrow_mut() = Some(time);
+                    *drag_pan.borrow_mut() = event.alt_key();
+                    *drag_origin.borrow_mut() = event.alt_key().then_some(range);
+                    *suppress_click.borrow_mut() = false;
+                    if let Some(overlay) = drag_overlay.cast::<Element>() {
+                        overlay.set_attribute("visibility", "hidden").ok();
+                    }
                 }
             }
         })
     };
     let onpointermove = {
         let drag_start = drag_start.clone();
-        let drag_now = drag_now.clone();
         let drag_pan = drag_pan.clone();
         let drag_origin = drag_origin.clone();
+        let suppress_click = suppress_click.clone();
+        let drag_overlay = drag_overlay.clone();
+        let timeline_node = timeline_node.clone();
         let range = props.range;
         let full = props.full;
         let on_range = props.on_range.clone();
         Callback::from(move |event: PointerEvent| {
-            if (*drag_start).is_some() {
-                let basis = (*drag_origin).unwrap_or(range);
-                if let Some(time) = pointer_time(&event, basis) {
-                    if *drag_pan {
-                        if let Some(start) = *drag_start {
-                            let delta = start - time;
-                            on_range.emit(
-                                Range {
-                                    start: basis.start + delta,
-                                    end: basis.end + delta,
-                                }
-                                .bounded(full),
-                            );
+            if let Some(start) = *drag_start.borrow() {
+                let basis = (*drag_origin.borrow()).unwrap_or(range);
+                if let Some(time) = pointer_time(&event, basis, height, &timeline_node) {
+                    if *drag_pan.borrow() {
+                        let delta = start - time;
+                        on_range.emit(
+                            Range {
+                                start: basis.start + delta,
+                                end: basis.end + delta,
+                            }
+                            .bounded(full),
+                        );
+                    } else if let Some(overlay) = drag_overlay.cast::<Element>() {
+                        if (start - time).abs() > basis.span() / (VIEW_WIDTH - LABEL_WIDTH) {
+                            *suppress_click.borrow_mut() = true;
                         }
-                    } else {
-                        drag_now.set(Some(time));
+                        let x = x_at(start.min(time), basis);
+                        let width = (x_at(start.max(time), basis) - x).max(1.0);
+                        overlay.set_attribute("x", &x.to_string()).ok();
+                        overlay.set_attribute("width", &width.to_string()).ok();
+                        overlay.set_attribute("visibility", "visible").ok();
                     }
                 }
             }
@@ -259,13 +316,20 @@ pub fn timeline(props: &TimelineProps) -> Html {
     };
     let onpointerup = {
         let drag_start = drag_start.clone();
-        let drag_now = drag_now.clone();
         let drag_pan = drag_pan.clone();
         let drag_origin = drag_origin.clone();
+        let suppress_click = suppress_click.clone();
+        let drag_overlay = drag_overlay.clone();
+        let timeline_node = timeline_node.clone();
         let on_select = props.on_select.clone();
-        Callback::from(move |_event: PointerEvent| {
-            if !*drag_pan {
-                if let (Some(a), Some(b)) = (*drag_start, *drag_now) {
+        let range = props.range;
+        Callback::from(move |event: PointerEvent| {
+            let basis = (*drag_origin.borrow()).unwrap_or(range);
+            if !*drag_pan.borrow() {
+                if let (Some(a), Some(b)) = (
+                    *drag_start.borrow(),
+                    pointer_time(&event, basis, height, &timeline_node),
+                ) {
                     if (a - b).abs() > f64::EPSILON {
                         on_select.emit(Some(Selection {
                             range: Range {
@@ -277,10 +341,35 @@ pub fn timeline(props: &TimelineProps) -> Html {
                     }
                 }
             }
-            drag_start.set(None);
-            drag_now.set(None);
-            drag_pan.set(false);
-            drag_origin.set(None);
+            if let Some(element) = timeline_node.cast::<Element>() {
+                element.release_pointer_capture(event.pointer_id()).ok();
+            }
+            if let Some(overlay) = drag_overlay.cast::<Element>() {
+                overlay.set_attribute("visibility", "hidden").ok();
+            }
+            *drag_start.borrow_mut() = None;
+            *drag_pan.borrow_mut() = false;
+            *drag_origin.borrow_mut() = None;
+            if *suppress_click.borrow() {
+                let suppress_click = suppress_click.clone();
+                Timeout::new(0, move || *suppress_click.borrow_mut() = false).forget();
+            }
+        })
+    };
+    let onpointercancel = {
+        let drag_start = drag_start.clone();
+        let drag_pan = drag_pan.clone();
+        let drag_origin = drag_origin.clone();
+        let suppress_click = suppress_click.clone();
+        let drag_overlay = drag_overlay.clone();
+        Callback::from(move |_event: PointerEvent| {
+            if let Some(overlay) = drag_overlay.cast::<Element>() {
+                overlay.set_attribute("visibility", "hidden").ok();
+            }
+            *drag_start.borrow_mut() = None;
+            *drag_pan.borrow_mut() = false;
+            *drag_origin.borrow_mut() = None;
+            *suppress_click.borrow_mut() = false;
         })
     };
     let onwheel = {
@@ -308,20 +397,10 @@ pub fn timeline(props: &TimelineProps) -> Html {
         let width = (x_at(selection.range.end, props.range) - x).max(1.0);
         html! {<rect id="time-selection" x={x.to_string()} y="0" width={width.to_string()} height={height.to_string()} class="time-selection-vector"/>}
     });
-    let drag_overlay = match (*drag_start, *drag_now, *drag_pan) {
-        (Some(a), Some(b), false) => {
-            let x = x_at(a.min(b), props.range);
-            let width = (x_at(a.max(b), props.range) - x).max(1.0);
-            Some(
-                html! {<rect x={x.to_string()} y="0" width={width.to_string()} height={height.to_string()} class="time-selection-vector dragging"/>},
-            )
-        }
-        _ => None,
-    };
-
     html! {
       <div class="timeline-vector-shell">
         <svg id="timeline"
+          ref={timeline_node}
           class="timeline-vector"
           viewBox={format!("0 0 {VIEW_WIDTH} {height}")}
           style={format!("height:{height}px")}
@@ -338,7 +417,8 @@ pub fn timeline(props: &TimelineProps) -> Html {
           data-visible-tracks={visible_tracks}
           data-highlighted-tracks={highlighted_tracks}
           data-search-count={search_count.to_string()}
-          {onpointerdown} {onpointermove} {onpointerup} {onwheel}>
+          data-rendered-events={rendered_event_count.to_string()}
+          {onpointerdown} {onpointermove} {onpointerup} {onpointercancel} {onwheel}>
           <rect x="0" y="0" width={VIEW_WIDTH.to_string()} height={height.to_string()} fill="#fff"/>
           { for (0..=10).map(|tick| {
               let x = LABEL_WIDTH + (VIEW_WIDTH - LABEL_WIDTH) * tick as f64 / 10.0;
@@ -354,16 +434,13 @@ pub fn timeline(props: &TimelineProps) -> Html {
                 <line x1={LABEL_WIDTH.to_string()} y1={(y+13.0).to_string()} x2={VIEW_WIDTH.to_string()} y2={(y+13.0).to_string()} class="track-center"/>
               </g>}
           })}
-          { for tracks.iter().flat_map(|track| {
-              let row_index = &row_index;
-              let index = *row_index.get(track.as_str()).unwrap_or(&0);
+          { for rendered_events.into_iter().map(|(track, index, event)| {
               let center = index as f64 * ROW_HEIGHT + 31.0;
-              props.events.iter().filter(move |event| track_accepts(track, event) && event_visible(event, props.overlays)).map(move |event| {
                   let x = x_at(event.start.max(props.range.start), props.range);
                   let end = event.end.max(event.start + props.range.span() / (VIEW_WIDTH - LABEL_WIDTH));
                   let width = (x_at(end.min(props.range.end), props.range) - x).max(0.8);
                   let matched = event_matches(event, &props.search, props.search_invert);
-                  let emphasized = props.highlighted.is_empty() || props.highlighted.contains(track);
+                  let emphasized = props.highlighted.is_empty() || props.highlighted.contains(&track);
                   let (light, dark) = event_colors(event.event, props.overlays.colorblind);
                   let fill = if event.duration <= 0.0 { category_fill(&event.category, props.overlays.colorblind) } else { light };
                   let opacity = if emphasized && (props.search.is_empty() || matched) { 0.96 } else { 0.16 };
@@ -371,8 +448,13 @@ pub fn timeline(props: &TimelineProps) -> Html {
                   let track_copy = track.clone();
                   let on_select = props.on_select.clone();
                   let on_highlight = props.on_highlight.clone();
+                  let suppress_click = suppress_click.clone();
                   let onclick = Callback::from(move |mouse: MouseEvent| {
                       mouse.stop_propagation();
+                      if *suppress_click.borrow() {
+                          mouse.prevent_default();
+                          return;
+                      }
                       if mouse.shift_key() {
                           on_highlight.emit(track_copy.clone());
                       } else {
@@ -394,7 +476,7 @@ pub fn timeline(props: &TimelineProps) -> Html {
                   let y = if is_mark { center - 22.0 } else if is_sample { center - 20.0 } else { center - 12.0 };
                   let h = if is_mark || is_sample { 40.0 } else { 24.0 };
                   html! {<g class="trace-event" opacity={opacity.to_string()} {onclick}>
-                    <title>{format!("{} · {} · {} · {:.9}s · {:.2}us", if event.name.is_empty() {"(unnamed)"} else {&event.name}, event.category, track_label(track), event.start, event.duration.max(0.0)*1e6)}</title>
+                    <title>{format!("{} · {} · {} · {:.9}s · {:.2}us", if event.name.is_empty() {"(unnamed)"} else {&event.name}, event.category, track_label(&track), event.start, event.duration.max(0.0)*1e6)}</title>
                     if is_mark {
                       <path d={format!("M {x} {} l -5 10 h 10 z", center-22.0)} fill={dark}/>
                     } else if is_sample {
@@ -422,11 +504,10 @@ pub fn timeline(props: &TimelineProps) -> Html {
                       }
                     }
                   </g>}
-              })
           })}
           <defs><marker id="arrowhead" markerWidth="7" markerHeight="7" refX="6" refY="3.5" orient="auto"><path d="M0,0 L7,3.5 L0,7 z" fill="#be0000"/></marker></defs>
           {selection_overlay}
-          {drag_overlay}
+          <rect ref={drag_overlay} x="0" y="0" width="1" height={height.to_string()} visibility="hidden" class="time-selection-vector dragging"/>
         </svg>
       </div>
     }
@@ -434,7 +515,7 @@ pub fn timeline(props: &TimelineProps) -> Html {
 
 #[derive(Properties, PartialEq)]
 pub struct OverviewProps {
-    pub events: Vec<TraceEvent>,
+    pub events: Rc<Vec<TraceEvent>>,
     pub range: Range,
     pub full: Range,
     pub colorblind: bool,
@@ -443,15 +524,19 @@ pub struct OverviewProps {
 
 #[function_component(Overview)]
 pub fn overview(props: &OverviewProps) -> Html {
-    let bins = 200usize;
-    let mut counts = vec![0usize; bins];
-    for event in &props.events {
-        let bin = (((event.start - props.full.start) / props.full.span()) * bins as f64)
-            .floor()
-            .clamp(0.0, (bins - 1) as f64) as usize;
-        counts[bin] += 1;
-    }
-    let max = counts.iter().copied().max().unwrap_or(1).max(1) as f64;
+    let histogram = use_memo((props.events.clone(), props.full), |(events, full)| {
+        let bins = 200usize;
+        let mut counts = vec![0usize; bins];
+        for event in events.iter() {
+            let bin = (((event.start - full.start) / full.span()) * bins as f64)
+                .floor()
+                .clamp(0.0, (bins - 1) as f64) as usize;
+            counts[bin] += 1;
+        }
+        let max = counts.iter().copied().max().unwrap_or(1).max(1) as f64;
+        (counts, max)
+    });
+    let (counts, max) = &*histogram;
     let left = 100.0 * (props.range.start - props.full.start) / props.full.span();
     let width = 100.0 * props.range.span() / props.full.span();
     let full = props.full;
@@ -480,7 +565,7 @@ pub fn overview(props: &OverviewProps) -> Html {
         <svg id="overview" viewBox="0 0 1000 32" preserveAspectRatio="none" {onclick}>
           <rect x="0" y="0" width="1000" height="32" fill="#080b11"/>
           {for counts.iter().enumerate().map(|(index, count)| {
-              let h = (*count as f64 / max * 28.0).max(if *count > 0 {1.0} else {0.0});
+              let h = (*count as f64 / *max * 28.0).max(if *count > 0 {1.0} else {0.0});
               html!{<rect x={(index as f64*5.0).to_string()} y={(32.0-h).to_string()} width="5.2" height={h.to_string()} fill={if props.colorblind {"#56b4e9"} else {"#5f91df"}}/>}
           })}
         </svg>

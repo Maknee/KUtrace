@@ -1,4 +1,7 @@
-use std::collections::{BTreeMap, HashSet};
+use std::{
+    collections::{BTreeMap, HashSet},
+    rc::Rc,
+};
 
 use gloo_events::EventListener;
 use gloo_timers::callback::{Interval, Timeout};
@@ -21,6 +24,7 @@ use crate::{
 const DEFAULT_SQL: &str = "SELECT category, name, COUNT(*) AS count, ROUND(SUM(dur) * 1000, 3) AS total_ms\nFROM events\nGROUP BY category, name\nORDER BY total_ms DESC\nLIMIT 50";
 const WORKSPACE_KEY: &str = "kutrace-workspace";
 const TIMELINE_BINS: usize = 96;
+const TIMELINE_DETAIL_GLYPH_BUDGET: usize = 1_000;
 
 #[derive(Clone, Debug, PartialEq)]
 struct TimelineCache {
@@ -362,7 +366,7 @@ fn callchain_flame(frames: &[ProfileFrame]) -> (Vec<FlameRect>, usize, usize) {
 pub fn app() -> Html {
     let metadata = use_state(Metadata::default);
     let range = use_state(Range::default);
-    let events = use_state(Vec::<TraceEvent>::new);
+    let events = use_state(|| Rc::new(Vec::<TraceEvent>::new()));
     let timeline_loading = use_state(|| true);
     let timeline_truncated = use_state(|| false);
     let timeline_source = use_state(|| "events".to_owned());
@@ -684,9 +688,16 @@ pub fn app() -> Html {
                             );
                             let result = async {
                                 let response = query(&sql, 10_000).await?;
-                                let is_truncated =
-                                    response.truncated || response.rows.len() > 10_000;
-                                if !is_truncated {
+                                let projected_glyphs = response.rows.len()
+                                    * if matches!(current_mode, TrackMode::CpuPid) {
+                                        2
+                                    } else {
+                                        1
+                                    };
+                                let use_density = response.truncated
+                                    || response.rows.len() > 10_000
+                                    || projected_glyphs > TIMELINE_DETAIL_GLYPH_BUDGET;
+                                if !use_density {
                                     return Ok::<_, String>((
                                         response
                                             .rows
@@ -765,7 +776,7 @@ pub fn app() -> Html {
                             }
                             match result {
                                 Ok((rows, is_truncated, data_source)) => {
-                                    events.set(rows);
+                                    events.set(Rc::new(rows));
                                     truncated.set(is_truncated);
                                     source.set(data_source);
                                     cache.set(Some(TimelineCache {
@@ -1222,14 +1233,17 @@ pub fn app() -> Html {
         .as_ref()
         .map(|selection| selection.range)
         .unwrap_or(*range);
-    for event in events
-        .iter()
-        .filter(|event| event.start < flame_range.end && event.end > flame_range.start)
-    {
-        categories
-            .entry(event.category.clone())
-            .or_default()
-            .push(event);
+    let render_flame = *dock_open && *active_dock == "flamegraph";
+    if render_flame {
+        for event in events
+            .iter()
+            .filter(|event| event.start < flame_range.end && event.end > flame_range.start)
+        {
+            categories
+                .entry(event.category.clone())
+                .or_default()
+                .push(event);
+        }
     }
     let flame_total: f64 = if *flame_weight == "duration" {
         categories
@@ -1283,7 +1297,11 @@ pub fn app() -> Html {
         }
         flame_offset += category_width;
     }
-    let (callchain_rects, callchain_samples, callchain_depth) = callchain_flame(&profile_frames);
+    let (callchain_rects, callchain_samples, callchain_depth) = if render_flame {
+        callchain_flame(&profile_frames)
+    } else {
+        (Vec::new(), 0, 0)
+    };
     if callchain_samples > 0 {
         flame_frames = callchain_rects
             .iter()
@@ -1294,20 +1312,21 @@ pub fn app() -> Html {
             .collect();
     }
 
-    let search_matches = events
-        .iter()
-        .filter(|event| {
-            if search.is_empty() {
-                return false;
-            }
-            let needle = search.to_lowercase();
-            let matched = event.name.to_lowercase().contains(&needle)
-                || event.category.to_lowercase().contains(&needle)
-                || event.pid.to_string().contains(&needle)
-                || event.cpu.to_string().contains(&needle);
-            if *search_invert { !matched } else { matched }
-        })
-        .count();
+    let search_matches = if search.is_empty() {
+        0
+    } else {
+        events
+            .iter()
+            .filter(|event| {
+                let needle = search.to_lowercase();
+                let matched = event.name.to_lowercase().contains(&needle)
+                    || event.category.to_lowercase().contains(&needle)
+                    || event.pid.to_string().contains(&needle)
+                    || event.cpu.to_string().contains(&needle);
+                if *search_invert { !matched } else { matched }
+            })
+            .count()
+    };
     let saved_view_rows = if saved_views.is_empty() {
         html! {"No saved SQL views."}
     } else {

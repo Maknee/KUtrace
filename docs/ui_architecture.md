@@ -28,6 +28,10 @@ screenshots of this human interface.
 - `Ctrl`/`Cmd` + wheel zooms and `Alt` + drag pans. A normal drag creates a
   persistent time selection. `Escape` leaves an editor or filter and returns
   keyboard focus to the timeline.
+- Pointer coordinates are mapped through the SVG viewport's actual letterbox,
+  and pointer capture keeps a drag attached to the timeline even when it crosses
+  event glyphs. The drag overlay is updated directly, without reconciling the
+  event tree for every mouse move.
 - Shift-click toggles the clicked CPU or PID row in the highlight set. CPU and
   PID rows are derived only from visible positive-duration process spans, so
   empty cores are not fabricated.
@@ -96,6 +100,9 @@ split by exact overlap weight; longer spans and point events remain in the raw
 table. Names are excluded from mipmap grouping to avoid high-cardinality
 expansion. Database rebuilds use a sibling staging file and publish with an
 atomic rename only after validation, transaction commit, and index creation.
+The browser switches from exact spans to the vector density representation
+before a combined CPU/PID viewport would exceed 1,000 SVG glyphs. Zooming back
+below that interaction budget restores exact event geometry.
 
 ## Build and run
 

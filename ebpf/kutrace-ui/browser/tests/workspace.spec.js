@@ -86,6 +86,41 @@ test('keeps vector geometry sharp through smooth WASD, wheel, and Alt-drag navig
   await expect(timeline).toHaveCSS('shape-rendering', /auto|geometricprecision/i);
 });
 
+test('maps mouse selection through the SVG viewport without lag or letterbox drift', async ({page}) => {
+  await page.setViewportSize({width: 2000, height: 1000});
+  const timeline = page.locator('#timeline');
+  await waitForTimeline(page);
+  const geometry = await timeline.evaluate(element => {
+    const matrix = element.getScreenCTM();
+    const rect = element.getBoundingClientRect();
+    return {
+      startX: matrix.e + matrix.a * 400,
+      endX: matrix.e + matrix.a * 1000,
+      y: rect.y + rect.height / 2,
+    };
+  });
+  const label = await page.locator('#range-label').textContent();
+  const [rangeStart, rangeEnd] = [...label.matchAll(/([0-9.]+)s/g)].map(match => Number(match[1]));
+  const expected = logicalX => rangeStart + (logicalX - 116) / (1400 - 116) * (rangeEnd - rangeStart);
+
+  await page.mouse.move(geometry.startX, geometry.y);
+  await page.mouse.down();
+  await page.mouse.move(geometry.endX, geometry.y, {steps: 8});
+  const drag = timeline.locator('.time-selection-vector.dragging');
+  await expect(drag).toHaveAttribute('visibility', 'visible');
+  const dragX = Number(await drag.getAttribute('x'));
+  const dragWidth = Number(await drag.getAttribute('width'));
+  expect(Math.abs(dragX - 400)).toBeLessThan(1);
+  expect(Math.abs(dragWidth - 600)).toBeLessThan(1);
+  await page.mouse.up();
+
+  const summary = await page.locator('#selection-summary').textContent();
+  expect(summary).toContain('Selected');
+  const [selectedStart, selectedEnd] = [...summary.matchAll(/([0-9.]+)s/g)].map(match => Number(match[1]));
+  expect(Math.abs(selectedStart - expected(dragX))).toBeLessThan(1e-6);
+  expect(Math.abs(selectedEnd - expected(dragX + dragWidth))).toBeLessThan(1e-6);
+});
+
 test('supports persistent selection, Shift track highlighting, search, filters, and Escape', async ({page}) => {
   const timeline = page.locator('#timeline');
   const event = timeline.locator('.trace-event').first();
@@ -159,6 +194,29 @@ test('uses a real bounded density summary and preserves CPU/PID rows', async ({p
   expect(sawMipmap).toBe(true);
   expect(sawPidSummary).toBe(true);
   expect(sawLongEventMerge).toBe(true);
+});
+
+test('switches to density before exact SVG glyphs exceed the interaction budget', async ({page}) => {
+  await page.route('**/api/query', async route => {
+    const request = route.request();
+    if (request.method() === 'POST') {
+      const sql = request.postDataJSON().sql;
+      if (sql.startsWith('SELECT id,ts,dur,ts_end,cpu,pid,rpc,event,name,category,arg0,retval,ipc FROM events') && sql.includes('ORDER BY ts,dur DESC LIMIT 10001')) {
+        const rows = Array.from({length: 501}, (_, index) => [index + 1, 1 + index / 100000, .00001, 1 + index / 100000 + .00001, 0, 100, 0, 65537, 'dense', 'user', 0, 0, 0]);
+        await route.fulfill({
+          contentType: 'application/json',
+          body: JSON.stringify({columns: [], rows, truncated: false, elapsed_ms: .1, sql}),
+        });
+        return;
+      }
+    }
+    await route.continue();
+  });
+  await page.reload();
+  await waitForTimeline(page);
+  const timeline = page.locator('#timeline');
+  await expect(timeline).toHaveAttribute('data-source', 'summary');
+  expect(Number(await timeline.getAttribute('data-rendered-events'))).toBeLessThan(1000);
 });
 
 test('caps CPU and PID rows independently in combined mode', async ({page}) => {
