@@ -1312,6 +1312,7 @@ var state2 = {
   view_template_value: 0,
   span_search_text: "",
   span_filter_enabled: 0,
+  span_label_scale: 1.0,
 
   dummy: 0			// No comma here
 };
@@ -1566,6 +1567,7 @@ console.log("initializeState");
   state2.view_template_value = 0;
   state2.span_search_text = "";
   state2.span_filter_enabled = 0;
+  state2.span_label_scale = 1.0;
   syncFilterSetsFromState();
   ////state.textmultiplier_value = 0;
   state2.basetime0_value = 0;
@@ -2458,6 +2460,7 @@ function draw_mark(row, d, x0, y0) {
 
   // Set mark font size to fixed value
   if (0 < textsize.annot) {marktextsize = textsize.annot;}
+  marktextsize *= getSpanLabelScale();
 
   var x0 = x0;
   var y0 = y0; 
@@ -4360,6 +4363,8 @@ function padLaneFilterState(st) {
   }
   if (typeof st.span_search_text !== "string") {st.span_search_text = "";}
   if (st.span_filter_enabled !== 1) {st.span_filter_enabled = 0;}
+  if (!isFinite(st.span_label_scale)) {st.span_label_scale = 1.0;}
+  st.span_label_scale = Math.max(0.5, Math.min(3.0, +st.span_label_scale));
   return st;
 }
 
@@ -4524,6 +4529,36 @@ function resetVerticalPanZoom() {
     panzoomrect_y.call(myZoom_y.transform, state2.savedtransformY);
     panzoomrect_y.call(myZoom_y);
   }
+}
+
+function getSpanLabelScale() {
+  var scale = +(state2.span_label_scale || 1.0);
+  return Math.max(0.5, Math.min(3.0, isFinite(scale) ? scale : 1.0));
+}
+
+function updateSpanLabelControls() {
+  var scale = getSpanLabelScale();
+  var value = document.getElementById("spanLabelReset");
+  var decrease = document.getElementById("spanLabelDecrease");
+  var increase = document.getElementById("spanLabelIncrease");
+  if (value != null) {value.textContent = Math.round(scale * 100) + "%";}
+  if (decrease != null) {decrease.disabled = scale <= 0.5;}
+  if (increase != null) {increase.disabled = scale >= 3.0;}
+}
+
+function setSpanLabelScale(scale) {
+  state2.span_label_scale = Math.max(0.5, Math.min(3.0, Math.round(scale * 4) / 4));
+  updateSpanLabelControls();
+  // Rebuild labels and their backgrounds without modifying either zoom transform.
+  redrawEventsEtc();
+}
+
+function adjustSpanLabelScale(delta) {
+  setSpanLabelScale(getSpanLabelScale() + delta);
+}
+
+function resetSpanLabelScale() {
+  setSpanLabelScale(1.0);
 }
 
 function verticalResetShortcut(e) {
@@ -5230,7 +5265,7 @@ function annotatespan(d, clss, short, my, rotate) {
     var maxannot = perTracksize[rowheight].annotcount;
     if (maxannot <= 0) {return vx_ret;}
  
-    var annotheight = perTracksize[rowheight].annotsize;
+    var annotheight = perTracksize[rowheight].annotsize * getSpanLabelScale();
     if (annotheight <= 0) {return vx_ret;}
 
     var y0 = y_zoomed(rowToTrack[row]);
@@ -6975,6 +7010,7 @@ function redrawUI() {
   updateLaneFilterButton();
   updateAdvancedSearchButton();
   updateTimeHistoryControls();
+  updateSpanLabelControls();
   var templateControl = document.getElementById("viewTemplateSelect");
   if (templateControl != null) {templateControl.value = state2.view_template_value || 0;}
 
@@ -10438,6 +10474,9 @@ function initAll() {
   document.getElementById("showAdvancedSearch").onclick = doToggleAdvancedSearchPanel;
   document.getElementById("showTimeHistory").onclick = doToggleTimeHistoryPanel;
   document.getElementById("resetVerticalView").onclick = resetVerticalPanZoom;
+  document.getElementById("spanLabelDecrease").onclick = function() {adjustSpanLabelScale(-0.25);};
+  document.getElementById("spanLabelReset").onclick = resetSpanLabelScale;
+  document.getElementById("spanLabelIncrease").onclick = function() {adjustSpanLabelScale(0.25);};
   document.getElementById("viewTemplateSelect").onchange = applyViewTemplate;
   installLaneFilterDrag();
   installAdvancedSearchDrag();
@@ -10745,6 +10784,14 @@ function unloadSaveState() {
 <button id="resetVerticalView" type="button" style="border-radius:6px"
         title="Reset vertical shift and zoom (O)">Reset Y (O)</button>
 
+&nbsp;&nbsp;Span labels:
+<button id="spanLabelDecrease" type="button" style="border-radius:6px"
+        title="Decrease span-label size">&#x2212;</button>
+<button id="spanLabelReset" type="button" style="border-radius:6px; min-width:48px"
+        title="Reset span-label size">100%</button>
+<button id="spanLabelIncrease" type="button" style="border-radius:6px"
+        title="Increase span-label size">+</button>
+
 &nbsp;&nbsp;View:
 <select id="viewTemplateSelect" class="view-template-select" title="Choose a lane-layout template">
   <option value="0">Default</option>
@@ -10856,6 +10903,7 @@ function unloadSaveState() {
      H				 open time-view history
      J / K			 previous / forward time view
      O / Reset Y		 reset vertical shift and zoom only
+     Span labels - / % / +	 decrease, reset, or increase span-name text
      Filter/Search/History	 drag by title; resize from the lower-right corner
 
      Search:    regex string match 
