@@ -1996,6 +1996,9 @@ function rangeonscreen_x(lo, hi) {
 
 // Includes right gray margin 
 function onscreen_x(d) {	// Allow slop
+  if (state2.view_template_value == 3) {
+    return eventHasBoundaryInWindow(d, realxleft, realxright);
+  }
   // TEMP: For old RPCs, consider onscreen even if they start and end 9 msec earlier
   // Enough for a megabyte message at 1Gb/s
   if (is_rpcpkt(d) && (dur(d) <= 0.00000001)) {
@@ -4350,7 +4353,8 @@ function padLaneFilterState(st) {
   if (!Array.isArray(st.filter_cpu_values)) {st.filter_cpu_values = [];}
   if (!Array.isArray(st.filter_symbol_values)) {st.filter_symbol_values = [];}
   if (!Array.isArray(st.filter_span_values)) {st.filter_span_values = [];}
-  if ((st.view_template_value !== 2) && (st.view_template_value !== 1) &&
+  if ((st.view_template_value !== 3) && (st.view_template_value !== 2) &&
+      (st.view_template_value !== 1) &&
       (st.view_template_value !== 0)) {
     st.view_template_value = 0;
   }
@@ -4510,6 +4514,25 @@ function wasdNav(e) {
   if (left < ts0) {left = ts0;}
   if (left + width > ts1) {left = ts1 - width;}
   ZoomToLeftWidth(left, width); e.preventDefault();
+}
+
+function resetVerticalPanZoom() {
+  state2.savedtransformY = d3.zoomIdentity;
+  if ((panzoomrect_y != null) && (myZoom_y != null)) {
+    // Applying the identity through D3 keeps its internal __zoom state in sync
+    // and invokes the ordinary optimized vertical redraw path.
+    panzoomrect_y.call(myZoom_y.transform, state2.savedtransformY);
+    panzoomrect_y.call(myZoom_y);
+  }
+}
+
+function verticalResetShortcut(e) {
+  var target = e.target || {};
+  var tag = (target.tagName || "").toUpperCase();
+  if (tag == "INPUT" || tag == "TEXTAREA" || tag == "SELECT" || target.isContentEditable ||
+      e.ctrlKey || e.metaKey || e.altKey || (e.key || "").toLowerCase() != "o") {return;}
+  resetVerticalPanZoom();
+  e.preventDefault();
 }
 
 const OneTwoFive = 
@@ -7079,15 +7102,13 @@ function applyLaneFilters() {
 
 function applyViewTemplate(e) {
   var value = +(e && e.target ? e.target.value : state2.view_template_value);
-  state2.view_template_value = (value == 1 || value == 2) ? value : 0;
+  state2.view_template_value = (value == 1 || value == 2 || value == 3) ? value : 0;
   state2.groupcompress = state2.view_template_value != 0 ? [2, 2, 0, 0] : [2, 0, 0, 0];
   if (selectedCpuSet.size) {state2.groupcompress[prefixCpu] = compress_value_max;}
   if (selectedPidSet.size) {state2.groupcompress[prefixPid] = compress_value_max;}
 
-  // A template changes the lane layout, so start with all matching lanes in
-  // view while retaining the exact horizontal time transform.
-  state2.savedtransformY = d3.zoomIdentity;
-  if (panzoomrect_y != null) {panzoomrect_y.property("__zoom", state2.savedtransformY);}
+  // Preserve both horizontal and vertical transforms. A template changes
+  // eligibility only; it must not reset the user's zoom or shift.
   applyLaneFilters();
 }
 
@@ -8518,6 +8539,10 @@ function rowPassesLaneFilters(row, activeWindow) {
         !laneHasSpanInWindow(cpuSpanActivity, sortNum[row], activeWindow.left, activeWindow.right)) {
       return false;
     }
+    if ((state2.view_template_value == 3) &&
+        !laneHasBoundaryInWindow(cpuSpanActivity, sortNum[row], activeWindow.left, activeWindow.right)) {
+      return false;
+    }
     if (state2.view_template_value == 2) {
       if (!laneHasSpanInWindow(
           cpuPidSpanActivity, sortNum[row], activeWindow.left, activeWindow.right)) {return false;}
@@ -8526,7 +8551,11 @@ function rowPassesLaneFilters(row, activeWindow) {
         selectedCpuSet.has(sortNum[row]);
   }
   if (group == prefixPid) {
-    if ((state2.view_template_value != 0) &&
+    if ((state2.view_template_value == 3) &&
+        !laneHasBoundaryInWindow(pidSpanActivity, sortNum[row], activeWindow.left, activeWindow.right)) {
+      return false;
+    }
+    if ((state2.view_template_value != 0) && (state2.view_template_value != 3) &&
         !laneHasSpanInWindow(pidSpanActivity, sortNum[row], activeWindow.left, activeWindow.right)) {
       return false;
     }
@@ -8659,14 +8688,17 @@ function finalizeLaneActivity(activityMap) {
   activityMap.forEach(function(intervals, laneValue) {
     intervals.sort(function(a, b) {return a[0] - b[0];});
     var starts = new Array(intervals.length);
+    var ends = new Array(intervals.length);
     var maxEnds = new Array(intervals.length);
     var maxEnd = -Infinity;
     for (var i = 0; i < intervals.length; ++i) {
       starts[i] = intervals[i][0];
+      ends[i] = intervals[i][1];
       maxEnd = Math.max(maxEnd, intervals[i][1]);
       maxEnds[i] = maxEnd;
     }
-    activityMap.set(laneValue, {starts:starts, maxEnds:maxEnds});
+    ends.sort(function(a, b) {return a - b;});
+    activityMap.set(laneValue, {starts:starts, ends:ends, maxEnds:maxEnds});
   });
 }
 
@@ -8680,6 +8712,27 @@ function laneHasSpanInWindow(activityMap, laneValue, leftTime, rightTime) {
   }
   var lastStartBeforeRight = lo - 1;
   return (0 <= lastStartBeforeRight) && (leftTime <= lane.maxEnds[lastStartBeforeRight]);
+}
+
+function sortedTimeInWindow(values, leftTime, rightTime) {
+  var lo = 0, hi = values.length;
+  while (lo < hi) {
+    var mid = (lo + hi) >> 1;
+    if (values[mid] < leftTime) {lo = mid + 1;} else {hi = mid;}
+  }
+  return lo < values.length && values[lo] <= rightTime;
+}
+
+function laneHasBoundaryInWindow(activityMap, laneValue, leftTime, rightTime) {
+  var lane = activityMap.get(laneValue);
+  if ((lane == null) || !lane.starts.length) {return false;}
+  return sortedTimeInWindow(lane.starts, leftTime, rightTime) ||
+      sortedTimeInWindow(lane.ends, leftTime, rightTime);
+}
+
+function eventHasBoundaryInWindow(d, leftTime, rightTime) {
+  return (leftTime <= ts(d) && ts(d) <= rightTime) ||
+      (leftTime <= tsend(d) && tsend(d) <= rightTime);
 }
 
 function currentViewTemplateWindow() {
@@ -10384,6 +10437,7 @@ function initAll() {
   document.getElementById("showfilters").onclick = doToggleLaneFilterPanel;
   document.getElementById("showAdvancedSearch").onclick = doToggleAdvancedSearchPanel;
   document.getElementById("showTimeHistory").onclick = doToggleTimeHistoryPanel;
+  document.getElementById("resetVerticalView").onclick = resetVerticalPanZoom;
   document.getElementById("viewTemplateSelect").onchange = applyViewTemplate;
   installLaneFilterDrag();
   installAdvancedSearchDrag();
@@ -10391,6 +10445,7 @@ function initAll() {
   document.addEventListener("keydown", laneFilterShortcut);
   document.addEventListener("keydown", advancedSearchShortcut);
   document.addEventListener("keydown", timeHistoryShortcut);
+  document.addEventListener("keydown", verticalResetShortcut);
   document.getElementById("closeLaneFilters").onclick = doToggleLaneFilterPanel;
   document.getElementById("closeAdvancedSearch").onclick = doToggleAdvancedSearchPanel;
   document.getElementById("closeTimeHistory").onclick = doToggleTimeHistoryPanel;
@@ -10687,11 +10742,15 @@ function unloadSaveState() {
   </div>
 </span>
 
+<button id="resetVerticalView" type="button" style="border-radius:6px"
+        title="Reset vertical shift and zoom (O)">Reset Y (O)</button>
+
 &nbsp;&nbsp;View:
 <select id="viewTemplateSelect" class="view-template-select" title="Choose a lane-layout template">
   <option value="0">Default</option>
   <option value="1">Active spans: PIDs + CPUs</option>
   <option value="2">Viewable PIDs + associated CPUs</option>
+  <option value="3">Boundary spans: starts/ends in view</option>
 </select>
 
 &nbsp;&nbsp;&nbsp;Search: 
@@ -10787,6 +10846,7 @@ function unloadSaveState() {
      Filter searchable PID/thread, CPU, and PC-symbol selections
      View Active spans		 show only CPU/PID lanes with spans in the time window
      View Viewable PIDs	 show viewable PID spans and only their associated CPUs
+     View Boundary spans	 show only entries whose start or end is in the time window
      I				 open Filter and focus its last-used control
      Esc			 close Filter without clearing it
      U				 open Advanced span search across the full timeline
@@ -10795,6 +10855,7 @@ function unloadSaveState() {
      Esc			 close Advanced span search without clearing it
      H				 open time-view history
      J / K			 previous / forward time view
+     O / Reset Y		 reset vertical shift and zoom only
      Filter/Search/History	 drag by title; resize from the lower-right corner
 
      Search:    regex string match 
