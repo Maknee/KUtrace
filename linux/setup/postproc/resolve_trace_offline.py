@@ -148,11 +148,30 @@ def addr2line_name(binary, offset, cache):
     return name
 
 
+def elf_type(binary, cache):
+    """Return the ELF e_type value, or None for an unreadable/non-ELF file."""
+    key = str(binary)
+    if key in cache:
+        return cache[key]
+    result = None
+    try:
+        with binary.open("rb") as source:
+            header = source.read(18)
+        if len(header) == 18 and header[:4] == b"\x7fELF" and header[5] in (1, 2):
+            byteorder = "little" if header[5] == 1 else "big"
+            result = int.from_bytes(header[16:18], byteorder)
+    except OSError:
+        pass
+    cache[key] = result
+    return result
+
+
 def resolve_user(events, maps, binary_root):
     if shutil.which("addr2line") is None:
         raise SystemExit("addr2line is required for --procmaps")
     starts = {pid: [entry[0] for entry in entries] for pid, entries in maps.items()}
     cache = {}
+    type_cache = {}
     resolved = 0
     for event in events:
         if len(event) < 10 or event[5] != PC_USER:
@@ -170,7 +189,10 @@ def resolve_user(events, maps, binary_root):
         binary = mapped_binary(pathname, binary_root)
         if binary is None:
             continue
-        symbol = addr2line_name(binary, file_offset + address - lo, cache)
+        # ET_EXEC uses its absolute virtual address. PIE executables and shared
+        # objects are ET_DYN and use the address relative to their saved map.
+        lookup_address = address if elf_type(binary, type_cache) == 2 else file_offset + address - lo
+        symbol = addr2line_name(binary, lookup_address, cache)
         if symbol:
             event[9] = "PC=" + symbol
             event[6] = name_hash(symbol)
@@ -206,7 +228,9 @@ def infer_pid_names(events, process_names):
         thread = counts[pid].most_common(1)[0][0] if counts[pid] else ""
         process = process_names.get(pid, "")
         if thread or process:
-            result[str(pid)] = {"thread": thread, "process": process, "source": "trace+offline-maps"}
+            result[str(pid & 0xFFFF)] = {
+                "thread": thread, "process": process, "source": "trace+offline-maps"
+            }
     return result
 
 
@@ -214,7 +238,10 @@ def load_pid_name_overrides(path):
     if path.suffix.lower() == ".json":
         with path.open("r", encoding="utf-8") as source:
             raw = json.load(source)
-        return {str(key): value for key, value in raw.items()}
+        try:
+            return {str(int(key) & 0xFFFF): value for key, value in raw.items()}
+        except (TypeError, ValueError) as error:
+            raise SystemExit(f"invalid PID-name JSON key: {error}")
     result = {}
     with path.open("r", encoding="utf-8", errors="replace") as source:
         for line_number, line in enumerate(source, 1):
@@ -223,7 +250,7 @@ def load_pid_name_overrides(path):
                 continue
             fields = line.split("\t") if "\t" in line else line.split(None, 2)
             try:
-                pid = str(int(fields[0]))
+                pid = str(int(fields[0]) & 0xFFFF)
             except (ValueError, IndexError):
                 raise SystemExit(f"invalid PID-name line {line_number}: {line}")
             result[pid] = {"thread": fields[1] if len(fields) > 1 else "",

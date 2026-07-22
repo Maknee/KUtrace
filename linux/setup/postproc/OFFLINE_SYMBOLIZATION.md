@@ -34,3 +34,18 @@ and run:
 That script automatically discovers `recording.kallsyms`,
 `recording.procmaps`, and `recording.pidnames`. It performs no live process
 inspection.
+
+## Runnable postmortem example
+
+The example project runs a short-lived target, verifies that it has exited, and
+only then resolves its recorded PC and produces a self-contained HTML viewer:
+
+```bash
+cd examples/offline_symbolization
+./run_demo.sh
+```
+
+It intentionally uses a non-PIE executable, allowing its mapping to be
+reconstructed after exit without reading `/proc/<pid>`. For production PIE
+executables and shared libraries, save their ASLR mappings as capture metadata;
+the expensive symbol lookup remains an offline postprocessing step.
