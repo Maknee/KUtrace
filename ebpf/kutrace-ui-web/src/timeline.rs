@@ -8,7 +8,7 @@ use wasm_bindgen::JsCast;
 use web_sys::{Element, MouseEvent, PointerEvent, WheelEvent};
 use yew::prelude::*;
 
-use crate::model::{Overlays, Range, TraceEvent, TrackMode};
+use crate::model::{Overlays, Range, TraceEvent, TrackGroups, TrackMode};
 
 const VIEW_WIDTH: f64 = 1_400.0;
 const LABEL_WIDTH: f64 = 116.0;
@@ -26,6 +26,7 @@ pub struct TimelineProps {
     pub range: Range,
     pub full: Range,
     pub mode: TrackMode,
+    pub groups: TrackGroups,
     pub overlays: Overlays,
     pub search: String,
     pub search_invert: bool,
@@ -111,7 +112,7 @@ fn category_fill(category: &str, colorblind: bool) -> &'static str {
     }
 }
 
-fn track_keys(events: &[TraceEvent], mode: TrackMode, range: Range) -> Vec<String> {
+fn track_keys(events: &[TraceEvent], groups: TrackGroups, range: Range) -> Vec<String> {
     let mut cpus = BTreeSet::new();
     let mut pids = BTreeSet::new();
     let mut rpcs = BTreeSet::new();
@@ -156,31 +157,25 @@ fn track_keys(events: &[TraceEvent], mode: TrackMode, range: Range) -> Vec<Strin
             resources.insert(event.arg0);
         }
     }
-    match mode {
-        TrackMode::CpuPid => cpus
-            .into_iter()
-            .take(64)
-            .map(|cpu| format!("cpu:{cpu}"))
-            .chain(pids.into_iter().take(64).map(|pid| format!("pid:{pid}")))
-            .chain(rpcs.into_iter().take(64).map(|rpc| format!("rpc:{rpc}")))
-            .chain(
-                resources
-                    .into_iter()
-                    .take(64)
-                    .map(|resource| format!("resource:{resource}")),
-            )
-            .collect(),
-        TrackMode::Cpu => cpus
-            .into_iter()
-            .take(64)
-            .map(|cpu| format!("cpu:{cpu}"))
-            .collect(),
-        TrackMode::Pid => pids
-            .into_iter()
-            .take(64)
-            .map(|pid| format!("pid:{pid}"))
-            .collect(),
+    let mut tracks = Vec::new();
+    if groups.cpu {
+        tracks.extend(cpus.into_iter().take(64).map(|cpu| format!("cpu:{cpu}")));
     }
+    if groups.pid {
+        tracks.extend(pids.into_iter().take(64).map(|pid| format!("pid:{pid}")));
+    }
+    if groups.rpc {
+        tracks.extend(rpcs.into_iter().take(64).map(|rpc| format!("rpc:{rpc}")));
+    }
+    if groups.resource {
+        tracks.extend(
+            resources
+                .into_iter()
+                .take(64)
+                .map(|resource| format!("resource:{resource}")),
+        );
+    }
+    tracks
 }
 
 fn track_label(track: &str) -> String {
@@ -231,18 +226,14 @@ pub fn timeline(props: &TimelineProps) -> Html {
     let suppress_click = use_mut_ref(|| false);
     let drag_overlay = use_node_ref();
     let timeline_node = use_node_ref();
-    let tracks = track_keys(&props.events, props.mode, props.range);
+    let tracks = track_keys(&props.events, props.groups, props.range);
     let row_index: HashMap<&str, usize> = tracks
         .iter()
         .enumerate()
         .map(|(index, track)| (track.as_str(), index))
         .collect();
     let height = (tracks.len().max(1) as f64 * ROW_HEIGHT + 20.0).max(240.0);
-    let track_groups = match props.mode {
-        TrackMode::CpuPid => "cpu,pid,rpc,resource",
-        TrackMode::Cpu => "cpu",
-        TrackMode::Pid => "pid",
-    };
+    let track_groups = props.groups.names();
     let visible_tracks = tracks.join(",");
     let highlighted_tracks = {
         let mut values = props.highlighted.iter().cloned().collect::<Vec<_>>();
@@ -258,7 +249,7 @@ pub fn timeline(props: &TimelineProps) -> Html {
         })
         .count();
 
-    // Associate each visible event with at most two rows in one pass. The old
+    // Associate each visible event with its enabled KUtrace rows in one pass. The old
     // track × event nested scan became quadratic on many-core traces and also
     // rendered every event in the five-viewport prefetch margin at an edge.
     let mut rendered_events = Vec::<(String, usize, &TraceEvent)>::new();
@@ -267,24 +258,22 @@ pub fn timeline(props: &TimelineProps) -> Html {
         .iter()
         .filter(|event| event_overlaps(event, props.range) && event_visible(event, props.overlays))
     {
-        let mut targets = Vec::with_capacity(2);
+        let mut targets = Vec::with_capacity(4);
         if let Some(track) = &event.render_track {
             targets.push(track.clone());
         } else if event.pid > 0 && event.cpu >= 0 {
-            if !matches!(props.mode, TrackMode::Pid) {
+            if props.groups.cpu {
                 targets.push(format!("cpu:{}", event.cpu));
             }
-            if !matches!(props.mode, TrackMode::Cpu) {
+            if props.groups.pid {
                 targets.push(format!("pid:{}", event.pid));
             }
         }
-        if matches!(props.mode, TrackMode::CpuPid) {
-            if event.rpc > 0 {
-                targets.push(format!("rpc:{}", event.rpc));
-            }
-            if event.category == "resource" && event.arg0 >= 0 {
-                targets.push(format!("resource:{}", event.arg0));
-            }
+        if props.groups.rpc && event.rpc > 0 {
+            targets.push(format!("rpc:{}", event.rpc));
+        }
+        if props.groups.resource && event.category == "resource" && event.arg0 >= 0 {
+            targets.push(format!("resource:{}", event.arg0));
         }
         targets.sort();
         targets.dedup();

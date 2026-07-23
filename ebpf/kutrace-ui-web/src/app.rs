@@ -17,7 +17,10 @@ use yew::prelude::*;
 
 use crate::{
     api::{QueryResponse, query},
-    model::{Filter, Metadata, Overlays, Range, TraceEvent, TrackMode, filter_sql, where_sql},
+    model::{
+        Filter, Metadata, Overlays, Range, TraceEvent, TrackGroups, TrackMode, filter_sql,
+        where_sql,
+    },
     timeline::{Overview, Selection, Timeline},
 };
 
@@ -32,6 +35,7 @@ struct TimelineCache {
     filters: Vec<Filter>,
     detail: bool,
     mode: TrackMode,
+    groups: TrackGroups,
 }
 
 fn prefetched_range(range: Range, full: Range) -> Range {
@@ -216,6 +220,8 @@ struct WorkspaceFile {
     views: Vec<SavedView>,
     #[serde(default)]
     track_mode: TrackMode,
+    #[serde(default)]
+    track_groups: Option<TrackGroups>,
     #[serde(default)]
     overlays: Overlays,
 }
@@ -420,6 +426,7 @@ pub fn app() -> Html {
     let filter_op = use_state(|| "=".to_owned());
     let filter_value = use_state(String::new);
     let track_mode = use_state(TrackMode::default);
+    let track_groups = use_state(TrackGroups::default);
     let overlays = use_state(Overlays::default);
     let highlighted = use_state(HashSet::<String>::new);
     let search = use_state(String::new);
@@ -508,6 +515,7 @@ pub fn app() -> Html {
         let range = range.clone();
         let saved_views = saved_views.clone();
         let track_mode = track_mode.clone();
+        let track_groups = track_groups.clone();
         let overlays = overlays.clone();
         let workspace_loaded = workspace_loaded.clone();
         let status = sql_status.clone();
@@ -522,7 +530,7 @@ pub fn app() -> Html {
                     match serde_json::from_str::<WorkspaceFile>(&stored) {
                         Ok(workspace)
                             if workspace.kind == "kutrace-workspace"
-                                && matches!(workspace.version, 1 | 2) =>
+                                && matches!(workspace.version, 1..=3) =>
                         {
                             filters.set(workspace.filters.into_iter().take(64).collect());
                             if !workspace.sql.is_empty() {
@@ -533,6 +541,11 @@ pub fn app() -> Html {
                             }
                             saved_views.set(workspace.views.into_iter().take(32).collect());
                             track_mode.set(workspace.track_mode);
+                            track_groups.set(
+                                workspace
+                                    .track_groups
+                                    .unwrap_or_else(|| TrackGroups::for_mode(workspace.track_mode)),
+                            );
                             overlays.set(workspace.overlays);
                         }
                         Ok(_) => status.set("Unsupported saved workspace".to_owned()),
@@ -686,6 +699,7 @@ pub fn app() -> Html {
         let current_filters = (*filters).clone();
         let current_cache = (*timeline_cache).clone();
         let current_mode = *track_mode;
+        let current_groups = *track_groups;
         let full = metadata.full;
         use_effect_with(
             (
@@ -693,14 +707,23 @@ pub fn app() -> Html {
                 current_filters.clone(),
                 current_cache,
                 current_mode,
+                current_groups,
                 full,
             ),
-            move |(current_range, current_filters, current_cache, current_mode, full)| {
+            move |(
+                current_range,
+                current_filters,
+                current_cache,
+                current_mode,
+                current_groups,
+                full,
+            )| {
                 *generation.borrow_mut() += 1;
                 let request_generation = *generation.borrow();
                 let reusable = current_cache.as_ref().is_some_and(|cached| {
                     cached.filters == *current_filters
                         && cached.mode == *current_mode
+                        && cached.groups == *current_groups
                         && range_contains(cached.coverage, *current_range)
                         && (cached.detail || current_range.span() >= cached.coverage.span() / 5.0)
                 });
@@ -718,6 +741,7 @@ pub fn app() -> Html {
                     let current_range = *current_range;
                     let current_filters = current_filters.clone();
                     let current_mode = *current_mode;
+                    let current_groups = *current_groups;
                     let coverage = prefetched_range(current_range, *full);
                     Some(Timeout::new(70, move || {
                         loading.set(true);
@@ -730,12 +754,7 @@ pub fn app() -> Html {
                             );
                             let result = async {
                                 let response = query(&sql, 10_000).await?;
-                                let projected_glyphs = response.rows.len()
-                                    * if matches!(current_mode, TrackMode::CpuPid) {
-                                        4
-                                    } else {
-                                        1
-                                    };
+                                let projected_glyphs = response.rows.len() * current_groups.count();
                                 let use_density = response.truncated
                                     || response.rows.len() > 10_000
                                     || projected_glyphs > TIMELINE_DETAIL_GLYPH_BUDGET;
@@ -756,7 +775,7 @@ pub fn app() -> Html {
                                 let mut rows = Vec::new();
                                 let mut used_mipmap = false;
                                 let mut partial = false;
-                                if !matches!(current_mode, TrackMode::Pid) {
+                                if current_groups.cpu {
                                     let sql = if mmap_compatible {
                                         used_mipmap = true;
                                         mipmap_density_sql(&current_filters, coverage)
@@ -784,7 +803,7 @@ pub fn app() -> Html {
                                         );
                                     }
                                 }
-                                if !matches!(current_mode, TrackMode::Cpu) {
+                                if current_groups.pid {
                                     let response = query(
                                         &density_sql(&current_filters, coverage, "pid"),
                                         10_000,
@@ -795,37 +814,33 @@ pub fn app() -> Html {
                                     );
                                     partial |= response.truncated;
                                 }
-                                if matches!(current_mode, TrackMode::CpuPid) {
-                                    for semantic_track in ["rpc", "resource"] {
-                                        let response = query(
-                                            &density_sql(
-                                                &current_filters,
-                                                coverage,
-                                                semantic_track,
-                                            ),
-                                            10_000,
-                                        )
-                                        .await?;
-                                        rows.extend(
-                                            response
-                                                .rows
-                                                .iter()
-                                                .map(|row| TraceEvent::from_row(row)),
-                                        );
-                                        partial |= response.truncated;
-                                    }
+                                for semantic_track in ["rpc", "resource"]
+                                    .into_iter()
+                                    .filter(|track| current_groups.enabled(track))
+                                {
+                                    let response = query(
+                                        &density_sql(&current_filters, coverage, semantic_track),
+                                        10_000,
+                                    )
+                                    .await?;
+                                    rows.extend(
+                                        response.rows.iter().map(|row| TraceEvent::from_row(row)),
+                                    );
+                                    partial |= response.truncated;
                                 }
                                 let overlays =
                                     query(&overlay_sql(&current_filters, coverage), 2_000).await?;
                                 rows.extend(
                                     overlays.rows.iter().map(|row| TraceEvent::from_row(row)),
                                 );
-                                let mut source =
-                                    if used_mipmap && matches!(current_mode, TrackMode::Cpu) {
-                                        "mipmap".to_owned()
-                                    } else {
-                                        "summary".to_owned()
-                                    };
+                                let mut source = if used_mipmap
+                                    && current_groups.cpu
+                                    && current_groups.count() == 1
+                                {
+                                    "mipmap".to_owned()
+                                } else {
+                                    "summary".to_owned()
+                                };
                                 partial |= overlays.truncated || overlays.rows.len() > 2_000;
                                 if partial {
                                     source.push_str("-partial");
@@ -846,6 +861,7 @@ pub fn app() -> Html {
                                         filters: current_filters,
                                         detail: !is_truncated,
                                         mode: current_mode,
+                                        groups: current_groups,
                                     }));
                                     error.set(String::new());
                                 }
@@ -1096,12 +1112,13 @@ pub fn app() -> Html {
     };
     let workspace = WorkspaceFile {
         kind: "kutrace-workspace".to_owned(),
-        version: 2,
+        version: 3,
         filters: (*filters).clone(),
         sql: (*sql).clone(),
         range: Some(*range),
         views: (*saved_views).clone(),
         track_mode: *track_mode,
+        track_groups: Some(*track_groups),
         overlays: *overlays,
     };
     let save_workspace = {
@@ -1172,6 +1189,7 @@ pub fn app() -> Html {
         let range = range.clone();
         let saved_views = saved_views.clone();
         let track_mode = track_mode.clone();
+        let track_groups = track_groups.clone();
         let overlays = overlays.clone();
         let status = sql_status.clone();
         let full = metadata.full;
@@ -1185,6 +1203,7 @@ pub fn app() -> Html {
             let range = range.clone();
             let saved_views = saved_views.clone();
             let track_mode = track_mode.clone();
+            let track_groups = track_groups.clone();
             let overlays = overlays.clone();
             let status = status.clone();
             spawn_local(async move {
@@ -1196,7 +1215,7 @@ pub fn app() -> Html {
                         .ok_or_else(|| "Workspace file is not text".to_owned())?;
                     let workspace = serde_json::from_str::<WorkspaceFile>(&text)
                         .map_err(|error| format!("Invalid workspace: {error}"))?;
-                    if workspace.kind != "kutrace-workspace" || !matches!(workspace.version, 1 | 2)
+                    if workspace.kind != "kutrace-workspace" || !matches!(workspace.version, 1..=3)
                     {
                         return Err("Unsupported workspace file".to_owned());
                     }
@@ -1212,6 +1231,11 @@ pub fn app() -> Html {
                     }
                     saved_views.set(workspace.views);
                     track_mode.set(workspace.track_mode);
+                    track_groups.set(
+                        workspace
+                            .track_groups
+                            .unwrap_or_else(|| TrackGroups::for_mode(workspace.track_mode)),
+                    );
                     overlays.set(workspace.overlays);
                     Ok::<_, String>(())
                 }
@@ -1527,6 +1551,32 @@ pub fn app() -> Html {
             }
         })} </>}
     };
+    let group_buttons = [
+        ("cpu", "CPUs"),
+        ("pid", "Processes"),
+        ("rpc", "RPCs"),
+        ("resource", "Resources & queues"),
+    ]
+    .into_iter()
+    .map(|(name, label)| {
+        let expanded = track_groups.enabled(name);
+        let track_groups = track_groups.clone();
+        let track_mode = track_mode.clone();
+        html! {
+          <button class={classes!("track-group",expanded.then_some("active"))}
+            data-track-group={name}
+            aria-expanded={expanded.to_string()}
+            onclick={Callback::from(move |_| {
+                let mut next = *track_groups;
+                next.toggle(name);
+                track_groups.set(next);
+                track_mode.set(TrackMode::CpuPid);
+            })}>
+            {format!("{} {label}",if expanded {"▾"} else {"▸"})}
+          </button>
+        }
+    })
+    .collect::<Vec<_>>();
 
     html! {
       <div class={classes!("wasm-app", overlays.colorblind.then_some("colorblind"))}>
@@ -1537,7 +1587,7 @@ pub fn app() -> Html {
         </div><div class="search-tools"><label>{"Find "}<input id="trace-search" type="search" value={(*search).clone()} oninput={{let search=search.clone(); Callback::from(move |event: InputEvent| search.set(event.target_unchecked_into::<HtmlInputElement>().value()))}}/></label><button id="search-invert" aria-pressed={search_invert.to_string()} onclick={{let value=search_invert.clone(); Callback::from(move |_| value.set(!*value))}}>{"Not"}</button><span id="search-count" class="muted">{if search.is_empty() {String::new()} else {format!("{search_matches} matches")}}</span></div>
         <div class="range-controls"><button id="pan-left" onclick={navigate("pan-left")}>{"←"}</button><button id="zoom-out" onclick={navigate("zoom-out")}>{"−"}</button><button id="reset-range" onclick={navigate("reset")}>{"Fit"}</button><button id="zoom-in" onclick={navigate("zoom-in")}>{"+"}</button><button id="pan-right" onclick={navigate("pan-right")}>{"→"}</button></div></div>
         <main>
-          <aside class="track-sidebar"><section><h2>{"Tracks"}</h2><label class="field-label">{"Group by"}<select id="track-mode" value={track_mode.value()} onchange={{let track_mode=track_mode.clone(); let highlighted=highlighted.clone(); Callback::from(move |event: Event| {let value=event.target_unchecked_into::<HtmlSelectElement>().value(); track_mode.set(match value.as_str(){"cpu"=>TrackMode::Cpu,"pid"=>TrackMode::Pid,_=>TrackMode::CpuPid}); highlighted.set(HashSet::new());})}}><option value="cpu_pid" selected={*track_mode==TrackMode::CpuPid}>{"KUtrace groups"}</option><option value="cpu" selected={*track_mode==TrackMode::Cpu}>{"CPU cores"}</option><option value="pid" selected={*track_mode==TrackMode::Pid}>{"Process / thread"}</option></select></label><div class="track-groups"><button class="track-group active" data-track-group="cpu">{"▾ CPUs"}</button><button class="track-group active" data-track-group="process">{"▾ Processes"}</button><button class="track-group active" data-track-group="rpc">{"▾ RPCs"}</button><button class="track-group active" data-track-group="resource">{"▾ Resources & queues"}</button></div></section>
+          <aside class="track-sidebar"><section><h2>{"Tracks"}</h2><label class="field-label">{"Group by"}<select id="track-mode" value={track_mode.value()} onchange={{let track_mode=track_mode.clone(); let track_groups=track_groups.clone(); let highlighted=highlighted.clone(); Callback::from(move |event: Event| {let value=event.target_unchecked_into::<HtmlSelectElement>().value(); let next_mode=match value.as_str(){"cpu"=>TrackMode::Cpu,"pid"=>TrackMode::Pid,_=>TrackMode::CpuPid}; track_mode.set(next_mode); track_groups.set(TrackGroups::for_mode(next_mode)); highlighted.set(HashSet::new());})}}><option value="cpu_pid" selected={*track_mode==TrackMode::CpuPid}>{"KUtrace groups"}</option><option value="cpu" selected={*track_mode==TrackMode::Cpu}>{"CPU cores"}</option><option value="pid" selected={*track_mode==TrackMode::Pid}>{"Process / thread"}</option></select></label><div class="track-groups">{for group_buttons}</div></section>
           <section><h2>{"Display"}</h2><div class="display-toggles">{for [("marks","Mark"),("arcs","Arc"),("locks","Lock"),("frequency","Freq"),("ipc","IPC"),("samples","Samp"),("colorblind","CB")].map(|(key,label)| {let overlays_handle=overlays.clone(); let pressed=overlay_value(*overlays,key); html!{<button data-overlay={key} aria-pressed={pressed.to_string()} onclick={Callback::from(move |_| overlays_handle.set(toggle_overlay(*overlays_handle,key)))}>{label}</button>}})}</div></section>
           <section><h2>{"Composable filters"}</h2><div class="filter-form"><select id="filter-field" value={(*filter_field).clone()} onchange={{let value=filter_field.clone();Callback::from(move |event:Event|value.set(event.target_unchecked_into::<HtmlSelectElement>().value()))}}>{for ["category","cpu","pid","event","rpc","name"].map(|field|html!{<option value={field} selected={*filter_field==field}>{field}</option>})}</select><select id="filter-op" value={(*filter_op).clone()} onchange={{let value=filter_op.clone();Callback::from(move |event:Event|value.set(event.target_unchecked_into::<HtmlSelectElement>().value()))}}><option value="=" selected={*filter_op=="="}>{"is"}</option><option value="!=" selected={*filter_op=="!="}>{"is not"}</option><option value="contains" selected={*filter_op=="contains"}>{"contains"}</option><option value=">=" selected={*filter_op==">="}>{"≥"}</option><option value="<=" selected={*filter_op=="<="}>{"≤"}</option></select><input id="filter-value" value={(*filter_value).clone()} oninput={{let value=filter_value.clone();Callback::from(move |event:InputEvent|value.set(event.target_unchecked_into::<HtmlInputElement>().value()))}}/><button id="add-filter" onclick={add_filter}>{"Add filter"}</button></div><div id="filter-chips" class="chips">{for filters.iter().enumerate().map(|(index,filter)|{let filters=filters.clone();html!{<span class="chip">{format!("{} {} {}",filter.field,filter.op,filter.value)}<button data-remove={index.to_string()} onclick={Callback::from(move |_|{let mut next=(*filters).clone();next.remove(index);filters.set(next)})}>{"×"}</button></span>}})}</div></section>
           <section><h2>{"Saved SQL views"}</h2><div class="saved-view-form"><input id="view-name" maxlength="80" placeholder="Slow syscalls" value={(*view_name).clone()} oninput={{let view_name=view_name.clone();Callback::from(move |event:InputEvent|view_name.set(event.target_unchecked_into::<HtmlInputElement>().value()))}}/><button id="save-view" onclick={save_view}>{"Save current query"}</button></div><div id="saved-views" class={classes!("saved-views",saved_views.is_empty().then_some("muted"))}>{saved_view_rows}</div></section><section><button id="show-schema" onclick={show_schema}>{"Inspect SQL schema"}</button></section></aside>
@@ -1545,7 +1595,7 @@ pub fn app() -> Html {
           <section id="timeline-view" class={classes!("view-pane",(*active_view=="timeline").then_some("active"),(*dock_open).then_some("dock-open"))} hidden={*active_view!="timeline"}>
             <section class="timeline-card"><div class="section-head timeline-title"><div><h2>{"System timeline"}</h2><span id="renderer-label" class="mode-badge">{"Native KUtrace · Rust/WASM"}</span></div><div class="renderer-tabs"><button class="renderer-tab active" data-renderer="kutrace" aria-selected="true">{"Native KUtrace"}</button></div></div>
               <div id="kutrace-renderer" class="timeline-renderer modern-renderer active"><div class="modern-renderer-head"><span id="timeline-mode" class="mode-badge">{if timeline_source.ends_with("-partial") {"Density summary · partial"} else if *timeline_truncated {"Density summary"} else {"Exact vector events"}}</span><span id="range-label">{range_label(*range)}</span><div class="timeline-actions"><button id="zoom-selection" disabled={selection.is_none()} onclick={{let range=range.clone();let selection=selection.clone();Callback::from(move |_|if let Some(selected)=&*selection{range.set(selected.range)})}}>{"Zoom selection"}</button><button id="clear-selection" disabled={selection.is_none()} onclick={{let selection=selection.clone();Callback::from(move |_|selection.set(None))}}>{"Clear selection"}</button><span class="shortcut-help">{"drag select · Shift+click highlight · Ctrl+wheel · WASD"}</span></div></div>
-              <Overview events={(*events).clone()} range={*range} full={metadata.full} colorblind={overlays.colorblind} on_range={set_range.clone()}/><div class="time-ruler"><span id="ruler-start">{format!("{:.6}s",range.start)}</span><span id="ruler-center">{format!("{:.6}s",(range.start+range.end)/2.0)}</span><span id="ruler-end">{format!("{:.6}s",range.end)}</span></div><div class="timeline-scroll"><div class="timeline-shell"><Timeline events={(*events).clone()} range={*range} full={metadata.full} mode={*track_mode} overlays={*overlays} search={(*search).clone()} search_invert={*search_invert} highlighted={(*highlighted).clone()} loading={*timeline_loading||!navigation_keys.is_empty()} truncated={*timeline_truncated} source={(*timeline_source).clone()} selection={(*selection).clone()} on_range={set_range} on_select={on_select} on_highlight={on_highlight}/></div></div>
+              <Overview events={(*events).clone()} range={*range} full={metadata.full} colorblind={overlays.colorblind} on_range={set_range.clone()}/><div class="time-ruler"><span id="ruler-start">{format!("{:.6}s",range.start)}</span><span id="ruler-center">{format!("{:.6}s",(range.start+range.end)/2.0)}</span><span id="ruler-end">{format!("{:.6}s",range.end)}</span></div><div class="timeline-scroll"><div class="timeline-shell"><Timeline events={(*events).clone()} range={*range} full={metadata.full} mode={*track_mode} groups={*track_groups} overlays={*overlays} search={(*search).clone()} search_invert={*search_invert} highlighted={(*highlighted).clone()} loading={*timeline_loading||!navigation_keys.is_empty()} truncated={*timeline_truncated} source={(*timeline_source).clone()} selection={(*selection).clone()} on_range={set_range} on_select={on_select} on_highlight={on_highlight}/></div></div>
               <div class="legend"><i class="agent"></i>{"agent "}<i class="syscall"></i>{"syscall "}<i class="kernel"></i>{"kernel "}<i class="user"></i>{"user "}<i class="scheduler"></i>{"scheduler "}<i class="special"></i>{"other "}<span id="perf-legend">{if metadata.flags&128!=0 {"◆ IPC"} else {""}}</span></div></div></section>
             <section class={classes!("analysis-dock",(!*dock_open).then_some("collapsed"))}><div class="dock-tabs">{for [("details","Details"),("flamegraph","Flamegraph"),("sql","SQL"),("agent","Agent reasoning")].map(|(name,label)|{let active=*active_dock==name;let active_dock=active_dock.clone();let dock_open=dock_open.clone();html!{<button class={classes!("dock-tab",active.then_some("active"))} data-dock={name} aria-selected={active.to_string()} onclick={Callback::from(move |_|{active_dock.set(name.to_owned());dock_open.set(true)})}>{label}</button>}})}<button id="toggle-dock" class="dock-toggle" aria-expanded={dock_open.to_string()} onclick={{let dock_open=dock_open.clone();Callback::from(move |_|dock_open.set(!*dock_open))}}>{if *dock_open{"⌄"}else{"⌃"}}</button></div><div class="dock-body">
               <section class={classes!("dock-panel",(*active_dock=="details").then_some("active"))} data-dock-panel="details"><div id="selection-summary" class="selection-summary">{selection.as_ref().map(|selected|if let Some(event)=&selected.event{format!("{} · {} · {:.6}s · {:.3} ms",event.name,event.category,event.start,event.duration*1000.0)}else{format!("Selected {}",range_label(selected.range))}).unwrap_or_else(||"Select an event or drag across tracks to inspect a region.".to_owned())}</div><div class="section-head"><h2>{"Events"}</h2><span id="event-count">{format!("{}{} rows",events.len(),if *timeline_truncated{"+"}else{""})}</span></div><div class="table-wrap"><table id="event-table"><thead><tr>{for ["ts","dur","cpu","pid","event","name","category","arg0","retval","ipc"].map(|name|html!{<th>{name}</th>})}</tr></thead><tbody>{for events.iter().take(500).map(|event|html!{<tr><td>{event.start}</td><td>{event.duration}</td><td>{event.cpu}</td><td>{event.pid}</td><td>{event.event}</td><td>{event.name.clone()}</td><td>{event.category.clone()}</td><td>{event.arg0}</td><td>{event.retval}</td><td>{event.ipc}</td></tr>})}</tbody></table></div></section>

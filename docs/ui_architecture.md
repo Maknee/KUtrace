@@ -37,6 +37,10 @@ same bounded read-only contract.
 - Shift-click toggles the clicked CPU, PID, RPC, or resource row in the
   highlight set. Rows are derived only from visible positive-duration spans,
   so empty cores and inactive identities are not fabricated.
+- The four original KUtrace group headers independently expand or collapse CPU,
+  process, RPC, and resource lanes. The choice applies to exact and density
+  rendering, is keyboard accessible, and survives version-3 workspace
+  save/export/import.
 - Marks, samples, wakeups, lock rails, CPU frequency, IPC, idle/wait lines, and
   KUtrace user-mode inner stripes are vector overlays on the same time domain.
 - The overview, timeline, selection, details, flamegraph, and SQL notebook share
@@ -143,7 +147,7 @@ absence of the retired `/app.js`, SVG rendering, repeated held-key updates,
 wheel zoom, Alt-drag pan, selection, Shift highlighting, Escape, filters,
 search, SQL/schema inspection, saved and portable workspace state, honest
 flamegraph fallback, normalized callchains, agent-span navigation and context,
-and the separate legacy route. Chromium also owns a deterministic screenshot
+independent track-group expansion, and the separate legacy route. Chromium also owns a deterministic screenshot
 baseline for the original KUtrace light visual grammar, blue labels, black
 execution rails, and aligned CPU/PID/RPC/resource lanes.
 
@@ -171,3 +175,5 @@ annotations and gestures above, including dynamically visible RPC/resource
 lanes, but it does not claim pixel-for-pixel parity with every historical
 annotation or every gesture in `show_cpu.html`. The `/legacy` route remains the
 exact compatibility surface while those less common interactions are ported.
+The requirement-by-requirement implementation and evidence checklist is
+[`ui_parity.md`](ui_parity.md).

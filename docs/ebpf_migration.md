@@ -330,7 +330,8 @@ reporting, the portable capture ABI, legacy transform integration, client span
 ingestion, bounded client RPC/resource/queue/mark ingestion, process-scoped
 external uprobe/uretprobe spans selected by symbol or absolute executable file
 offset (including stripped binaries), mapped-library symbols resolved from an
-already-running target's executable mappings, one PID-scoped generic
+already-running target's executable mappings or watched through a later
+`dlopen`, one PID-scoped generic
 traceable-kernel-function kprobe/kretprobe pair, and paired USDT spans
 discovered from `.note.stapsdt`, with eight levels of nesting and explicit
 overflow/mismatch accounting. USDT semaphores are enabled after successful
@@ -381,11 +382,12 @@ interactions, a visual baseline, and live rendering of the untouched legacy
 route. Chromium and Firefox now share the functional regression suite while
 Chromium owns the deterministic visual baseline. The byte-identity gate now
 also runs Mark/color-blind toggles, mutually exclusive annotation modes,
-search/inversion, wheel zoom, and red-dot reset. Reimplementing every legacy
-gesture in the modern workspace is deliberately not required: `/legacy` is the
-byte-identical compatibility surface, while the modern workspace is the
-composable SQL/agent surface. See
-[`ui_architecture.md`](ui_architecture.md).
+search/inversion, wheel zoom, and red-dot reset. The modern renderer now
+independently expands/collapses its CPU, PID, RPC, and resource groups in exact
+and density modes. `/legacy` remains the byte-identical comparison surface
+while every applicable behavior is reimplemented; it does not close modern
+parity by itself. See [`ui_architecture.md`](ui_architecture.md) and the
+[`UI parity checklist`](ui_parity.md).
 
 A live PID-scoped scheduler probe on Linux 6.6.36 created a Python thread only
 after all probes and the shared client ring were ready. Its first retained
@@ -545,8 +547,10 @@ reached strict legacy JSON with zero BPF or probe loss.
 A separate live mapped-library fixture resolved `libc.so.6` from
 `/proc/<pid>/maps`, attached to the real `pthread_mutex_lock` symbol, and
 produced exactly 200 positive-duration spans through strict version-3 JSON with
-zero BPF or probe-state loss. Module lookup currently occurs once at collector
-startup, so a library introduced later by `dlopen` requires reattachment.
+zero BPF or probe-state loss. A second fixture started without
+`libkutrace_late.so`; `--wait-for-modules` observed its later `dlopen`, attached
+the same entry/return programs with the reserved probe cookie, and captured 200
+exact calls with zero unresolved module probes and zero loss.
 
 The generic-kernel-function gate attached a kprobe/kretprobe pair to the
 running kernel's traceable `__do_sys_getpid` implementation. A short live run

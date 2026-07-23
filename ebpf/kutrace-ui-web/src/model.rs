@@ -71,6 +71,77 @@ impl TrackMode {
     }
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct TrackGroups {
+    pub cpu: bool,
+    pub pid: bool,
+    pub rpc: bool,
+    pub resource: bool,
+}
+
+impl TrackGroups {
+    pub const fn for_mode(mode: TrackMode) -> Self {
+        match mode {
+            TrackMode::CpuPid => Self {
+                cpu: true,
+                pid: true,
+                rpc: true,
+                resource: true,
+            },
+            TrackMode::Cpu => Self {
+                cpu: true,
+                pid: false,
+                rpc: false,
+                resource: false,
+            },
+            TrackMode::Pid => Self {
+                cpu: false,
+                pid: true,
+                rpc: false,
+                resource: false,
+            },
+        }
+    }
+
+    pub fn enabled(self, name: &str) -> bool {
+        match name {
+            "cpu" => self.cpu,
+            "pid" => self.pid,
+            "rpc" => self.rpc,
+            "resource" => self.resource,
+            _ => false,
+        }
+    }
+
+    pub fn toggle(&mut self, name: &str) {
+        match name {
+            "cpu" => self.cpu = !self.cpu,
+            "pid" => self.pid = !self.pid,
+            "rpc" => self.rpc = !self.rpc,
+            "resource" => self.resource = !self.resource,
+            _ => {}
+        }
+    }
+
+    pub const fn count(self) -> usize {
+        self.cpu as usize + self.pid as usize + self.rpc as usize + self.resource as usize
+    }
+
+    pub fn names(self) -> String {
+        ["cpu", "pid", "rpc", "resource"]
+            .into_iter()
+            .filter(|name| self.enabled(name))
+            .collect::<Vec<_>>()
+            .join(",")
+    }
+}
+
+impl Default for TrackGroups {
+    fn default() -> Self {
+        Self::for_mode(TrackMode::CpuPid)
+    }
+}
+
 #[derive(Clone, Debug, PartialEq)]
 pub struct TraceEvent {
     pub id: i64,

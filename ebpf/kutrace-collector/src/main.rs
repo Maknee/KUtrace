@@ -235,6 +235,10 @@ struct Args {
     /// --pid, for example libc.so.6:pthread_mutex_lock=lock.
     #[arg(long = "uprobe-module", value_name = "MODULE:SYMBOL[=LABEL]")]
     uprobe_modules: Vec<MappedModuleProbe>,
+    /// Keep watching --pid and attach unresolved --uprobe-module probes when a
+    /// later dlopen creates their executable mapping.
+    #[arg(long, requires = "uprobe_modules")]
+    wait_for_modules: bool,
     /// Repeatable paired USDT span in BINARY:PROVIDER:BEGIN:END[=LABEL] form.
     #[arg(long = "usdt", value_name = "BINARY:PROVIDER:BEGIN:END[=LABEL]")]
     usdts: Vec<UsdtProbe>,
@@ -757,7 +761,9 @@ fn attach_agent_probes(
             .program_mut(program_name)
             .with_context(|| format!("missing eBPF program {program_name}"))?
             .try_into()?;
-        program.load()?;
+        if program.fd().is_err() {
+            program.load()?;
+        }
         for (index, probe) in probes.iter().enumerate() {
             let (location, description) = match &probe.location {
                 ExternalProbeLocation::Symbol(symbol) => {
@@ -789,9 +795,13 @@ fn attach_agent_probes(
     Ok(())
 }
 
-fn mapped_module_path(pid: u32, module: &str) -> Result<PathBuf> {
+fn mapped_module_path(pid: u32, module: &str) -> Result<Option<PathBuf>> {
     let maps_path = format!("/proc/{pid}/maps");
-    let maps = std::fs::read_to_string(&maps_path).with_context(|| format!("read {maps_path}"))?;
+    let maps = match std::fs::read_to_string(&maps_path) {
+        Ok(maps) => maps,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+        Err(error) => return Err(error).with_context(|| format!("read {maps_path}")),
+    };
     let mut matches = maps
         .lines()
         .filter_map(|line| {
@@ -817,10 +827,8 @@ fn mapped_module_path(pid: u32, module: &str) -> Result<PathBuf> {
     matches.sort();
     matches.dedup();
     match matches.as_slice() {
-        [path] => Ok(path.clone()),
-        [] => bail!(
-            "module {module:?} is not an executable mapping in PID {pid}; attach after the library is loaded"
-        ),
+        [path] => Ok(Some(path.clone())),
+        [] => Ok(None),
         _ => bail!(
             "module {module:?} is ambiguous in PID {pid}: {}",
             matches
@@ -832,34 +840,20 @@ fn mapped_module_path(pid: u32, module: &str) -> Result<PathBuf> {
     }
 }
 
-fn resolve_mapped_module_probes(
-    probes: &[MappedModuleProbe],
+fn resolve_mapped_module_probe(
+    probe: &MappedModuleProbe,
     pid: u32,
-) -> Result<Vec<ExternalProbe>> {
-    if probes.is_empty() {
-        return Ok(Vec::new());
-    }
+) -> Result<Option<ExternalProbe>> {
     if pid == 0 {
         bail!("--uprobe-module requires a nonzero --pid");
     }
-    probes
-        .iter()
-        .map(|probe| {
-            let binary = mapped_module_path(pid, &probe.module)?;
-            eprintln!(
-                "resolved mapped module probe: {} -> {}:{} as {}",
-                probe.module,
-                binary.display(),
-                probe.symbol,
-                probe.label
-            );
-            Ok(ExternalProbe {
-                binary,
-                location: ExternalProbeLocation::Symbol(probe.symbol.clone()),
-                label: probe.label.clone(),
-            })
-        })
-        .collect()
+    Ok(
+        mapped_module_path(pid, &probe.module)?.map(|binary| ExternalProbe {
+            binary,
+            location: ExternalProbeLocation::Symbol(probe.symbol.clone()),
+            label: probe.label.clone(),
+        }),
+    )
 }
 
 fn attach_kernel_function_probe(bpf: &mut Ebpf, probe: Option<&KernelFunctionProbe>) -> Result<()> {
@@ -899,7 +893,6 @@ fn attach_usdt_probes(
     probes: &[UsdtProbe],
     pid: u32,
     cookie_base: usize,
-    entry_already_loaded: bool,
 ) -> Result<Option<UsdtSemaphores>> {
     if probes.is_empty() {
         return Ok(None);
@@ -941,7 +934,7 @@ fn attach_usdt_probes(
             .program_mut(program_name)
             .with_context(|| format!("missing eBPF program {program_name}"))?
             .try_into()?;
-        if !(is_begin && entry_already_loaded) {
+        if program.fd().is_err() {
             program.load()?;
         }
         for (index, probe) in resolved.iter().enumerate() {
@@ -1285,11 +1278,10 @@ async fn main() -> Result<()> {
     if args.stacks.is_some() && !cfg!(target_arch = "x86_64") {
         bail!("sampled stack capture is currently supported only on x86_64");
     }
+    if !args.uprobe_modules.is_empty() && args.pid == 0 {
+        bail!("--uprobe-module requires a nonzero --pid");
+    }
     let mut external_probes = args.uprobes.clone();
-    external_probes.extend(resolve_mapped_module_probes(
-        &args.uprobe_modules,
-        args.pid,
-    )?);
     if let (Some(binary), Some(symbol)) = (&args.uprobe_binary, &args.uprobe_symbol) {
         external_probes.push(ExternalProbe {
             binary: binary.clone(),
@@ -1297,8 +1289,40 @@ async fn main() -> Result<()> {
             label: args.uprobe_label.clone().unwrap_or_else(|| symbol.clone()),
         });
     }
-    let semantic_probe_count =
-        external_probes.len() + args.usdts.len() + usize::from(args.kprobe.is_some());
+    let module_probe_base = external_probes.len();
+    let mut resolved_module_probes = Vec::<(usize, ExternalProbe)>::new();
+    let mut pending_module_probes = Vec::<(usize, MappedModuleProbe)>::new();
+    for (offset, probe) in args.uprobe_modules.iter().enumerate() {
+        let slot = module_probe_base + offset;
+        match resolve_mapped_module_probe(probe, args.pid)? {
+            Some(resolved) => {
+                eprintln!(
+                    "resolved mapped module probe: {} -> {}:{} as {}",
+                    probe.module,
+                    resolved.binary.display(),
+                    probe.symbol,
+                    probe.label
+                );
+                resolved_module_probes.push((slot, resolved));
+            }
+            None if args.wait_for_modules => {
+                eprintln!(
+                    "waiting for mapped module probe: {}:{} as {}",
+                    probe.module, probe.symbol, probe.label
+                );
+                pending_module_probes.push((slot, probe.clone()));
+            }
+            None => bail!(
+                "module {:?} is not an executable mapping in PID {}; use --wait-for-modules to watch for a later dlopen",
+                probe.module,
+                args.pid
+            ),
+        }
+    }
+    let semantic_probe_count = external_probes.len()
+        + args.uprobe_modules.len()
+        + args.usdts.len()
+        + usize::from(args.kprobe.is_some());
     if semantic_probe_count > kutrace_common::MAX_UPROBES as usize {
         bail!(
             "at most {} external uprobe/USDT/kernel spans are supported",
@@ -1374,9 +1398,16 @@ async fn main() -> Result<()> {
                 0,
             )?;
         }
+        for (offset, probe) in args.uprobe_modules.iter().enumerate() {
+            probes.set(
+                (module_probe_base + offset) as u32,
+                ProbeConfig::with_label(probe.label.as_bytes()),
+                0,
+            )?;
+        }
         for (offset, probe) in args.usdts.iter().enumerate() {
             probes.set(
-                (external_probes.len() + offset) as u32,
+                (module_probe_base + args.uprobe_modules.len() + offset) as u32,
                 ProbeConfig::with_label(probe.label.as_bytes()),
                 0,
             )?;
@@ -1460,6 +1491,9 @@ async fn main() -> Result<()> {
     if !external_probes.is_empty() {
         attach_agent_probes(&mut bpf, &external_probes, args.pid, 0)?;
     }
+    for (slot, probe) in &resolved_module_probes {
+        attach_agent_probes(&mut bpf, std::slice::from_ref(probe), args.pid, *slot)?;
+    }
     if args.kprobe.is_some() && args.pid == 0 {
         eprintln!(
             "warning: --kprobe is capturing the selected kernel function across the whole host"
@@ -1470,8 +1504,7 @@ async fn main() -> Result<()> {
         &mut bpf,
         &args.usdts,
         args.pid,
-        external_probes.len(),
-        !external_probes.is_empty(),
+        module_probe_base + args.uprobe_modules.len(),
     )?;
 
     let ring = RingBuf::try_from(bpf.take_map("EVENTS").context("missing EVENTS map")?)?;
@@ -1533,6 +1566,8 @@ async fn main() -> Result<()> {
     tokio::pin!(shutdown);
     let mut shared_poll = tokio::time::interval(std::time::Duration::from_micros(200));
     shared_poll.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+    let mut module_poll = tokio::time::interval(std::time::Duration::from_millis(20));
+    module_poll.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
     eprintln!(
         "capturing to {}; agent shm {}; socket fallback {}; press Ctrl-C to stop",
         args.output.display(),
@@ -1547,6 +1582,30 @@ async fn main() -> Result<()> {
                 break;
             }
             () = &mut duration => break,
+            _ = module_poll.tick(), if !pending_module_probes.is_empty() => {
+                let mut index = 0;
+                while index < pending_module_probes.len() {
+                    let (slot, requested) = &pending_module_probes[index];
+                    let Some(probe) = resolve_mapped_module_probe(requested, args.pid)? else {
+                        index += 1;
+                        continue;
+                    };
+                    attach_agent_probes(
+                        &mut bpf,
+                        std::slice::from_ref(&probe),
+                        args.pid,
+                        *slot,
+                    )?;
+                    eprintln!(
+                        "late mapped module probe attached: {} -> {}:{} as {}",
+                        requested.module,
+                        probe.binary.display(),
+                        requested.symbol,
+                        requested.label
+                    );
+                    pending_module_probes.swap_remove(index);
+                }
+            }
             _ = shared_poll.tick() => {
                 client_events_received += shared_ring.drain(|client| {
                     if client.magic != CLIENT_MAGIC {
@@ -1630,10 +1689,12 @@ async fn main() -> Result<()> {
         _ => (0, 0),
     };
     let client_shm_dropped = shared_ring.dropped();
+    let module_probes_unresolved = pending_module_probes.len();
+    let module_probes_attached = args.uprobe_modules.len() - module_probes_unresolved;
     let paired_syscall_records_received = ring_stats.paired_syscall_records_received;
     let compact_syscall_records_received = ring_stats.compact_syscall_records_received;
     eprintln!(
-        "capture complete; bpf_dropped_events={dropped_events}; probe_dropped_events={probe_dropped_events}; stack_dropped_samples={stack_dropped_samples}; user_stacks={user_stacks}; kernel_stacks={kernel_stacks}; client_events_received={client_events_received}; client_shm_dropped={client_shm_dropped}; paired_syscall_records_received={paired_syscall_records_received}; compact_syscall_records_received={compact_syscall_records_received}; pending_syscall_entries_flushed={pending_syscall_entries_flushed}; mappings_recorded={mappings_recorded}; mapping_misses={mapping_misses}"
+        "capture complete; bpf_dropped_events={dropped_events}; probe_dropped_events={probe_dropped_events}; stack_dropped_samples={stack_dropped_samples}; user_stacks={user_stacks}; kernel_stacks={kernel_stacks}; client_events_received={client_events_received}; client_shm_dropped={client_shm_dropped}; module_probes_attached={module_probes_attached}; module_probes_unresolved={module_probes_unresolved}; paired_syscall_records_received={paired_syscall_records_received}; compact_syscall_records_received={compact_syscall_records_received}; pending_syscall_entries_flushed={pending_syscall_entries_flushed}; mappings_recorded={mappings_recorded}; mapping_misses={mapping_misses}"
     );
     std::fs::remove_file(&args.agent_socket)?;
     std::fs::remove_file(&args.agent_shm)?;
@@ -1737,6 +1798,14 @@ mod tests {
         assert!("libc.so.6".parse::<MappedModuleProbe>().is_err());
         assert!(":symbol".parse::<MappedModuleProbe>().is_err());
         assert!("libc.so.6:".parse::<MappedModuleProbe>().is_err());
+    }
+
+    #[test]
+    fn missing_mapped_module_can_be_watched_for_later() {
+        assert_eq!(
+            mapped_module_path(u32::MAX, "libkutrace-not-present.so").unwrap(),
+            None
+        );
     }
 
     #[test]

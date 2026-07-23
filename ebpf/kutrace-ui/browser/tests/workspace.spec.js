@@ -54,6 +54,39 @@ test('uses the original KUtrace light visual grammar and a deterministic baselin
   });
 });
 
+test('independently expands and collapses original KUtrace track groups', async ({page}) => {
+  const timeline = page.locator('#timeline');
+  for (const group of ['cpu', 'pid', 'rpc', 'resource']) {
+    await expect(page.locator(`[data-track-group="${group}"]`)).toHaveAttribute('aria-expanded', 'true');
+  }
+
+  const pidGroup = page.locator('[data-track-group="pid"]');
+  await pidGroup.focus();
+  await page.keyboard.press('Enter');
+  await waitForTimeline(page);
+  await expect(pidGroup).toHaveAttribute('aria-expanded', 'false');
+  await expect(timeline).toHaveAttribute('data-track-groups', 'cpu,rpc,resource');
+  await expect(timeline).toHaveAttribute('data-visible-tracks', /cpu:.+,rpc:77,resource:12/);
+  expect((await timeline.getAttribute('data-visible-tracks')).split(',').some(track => track.startsWith('pid:'))).toBe(false);
+  await expect(timeline.locator('.track-label', {hasText: 'PID 100'})).toHaveCount(0);
+
+  await page.locator('[data-track-group="rpc"]').click();
+  await waitForTimeline(page);
+  await expect(timeline).toHaveAttribute('data-track-groups', 'cpu,resource');
+  await expect(timeline.locator('.track-label', {hasText: 'RPC 77'})).toHaveCount(0);
+
+  await page.locator('#track-mode').selectOption('pid');
+  await waitForTimeline(page);
+  await expect(timeline).toHaveAttribute('data-track-groups', 'pid');
+  await expect(page.locator('[data-track-group="pid"]')).toHaveAttribute('aria-expanded', 'true');
+  await expect(page.locator('[data-track-group="cpu"]')).toHaveAttribute('aria-expanded', 'false');
+  await expect(timeline).toHaveAttribute('data-visible-tracks', /^pid:/);
+
+  await page.locator('#track-mode').selectOption('cpu_pid');
+  await waitForTimeline(page);
+  await expect(timeline).toHaveAttribute('data-track-groups', 'cpu,pid,rpc,resource');
+});
+
 test('keeps vector geometry sharp through smooth WASD, wheel, and Alt-drag navigation', async ({page}) => {
   const timeline = page.locator('#timeline');
   const initial = await page.locator('#range-label').textContent();
@@ -211,6 +244,35 @@ test('uses a real bounded density summary and preserves CPU/PID rows', async ({p
   expect(sawLongEventMerge).toBe(true);
 });
 
+test('keeps collapsed KUtrace groups out of density queries', async ({page}) => {
+  const queriedTracks = new Set();
+  await page.route('**/api/query', async route => {
+    const request = route.request();
+    if (request.method() === 'POST') {
+      const sql = request.postDataJSON().sql;
+      if (sql.startsWith('SELECT id,ts,dur,ts_end,cpu,pid,rpc,event,name,category,arg0,retval,ipc FROM events') && sql.includes('ORDER BY ts,dur DESC LIMIT 10001')) {
+        await route.fulfill({
+          contentType: 'application/json',
+          body: JSON.stringify({columns: [], rows: [], truncated: true, elapsed_ms: .1, sql}),
+        });
+        return;
+      }
+      for (const track of ['cpu', 'pid', 'rpc', 'resource']) {
+        if (sql.includes(`'${track}:' || track`)) queriedTracks.add(track);
+      }
+    }
+    await route.continue();
+  });
+  await page.reload();
+  await waitForTimeline(page);
+  queriedTracks.clear();
+
+  await page.locator('[data-track-group="pid"]').click();
+  await expect.poll(() => [...queriedTracks].sort()).toEqual(['cpu', 'resource', 'rpc']);
+  await waitForTimeline(page);
+  await expect(page.locator('#timeline')).toHaveAttribute('data-track-groups', 'cpu,rpc,resource');
+});
+
 test('switches to density before exact SVG glyphs exceed the interaction budget', async ({page}) => {
   await page.route('**/api/query', async route => {
     const request = route.request();
@@ -317,7 +379,8 @@ test('keeps SQL, schema inspection, saved views, and portable workspace state', 
   const exported = await download;
   const workspace = JSON.parse(await readFile(await exported.path(), 'utf8'));
   expect(workspace.kind).toBe('kutrace-workspace');
-  expect(workspace.version).toBe(2);
+  expect(workspace.version).toBe(3);
+  expect(workspace.trackGroups).toEqual({cpu: true, pid: true, rpc: true, resource: true});
   expect(workspace.views).toEqual([{name: 'Agent spans', sql: 'SELECT COUNT(*) AS agent_count FROM agent_spans'}]);
 
   workspace.sql = 'SELECT name FROM profile_callchains LIMIT 3';

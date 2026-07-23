@@ -36,6 +36,17 @@ try {
       await page.locator(`[data-agent-span="${span}"]`).click();
     } else if (action.startsWith('search:')) {
       await page.locator('#trace-search').fill(action.slice('search:'.length));
+    } else if (action.startsWith('group:')) {
+      const group = action.slice('group:'.length);
+      if (!['cpu', 'pid', 'rpc', 'resource'].includes(group)) {
+        throw new Error(`unknown track group: ${group}`);
+      }
+      const before = await page.locator('#timeline').getAttribute('data-track-groups');
+      await page.locator(`[data-track-group="${group}"]`).click();
+      await page.waitForFunction(
+        previous => document.querySelector('#timeline')?.getAttribute('data-track-groups') !== previous,
+        before,
+      );
     } else {
       throw new Error(`unknown action: ${action}`);
     }
@@ -49,6 +60,9 @@ try {
     source: await timeline.getAttribute('data-source'),
     detail: await timeline.getAttribute('data-detail'),
     visibleTracks: (await timeline.getAttribute('data-visible-tracks') ?? '')
+      .split(',')
+      .filter(Boolean),
+    trackGroups: (await timeline.getAttribute('data-track-groups') ?? '')
       .split(',')
       .filter(Boolean),
     highlightedTracks: (await timeline.getAttribute('data-highlighted-tracks') ?? '')

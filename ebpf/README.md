@@ -273,10 +273,24 @@ sudo ebpf/target/release/kutrace-collector \
 ```
 
 Repeat `--uprobe-module MODULE:SYMBOL=LABEL` as needed. The module basename must
-resolve to exactly one executable mapping when the collector starts. On modern
-glibc, pthread entry points such as `pthread_mutex_lock` live in `libc.so.6`.
-Libraries loaded later with `dlopen` are not watched yet; use an absolute
-`--uprobe` path after the module is present or restart the collector.
+resolve to exactly one executable mapping. On modern glibc, pthread entry points
+such as `pthread_mutex_lock` live in `libc.so.6`. If a target loads the module
+later, add `--wait-for-modules`; the collector polls its executable mappings
+during capture and attaches the entry/return programs when `dlopen` publishes
+the requested module:
+
+```sh
+sudo ebpf/target/release/kutrace-collector \
+  --ebpf ebpf/kutrace-ebpf/target/bpfel-unknown-none/release/kutrace-ebpf \
+  --pid "$target_pid" \
+  --uprobe-module "libplugin.so:handle_request=plugin.handle_request" \
+  --wait-for-modules \
+  --output plugin.kuevents
+```
+
+The completion summary reports `module_probes_attached` and
+`module_probes_unresolved`; require the latter to be zero before treating a
+capture as complete evidence.
 
 One arbitrary traceable kernel function can be captured as the same paired,
 labeled span by attaching a kprobe and kretprobe:
@@ -360,7 +374,10 @@ make -C ebpf verify-dynamic-probes
 
 The mapped-library gate calls the real `pthread_mutex_lock` ABI 200 times,
 resolves it from the fixture's executable `libc.so.6` mapping, and requires 200
-positive-duration spans, strict version-3 JSON, and zero BPF/probe loss.
+positive-duration spans. A second target starts without its fixture library,
+loads it later with `dlopen`, and requires another 200 exact spans after the
+collector reports the late attachment. Both reach strict version-3 JSON with
+zero BPF/probe loss and zero unresolved module probes.
 
 The isolated generic-kprobe timing benchmark is also reproducible:
 
@@ -516,7 +533,8 @@ symbolized leaves. Opt-in callchains become normalized `profile_samples` and
 `profile_frames` rows and render as a sample-weighted prefix tree; traces
 without callchains get an explicit event-hierarchy fallback rather than
 synthetic stacks. SQL can be retained as one of 32 validated named read-only
-views in the portable version-2 workspace format; version-1 files remain
+views in the portable version-3 workspace format, which also retains the four
+independently expanded KUtrace lane groups; version-1 and version-2 files remain
 importable. The original self-contained viewer is a separate compatibility tab
 and is served unchanged when `--legacy-html` is supplied:
 
@@ -527,7 +545,8 @@ ebpf/target/release/kutrace-ui capture.json \
 
 See [`../docs/ui_architecture.md`](../docs/ui_architecture.md) for the schema,
 query safety boundary, Perfetto-inspired mipmap design, and remaining parity
-work.
+work. The original-view completion matrix is
+[`../docs/ui_parity.md`](../docs/ui_parity.md).
 
 The importer keeps failure-atomic staging and streams through a bounded 256 KiB
 reader with 64-event SQLite batches. Materialized 1 ms and 16 ms timeline mipmap levels keep
