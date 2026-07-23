@@ -24,12 +24,15 @@ test('serves a Yew/WASM vector workspace without application JavaScript', async 
   await expect(page.locator('#timeline')).toHaveAttribute('data-source', 'events');
   await expect(page.locator('#timeline')).toHaveAttribute('data-detail', 'true');
   await expect(page.locator('#timeline')).toHaveAttribute('data-track-mode', 'cpu_pid');
-  await expect(page.locator('#timeline')).toHaveAttribute('data-track-groups', 'cpu,pid');
-  await expect(page.locator('#timeline')).toHaveAttribute('data-visible-tracks', /cpu:.+,pid:/);
+  await expect(page.locator('#timeline')).toHaveAttribute('data-track-groups', 'cpu,pid,rpc,resource');
+  await expect(page.locator('#timeline')).toHaveAttribute('data-visible-tracks', /cpu:.+,pid:.+,rpc:77,resource:12,resource:900/);
   await expect(page.locator('#track-mode')).toHaveValue('cpu_pid');
   await expect(page.locator('#renderer-label')).toContainText('Rust/WASM');
   await expect(page.locator('#timeline-mode')).toContainText('Exact vector events');
   expect(await page.locator('#timeline canvas').count()).toBe(0);
+  await expect(page.locator('#timeline .track-label')).toContainText([
+    'CPU 0', 'CPU 1', 'PID 100', 'PID 101', 'RPC 77', 'RES 12', 'RES 900'
+  ]);
 
   const root = await page.request.get('/');
   expect(await root.text()).toContain('/wasm/kutrace-ui-web.js');
@@ -37,6 +40,18 @@ test('serves a Yew/WASM vector workspace without application JavaScript', async 
   const wasm = await page.request.get('/wasm/kutrace-ui-web_bg.wasm');
   expect(wasm.headers()['content-type']).toBe('application/wasm');
   expect(wasm.headers()['cache-control']).toBe('no-store');
+});
+
+test('uses the original KUtrace light visual grammar and a deterministic baseline', async ({page, browserName}) => {
+  test.skip(browserName !== 'chromium', 'Chromium owns the visual baseline');
+  await expect(page.locator('body')).toHaveCSS('background-color', 'rgb(255, 255, 255)');
+  await expect(page.locator('#timeline .track-label').first()).toHaveCSS('fill', 'rgb(0, 0, 204)');
+  await expect(page.locator('#timeline .track-center').first()).toHaveCSS('stroke', 'rgb(17, 17, 17)');
+  await expect(page).toHaveScreenshot('workspace.png', {
+    animations: 'disabled',
+    caret: 'hide',
+    fullPage: true,
+  });
 });
 
 test('keeps vector geometry sharp through smooth WASD, wheel, and Alt-drag navigation', async ({page}) => {
@@ -325,6 +340,21 @@ test('shows an honest event fallback when sampled callchains are absent', async 
   await expect(page.locator('#flamegraph [data-flame-level="root"]')).toBeVisible();
   await expect(page.locator('#flamegraph [data-flame-level="name"]').first()).toBeVisible();
   await expect(page.locator('#flamegraph')).toContainText(/agent|runtime|write|getpid/i);
+});
+
+test('navigates agent spans and exposes their exact trace context to humans and agents', async ({page}) => {
+  await openDock(page, 'agent');
+  await expect(page.locator('#agent-tree [data-agent-span]')).toHaveCount(4);
+  await page.locator('[data-agent-span="2"]').click();
+  await expect(page.locator('#agent-context-title')).toContainText('agent.tool.read · span 2');
+  await expect(page.locator('#agent-annotations')).toContainText('agent.observation.observed.read.delay');
+  await expect(page.locator('#rpc-flows')).toContainText('RPC 77');
+  await expect(page.locator('#resource-activity')).toContainText('RES 900');
+  await expect(page.locator('#agent-context-table')).toContainText('ReadFile.77');
+  await expect(page.locator('#agent-context-sql')).toContainText('WHERE ts <');
+  await page.locator('#open-agent-context').click();
+  await expect(page.locator('[data-dock="sql"]')).toHaveAttribute('aria-selected', 'true');
+  await expect(page.locator('#sql')).toHaveValue(/SELECT ts,dur,cpu,pid,rpc,event,name/);
 });
 
 test('renders normalized symbolized callchains as a true sample flamegraph', async ({page}) => {

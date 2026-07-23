@@ -7,6 +7,7 @@ members = [
   "kutrace-client",
   "kutrace-bench",
   "kutrace-uprobe-fixture",
+  "kutrace-pthread-fixture",
   "kutrace-usdt-fixture",
   "kutrace-trap-fixture",
   "kutrace-differential-fixture",

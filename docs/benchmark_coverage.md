@@ -30,6 +30,7 @@ rate-dependent and explicitly tabulated in the resource artifact.
 | Recoverable x86 trap | yes | yes | yes | yes | 2.132 us median added per UD2 operation |
 | Symbol uprobe/uretprobe | yes | yes | yes | covered by offset benchmark | 400 exact nested spans |
 | Stripped-binary offset uprobe/uretprobe | yes | yes | yes | yes | 180,000 spans; 2.935 us median added |
+| Mapped-library symbol uprobe/uretprobe | yes | yes | yes | covered by uprobe benchmark | 200 exact `pthread_mutex_lock` spans |
 | Generic kernel kprobe/kretprobe | yes | yes | yes | yes | 201,002 spans; 1.488 us incremental / 1.947 us total added |
 | Semaphore-guarded paired USDT | yes | yes | yes | yes | 80,000 spans; 2.644 us median added; 1.91 ns disabled |
 | Concurrent USDT collectors | yes | yes | yes | not separately timed | two collectors, exact spans, semaphore restored |
@@ -53,11 +54,13 @@ make -C ebpf verify-dynamic-probes
 
 The first gate starts an uninstrumented recursive target, attaches entry and
 return probes by symbol, strips all symbols from a copy, and repeats by absolute
-ELF file offset. The second discovers real `.note.stapsdt` sites, changes the
-target semaphores, attaches two collectors concurrently, checks nested span
-identity, and proves that both semaphore values return to zero. The third
-attaches a real kprobe/kretprobe pair to `__do_sys_getpid`, requires 412 exact
-PID-scoped spans, and runs the result through strict legacy JSON.
+ELF file offset. The second resolves `libc.so.6` from a running pthread fixture,
+attaches to its real `pthread_mutex_lock` symbol, and requires 200 exact
+positive-duration spans. The third discovers real `.note.stapsdt` sites,
+changes the target semaphores, attaches two collectors concurrently, checks
+nested span identity, and proves that both semaphore values return to zero. The
+fourth attaches a real kprobe/kretprobe pair to `__do_sys_getpid`, requires 412
+exact PID-scoped spans, and runs the result through strict legacy JSON.
 
 Reproduce the dynamic-probe timing distributions independently:
 
@@ -81,7 +84,9 @@ loss. Every reported overhead result must satisfy the zero-loss gate.
 an isolated per-packet cost, uncommon x86 trap vectors remain outside live
 coverage, and native arm64 needs a separate host. Generic kernel attachment is
 limited to one traceable function per collector until Aya exposes kprobe attach
-cookies or the collector adopts a lower-level multi-attach API. IRQ, power,
+cookies or the collector adopts a lower-level multi-attach API. Module-name
+resolution covers libraries already mapped at collector startup but does not
+yet watch future `dlopen` activity. IRQ, power,
 page-fault, IPC, and several packet results are current functional coverage
 backed by earlier engineering measurements rather than fresh current-commit
 distributions.

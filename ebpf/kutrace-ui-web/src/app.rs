@@ -1,5 +1,5 @@
 use std::{
-    collections::{BTreeMap, HashSet},
+    collections::{BTreeMap, HashMap, HashSet},
     rc::Rc,
 };
 
@@ -49,14 +49,44 @@ fn range_contains(outer: Range, inner: Range) -> bool {
 
 fn density_sql(filters: &[Filter], coverage: Range, track: &str) -> String {
     let bucket = coverage.span() / TIMELINE_BINS as f64;
-    let scope = format!(
-        "ts < {} AND ts_end > {} AND dur>0 AND pid>0 AND cpu>=0",
+    let common = format!(
+        "ts < {} AND ts_end > {} AND dur>0",
         coverage.end, coverage.start
     );
-    let (cpu, pid, label) = if track == "cpu" {
-        ("track", "0", "'cpu:' || track")
-    } else {
-        ("-1", "track", "'pid:' || track")
+    let (track, scope, cpu, pid, rpc, label) = match track {
+        "cpu" => (
+            "cpu",
+            format!("{common} AND pid>0 AND cpu>=0"),
+            "track",
+            "0",
+            "0",
+            "'cpu:' || track",
+        ),
+        "pid" => (
+            "pid",
+            format!("{common} AND pid>0 AND cpu>=0"),
+            "-1",
+            "track",
+            "0",
+            "'pid:' || track",
+        ),
+        "rpc" => (
+            "rpc",
+            format!("{common} AND rpc>0"),
+            "-1",
+            "0",
+            "track",
+            "'rpc:' || track",
+        ),
+        "resource" => (
+            "arg0",
+            format!("{common} AND category='resource' AND arg0>=0"),
+            "-1",
+            "0",
+            "0",
+            "'resource:' || track",
+        ),
+        _ => unreachable!("unsupported density track"),
     };
     format!(
         r#"WITH RECURSIVE scoped(first_bin,last_bin,track,event,name,category,ipc,ts,ts_end) AS (
@@ -79,7 +109,7 @@ fn density_sql(filters: &[Filter], coverage: Range, track: &str) -> String {
              FROM grouped)
          SELECT -(bin*100000+ABS(track)+1),
                 {start}+bin*{bucket},{bucket},MIN({end},{start}+(bin+1)*{bucket}),
-                {cpu},{pid},0,event,name,category,0,0,ipc,{label}
+                {cpu},{pid},{rpc},event,name,category,track,0,ipc,{label}
            FROM ranked WHERE rank=1 ORDER BY bin,track LIMIT 10000"#,
         bins = TIMELINE_BINS,
         start = coverage.start,
@@ -89,6 +119,7 @@ fn density_sql(filters: &[Filter], coverage: Range, track: &str) -> String {
         where_clause = where_sql(filters, &scope),
         cpu = cpu,
         pid = pid,
+        rpc = rpc,
         label = label,
     )
 }
@@ -360,6 +391,17 @@ fn callchain_flame(frames: &[ProfileFrame]) -> (Vec<FlameRect>, usize, usize) {
     layout_flame_node(&root, 1, 0.0, 100.0, &mut output);
     let max_depth = output.iter().map(|frame| frame.depth).max().unwrap_or(0);
     (output, root.samples, max_depth)
+}
+
+fn agent_depth(event: &TraceEvent, parents: &HashMap<i64, i64>) -> usize {
+    let mut depth = 0;
+    let mut parent = event.retval;
+    let mut visited = HashSet::new();
+    while parent > 0 && depth < 8 && visited.insert(parent) {
+        depth += 1;
+        parent = parents.get(&parent).copied().unwrap_or_default();
+    }
+    depth
 }
 
 #[function_component(App)]
@@ -690,7 +732,7 @@ pub fn app() -> Html {
                                 let response = query(&sql, 10_000).await?;
                                 let projected_glyphs = response.rows.len()
                                     * if matches!(current_mode, TrackMode::CpuPid) {
-                                        2
+                                        4
                                     } else {
                                         1
                                     };
@@ -752,6 +794,26 @@ pub fn app() -> Html {
                                         response.rows.iter().map(|row| TraceEvent::from_row(row)),
                                     );
                                     partial |= response.truncated;
+                                }
+                                if matches!(current_mode, TrackMode::CpuPid) {
+                                    for semantic_track in ["rpc", "resource"] {
+                                        let response = query(
+                                            &density_sql(
+                                                &current_filters,
+                                                coverage,
+                                                semantic_track,
+                                            ),
+                                            10_000,
+                                        )
+                                        .await?;
+                                        rows.extend(
+                                            response
+                                                .rows
+                                                .iter()
+                                                .map(|row| TraceEvent::from_row(row)),
+                                        );
+                                        partial |= response.truncated;
+                                    }
                                 }
                                 let overlays =
                                     query(&overlay_sql(&current_filters, coverage), 2_000).await?;
@@ -1312,6 +1374,117 @@ pub fn app() -> Html {
             .collect();
     }
 
+    let render_agent = *dock_open && *active_dock == "agent";
+    let mut visible_agent_spans = if render_agent {
+        events
+            .iter()
+            .filter(|event| {
+                event.event == 645 && event.start < range.end && event.end > range.start
+            })
+            .cloned()
+            .collect::<Vec<_>>()
+    } else {
+        Vec::new()
+    };
+    visible_agent_spans.sort_by(|left, right| left.start.total_cmp(&right.start));
+    let agent_parents = visible_agent_spans
+        .iter()
+        .map(|event| (event.arg0, event.retval))
+        .collect::<HashMap<_, _>>();
+    let selected_agent = selection
+        .as_ref()
+        .and_then(|selected| selected.event.as_ref())
+        .filter(|event| event.event == 645)
+        .cloned();
+    let selected_agent_id = selected_agent.as_ref().map(|event| event.arg0);
+    let agent_nodes = visible_agent_spans
+        .iter()
+        .map(|event| {
+            let event_copy = event.clone();
+            let selection = selection.clone();
+            let depth = agent_depth(event, &agent_parents);
+            let selected = selected_agent_id == Some(event.arg0);
+            html! {
+              <button class={classes!("agent-node",selected.then_some("selected"))}
+                data-agent-span={event.arg0.to_string()}
+                aria-label={format!("Select agent span {} {}",event.arg0,event.name)}
+                style={format!("padding-left:{}px",8+depth*18)}
+                onclick={Callback::from(move |_| selection.set(Some(Selection {
+                    range: Range { start:event_copy.start,end:event_copy.end },
+                    event:Some(event_copy.clone()),
+                })))}>
+                <span>{if depth==0 {"◆"} else {"↳"}}</span>
+                {format!(" {} · {:.3} ms",event.name,event.duration*1000.0)}
+              </button>
+            }
+        })
+        .collect::<Vec<_>>();
+    let context_range = selected_agent
+        .as_ref()
+        .map(|event| Range {
+            start: event.start,
+            end: event.end,
+        })
+        .unwrap_or(*range);
+    let related_rpcs = if render_agent {
+        events
+            .iter()
+            .filter(|event| {
+                event.rpc > 0 && event.start < context_range.end && event.end > context_range.start
+            })
+            .take(32)
+            .cloned()
+            .collect::<Vec<_>>()
+    } else {
+        Vec::new()
+    };
+    let related_resources = if render_agent {
+        events
+            .iter()
+            .filter(|event| {
+                event.category == "resource"
+                    && event.start < context_range.end
+                    && event.end > context_range.start
+            })
+            .take(32)
+            .cloned()
+            .collect::<Vec<_>>()
+    } else {
+        Vec::new()
+    };
+    let annotations = selected_agent_id
+        .map(|span_id| {
+            events
+                .iter()
+                .filter(|event| event.category == "annotation" && event.retval == span_id)
+                .take(32)
+                .cloned()
+                .collect::<Vec<_>>()
+        })
+        .unwrap_or_default();
+    let context_sql = selected_agent.as_ref().map(|event| {
+        format!(
+            "SELECT ts,dur,cpu,pid,rpc,event,name,category,arg0,retval,ipc\n\
+             FROM events\n\
+             WHERE ts < {end} AND ts_end > {start}\n\
+             ORDER BY ts,dur DESC\n\
+             LIMIT 1000",
+            start = event.start,
+            end = event.end
+        )
+    });
+    let open_agent_context = {
+        let sql = sql.clone();
+        let active_dock = active_dock.clone();
+        let statement = context_sql.clone();
+        Callback::from(move |_| {
+            if let Some(statement) = &statement {
+                sql.set(statement.clone());
+                active_dock.set("sql".to_owned());
+            }
+        })
+    };
+
     let search_matches = if search.is_empty() {
         0
     } else {
@@ -1364,7 +1537,7 @@ pub fn app() -> Html {
         </div><div class="search-tools"><label>{"Find "}<input id="trace-search" type="search" value={(*search).clone()} oninput={{let search=search.clone(); Callback::from(move |event: InputEvent| search.set(event.target_unchecked_into::<HtmlInputElement>().value()))}}/></label><button id="search-invert" aria-pressed={search_invert.to_string()} onclick={{let value=search_invert.clone(); Callback::from(move |_| value.set(!*value))}}>{"Not"}</button><span id="search-count" class="muted">{if search.is_empty() {String::new()} else {format!("{search_matches} matches")}}</span></div>
         <div class="range-controls"><button id="pan-left" onclick={navigate("pan-left")}>{"←"}</button><button id="zoom-out" onclick={navigate("zoom-out")}>{"−"}</button><button id="reset-range" onclick={navigate("reset")}>{"Fit"}</button><button id="zoom-in" onclick={navigate("zoom-in")}>{"+"}</button><button id="pan-right" onclick={navigate("pan-right")}>{"→"}</button></div></div>
         <main>
-          <aside class="track-sidebar"><section><h2>{"Tracks"}</h2><label class="field-label">{"Group by"}<select id="track-mode" value={track_mode.value()} onchange={{let track_mode=track_mode.clone(); let highlighted=highlighted.clone(); Callback::from(move |event: Event| {let value=event.target_unchecked_into::<HtmlSelectElement>().value(); track_mode.set(match value.as_str(){"cpu"=>TrackMode::Cpu,"pid"=>TrackMode::Pid,_=>TrackMode::CpuPid}); highlighted.set(HashSet::new());})}}><option value="cpu_pid" selected={*track_mode==TrackMode::CpuPid}>{"KUtrace CPU + PID"}</option><option value="cpu" selected={*track_mode==TrackMode::Cpu}>{"CPU cores"}</option><option value="pid" selected={*track_mode==TrackMode::Pid}>{"Process / thread"}</option></select></label><div class="track-groups"><button class="track-group active" data-track-group="cpu">{"▾ CPUs"}</button><button class="track-group active" data-track-group="process">{"▾ Processes"}</button></div><div id="cpu-controls" class="cpu-controls" hidden=true><button id="previous-cpus">{"↑"}</button><span id="cpu-window"></span><button id="next-cpus">{"↓"}</button></div></section>
+          <aside class="track-sidebar"><section><h2>{"Tracks"}</h2><label class="field-label">{"Group by"}<select id="track-mode" value={track_mode.value()} onchange={{let track_mode=track_mode.clone(); let highlighted=highlighted.clone(); Callback::from(move |event: Event| {let value=event.target_unchecked_into::<HtmlSelectElement>().value(); track_mode.set(match value.as_str(){"cpu"=>TrackMode::Cpu,"pid"=>TrackMode::Pid,_=>TrackMode::CpuPid}); highlighted.set(HashSet::new());})}}><option value="cpu_pid" selected={*track_mode==TrackMode::CpuPid}>{"KUtrace groups"}</option><option value="cpu" selected={*track_mode==TrackMode::Cpu}>{"CPU cores"}</option><option value="pid" selected={*track_mode==TrackMode::Pid}>{"Process / thread"}</option></select></label><div class="track-groups"><button class="track-group active" data-track-group="cpu">{"▾ CPUs"}</button><button class="track-group active" data-track-group="process">{"▾ Processes"}</button><button class="track-group active" data-track-group="rpc">{"▾ RPCs"}</button><button class="track-group active" data-track-group="resource">{"▾ Resources & queues"}</button></div></section>
           <section><h2>{"Display"}</h2><div class="display-toggles">{for [("marks","Mark"),("arcs","Arc"),("locks","Lock"),("frequency","Freq"),("ipc","IPC"),("samples","Samp"),("colorblind","CB")].map(|(key,label)| {let overlays_handle=overlays.clone(); let pressed=overlay_value(*overlays,key); html!{<button data-overlay={key} aria-pressed={pressed.to_string()} onclick={Callback::from(move |_| overlays_handle.set(toggle_overlay(*overlays_handle,key)))}>{label}</button>}})}</div></section>
           <section><h2>{"Composable filters"}</h2><div class="filter-form"><select id="filter-field" value={(*filter_field).clone()} onchange={{let value=filter_field.clone();Callback::from(move |event:Event|value.set(event.target_unchecked_into::<HtmlSelectElement>().value()))}}>{for ["category","cpu","pid","event","rpc","name"].map(|field|html!{<option value={field} selected={*filter_field==field}>{field}</option>})}</select><select id="filter-op" value={(*filter_op).clone()} onchange={{let value=filter_op.clone();Callback::from(move |event:Event|value.set(event.target_unchecked_into::<HtmlSelectElement>().value()))}}><option value="=" selected={*filter_op=="="}>{"is"}</option><option value="!=" selected={*filter_op=="!="}>{"is not"}</option><option value="contains" selected={*filter_op=="contains"}>{"contains"}</option><option value=">=" selected={*filter_op==">="}>{"≥"}</option><option value="<=" selected={*filter_op=="<="}>{"≤"}</option></select><input id="filter-value" value={(*filter_value).clone()} oninput={{let value=filter_value.clone();Callback::from(move |event:InputEvent|value.set(event.target_unchecked_into::<HtmlInputElement>().value()))}}/><button id="add-filter" onclick={add_filter}>{"Add filter"}</button></div><div id="filter-chips" class="chips">{for filters.iter().enumerate().map(|(index,filter)|{let filters=filters.clone();html!{<span class="chip">{format!("{} {} {}",filter.field,filter.op,filter.value)}<button data-remove={index.to_string()} onclick={Callback::from(move |_|{let mut next=(*filters).clone();next.remove(index);filters.set(next)})}>{"×"}</button></span>}})}</div></section>
           <section><h2>{"Saved SQL views"}</h2><div class="saved-view-form"><input id="view-name" maxlength="80" placeholder="Slow syscalls" value={(*view_name).clone()} oninput={{let view_name=view_name.clone();Callback::from(move |event:InputEvent|view_name.set(event.target_unchecked_into::<HtmlInputElement>().value()))}}/><button id="save-view" onclick={save_view}>{"Save current query"}</button></div><div id="saved-views" class={classes!("saved-views",saved_views.is_empty().then_some("muted"))}>{saved_view_rows}</div></section><section><button id="show-schema" onclick={show_schema}>{"Inspect SQL schema"}</button></section></aside>
@@ -1378,7 +1551,7 @@ pub fn app() -> Html {
               <section class={classes!("dock-panel",(*active_dock=="details").then_some("active"))} data-dock-panel="details"><div id="selection-summary" class="selection-summary">{selection.as_ref().map(|selected|if let Some(event)=&selected.event{format!("{} · {} · {:.6}s · {:.3} ms",event.name,event.category,event.start,event.duration*1000.0)}else{format!("Selected {}",range_label(selected.range))}).unwrap_or_else(||"Select an event or drag across tracks to inspect a region.".to_owned())}</div><div class="section-head"><h2>{"Events"}</h2><span id="event-count">{format!("{}{} rows",events.len(),if *timeline_truncated{"+"}else{""})}</span></div><div class="table-wrap"><table id="event-table"><thead><tr>{for ["ts","dur","cpu","pid","event","name","category","arg0","retval","ipc"].map(|name|html!{<th>{name}</th>})}</tr></thead><tbody>{for events.iter().take(500).map(|event|html!{<tr><td>{event.start}</td><td>{event.duration}</td><td>{event.cpu}</td><td>{event.pid}</td><td>{event.event}</td><td>{event.name.clone()}</td><td>{event.category.clone()}</td><td>{event.arg0}</td><td>{event.retval}</td><td>{event.ipc}</td></tr>})}</tbody></table></div></section>
               <section class={classes!("dock-panel",(*active_dock=="flamegraph").then_some("active"))} data-dock-panel="flamegraph"><div class="section-head"><div><h2>{"Callchain flamegraph"}</h2><span id="flame-range">{range_label(flame_range)}</span></div><div class="flame-tools"><select id="flame-weight" value={(*flame_weight).clone()} disabled={callchain_samples>0} onchange={{let value=flame_weight.clone();Callback::from(move |event:Event|value.set(event.target_unchecked_into::<HtmlSelectElement>().value()))}}><option value="duration" selected={*flame_weight=="duration"}>{"Duration"}</option><option value="count" selected={*flame_weight=="count"}>{"Event count"}</option></select><span id="flame-status" class="muted">{if callchain_samples>0{format!("{} · depth {}",*profile_status,callchain_depth)}else{format!("{} spans · {} · no sampled callchains",events.len(),*flame_weight)}}</span></div></div><p class="panel-note">{if callchain_samples>0{"Post-capture Blazesym callchains, weighted by samples."}else{"No optional sampled callchains in this trace; showing the event hierarchy fallback."}}</p><div id="flamegraph" class="flamegraph" style={format!("height:{}px",if callchain_samples>0{((callchain_depth+2)*29).max(120)}else{240})}><button class="flame-frame" data-flame-frame="true" data-flame-level="root" style="left:0%;top:2px;width:100%;background:#9fb7d7">{if callchain_samples>0{format!("root · {callchain_samples} samples")}else{format!("root · {} spans",events.len())}}</button>{for flame_frames}</div></section>
               <section class={classes!("dock-panel","sql-card",(*active_dock=="sql").then_some("active"))} data-dock-panel="sql"><div class="section-head"><div><h2>{"SQL notebook"}</h2><span>{"Read-only · result limit 10,000"}</span></div><button id="run-sql" onclick={run_sql}>{"Run query"}</button></div><textarea id="sql" value={(*sql).clone()} oninput={{let sql=sql.clone();Callback::from(move |event:InputEvent|sql.set(event.target_unchecked_into::<HtmlTextAreaElement>().value()))}}/><div id="query-status" class="muted">{if error.is_empty(){(*sql_status).clone()}else{(*error).clone()}}</div><div class="table-wrap"><DataTable id="query-table" response={(*sql_result).clone()}/></div></section>
-              <section class={classes!("dock-panel","agent-panel",(*active_dock=="agent").then_some("active"))} data-dock-panel="agent"><div class="agent-grid"><section><h2>{"Agent call tree"}</h2><div id="agent-tree" class="tree muted">{"Agent spans remain queryable; the timeline is intentionally a human system-trace view."}</div></section><section><h2>{"RPC flows"}</h2><div id="rpc-flows" class="tree muted">{"Open SQL to inspect rpc_activity."}</div><h2>{"Resources & queues"}</h2><div id="resource-activity" class="tree muted">{"Open SQL to inspect resource_activity."}</div></section></div><section class="agent-context-card"><span id="agent-context-title">{"Select an agent span"}</span><span id="agent-context-count"></span><button id="open-agent-context" disabled=true>{"Open SQL"}</button><div id="agent-annotations"></div><pre id="agent-context-sql"></pre><table id="agent-context-table"></table></section></section>
+              <section class={classes!("dock-panel","agent-panel",(*active_dock=="agent").then_some("active"))} data-dock-panel="agent"><div class="agent-grid"><section><h2>{"Agent call tree"}</h2><div id="agent-tree" class={classes!("tree",agent_nodes.is_empty().then_some("muted"))}>{if agent_nodes.is_empty(){html!{"No agent spans overlap the viewport."}}else{html!{<>{for agent_nodes}</>}}}</div></section><section><h2>{"RPC flows"}</h2><div id="rpc-flows" class={classes!("tree",related_rpcs.is_empty().then_some("muted"))}>{if related_rpcs.is_empty(){html!{"No overlapping RPC activity."}}else{html!{<>{for related_rpcs.iter().map(|event|html!{<div class="relation-row" data-related-rpc={event.rpc.to_string()}><b>{format!("RPC {}",event.rpc)}</b>{format!(" · {} · {:.3} ms",event.name,event.duration*1000.0)}</div>})}</>}}}</div><h2>{"Resources & queues"}</h2><div id="resource-activity" class={classes!("tree",related_resources.is_empty().then_some("muted"))}>{if related_resources.is_empty(){html!{"No overlapping resource activity."}}else{html!{<>{for related_resources.iter().map(|event|html!{<div class="relation-row" data-related-resource={event.arg0.to_string()}><b>{format!("RES {}",event.arg0)}</b>{format!(" · {} · {:.3} ms",event.name,event.duration*1000.0)}</div>})}</>}}}</div></section></div><section class="agent-context-card"><div class="context-actions"><span id="agent-context-title">{selected_agent.as_ref().map(|event|format!("{} · span {}",event.name,event.arg0)).unwrap_or_else(||"Select an agent span".to_owned())}</span><span id="agent-context-count" class="muted">{selected_agent.as_ref().map(|_|format!("{} annotations · {} RPC rows · {} resource rows",annotations.len(),related_rpcs.len(),related_resources.len())).unwrap_or_default()}</span><button id="open-agent-context" disabled={selected_agent.is_none()} onclick={open_agent_context}>{"Open SQL"}</button></div><div id="agent-annotations" class="annotation-list">{for annotations.iter().map(|event|html!{<span class="annotation-pill" data-annotation-kind={event.name.split('.').nth(1).unwrap_or("annotation").to_owned()}><b>{event.name.split('.').nth(1).unwrap_or("annotation")}</b>{format!(" · {} · value {}",event.name,event.arg0)}</span>})}</div><details open={selected_agent.is_some()}><summary>{"Exact bounded query"}</summary><pre id="agent-context-sql">{context_sql.clone().unwrap_or_default()}</pre></details><div class="table-wrap"><table id="agent-context-table"><thead><tr>{for ["ts","dur","cpu","pid","rpc","event","name"].map(|name|html!{<th>{name}</th>})}</tr></thead><tbody>{for events.iter().filter(|event|selected_agent.as_ref().is_some_and(|agent|event.start<agent.end&&event.end>agent.start)).take(100).map(|event|html!{<tr><td>{event.start}</td><td>{event.duration}</td><td>{event.cpu}</td><td>{event.pid}</td><td>{event.rpc}</td><td>{event.event}</td><td>{event.name.clone()}</td></tr>})}</tbody></table></div></section></section>
             </div></section>
           </section>
           <section id="legacy-view" class={classes!("view-pane","legacy-pane",(*active_view=="legacy").then_some("active"))} hidden={*active_view!="legacy"}><div class="legacy-head"><div><h2>{"Exact KUtrace viewer"}</h2><span>{"Original renderer"}</span></div><a href="/legacy" target="_blank">{"Open standalone ↗"}</a></div><iframe id="legacy-frame" title="Exact KUtrace viewer" data-src="/legacy" src={if *legacy_loaded {Some("/legacy")} else {None}}></iframe></section>

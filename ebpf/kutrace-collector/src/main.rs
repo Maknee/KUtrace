@@ -56,6 +56,35 @@ struct ExternalProbe {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
+struct MappedModuleProbe {
+    module: String,
+    symbol: String,
+    label: String,
+}
+
+impl FromStr for MappedModuleProbe {
+    type Err = String;
+
+    fn from_str(value: &str) -> std::result::Result<Self, Self::Err> {
+        let (target, label) = value
+            .split_once('=')
+            .map_or((value, None), |(target, label)| (target, Some(label)));
+        let Some((module, symbol)) = target.rsplit_once(':') else {
+            return Err("expected MODULE:SYMBOL[=LABEL]".to_owned());
+        };
+        let label = label.unwrap_or(symbol);
+        if module.is_empty() || symbol.is_empty() || label.is_empty() {
+            return Err("module, symbol, and label must be nonempty".to_owned());
+        }
+        Ok(Self {
+            module: module.to_owned(),
+            symbol: symbol.to_owned(),
+            label: label.to_owned(),
+        })
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
 struct KernelFunctionProbe {
     symbol: String,
     label: String,
@@ -202,6 +231,10 @@ struct Args {
     /// BINARY:@HEX_FILE_OFFSET=LABEL form.
     #[arg(long = "uprobe", value_name = "BINARY:SYMBOL|@OFFSET[=LABEL]")]
     uprobes: Vec<ExternalProbe>,
+    /// Repeatable probe resolved from an executable module already mapped by
+    /// --pid, for example libc.so.6:pthread_mutex_lock=lock.
+    #[arg(long = "uprobe-module", value_name = "MODULE:SYMBOL[=LABEL]")]
+    uprobe_modules: Vec<MappedModuleProbe>,
     /// Repeatable paired USDT span in BINARY:PROVIDER:BEGIN:END[=LABEL] form.
     #[arg(long = "usdt", value_name = "BINARY:PROVIDER:BEGIN:END[=LABEL]")]
     usdts: Vec<UsdtProbe>,
@@ -756,6 +789,79 @@ fn attach_agent_probes(
     Ok(())
 }
 
+fn mapped_module_path(pid: u32, module: &str) -> Result<PathBuf> {
+    let maps_path = format!("/proc/{pid}/maps");
+    let maps = std::fs::read_to_string(&maps_path).with_context(|| format!("read {maps_path}"))?;
+    let mut matches = maps
+        .lines()
+        .filter_map(|line| {
+            let mut fields = line.split_whitespace();
+            fields.next()?;
+            let permissions = fields.next()?;
+            fields.next()?;
+            fields.next()?;
+            fields.next()?;
+            let raw_path = fields.collect::<Vec<_>>().join(" ");
+            if !permissions.contains('x') || !raw_path.starts_with('/') {
+                return None;
+            }
+            let path = PathBuf::from(
+                raw_path
+                    .strip_suffix(" (deleted)")
+                    .unwrap_or(raw_path.as_str()),
+            );
+            let exact_basename = path.file_name().is_some_and(|name| name == module);
+            (exact_basename || path.to_string_lossy().ends_with(module)).then_some(path)
+        })
+        .collect::<Vec<_>>();
+    matches.sort();
+    matches.dedup();
+    match matches.as_slice() {
+        [path] => Ok(path.clone()),
+        [] => bail!(
+            "module {module:?} is not an executable mapping in PID {pid}; attach after the library is loaded"
+        ),
+        _ => bail!(
+            "module {module:?} is ambiguous in PID {pid}: {}",
+            matches
+                .iter()
+                .map(|path| path.display().to_string())
+                .collect::<Vec<_>>()
+                .join(", ")
+        ),
+    }
+}
+
+fn resolve_mapped_module_probes(
+    probes: &[MappedModuleProbe],
+    pid: u32,
+) -> Result<Vec<ExternalProbe>> {
+    if probes.is_empty() {
+        return Ok(Vec::new());
+    }
+    if pid == 0 {
+        bail!("--uprobe-module requires a nonzero --pid");
+    }
+    probes
+        .iter()
+        .map(|probe| {
+            let binary = mapped_module_path(pid, &probe.module)?;
+            eprintln!(
+                "resolved mapped module probe: {} -> {}:{} as {}",
+                probe.module,
+                binary.display(),
+                probe.symbol,
+                probe.label
+            );
+            Ok(ExternalProbe {
+                binary,
+                location: ExternalProbeLocation::Symbol(probe.symbol.clone()),
+                label: probe.label.clone(),
+            })
+        })
+        .collect()
+}
+
 fn attach_kernel_function_probe(bpf: &mut Ebpf, probe: Option<&KernelFunctionProbe>) -> Result<()> {
     let Some(probe) = probe else {
         return Ok(());
@@ -1180,6 +1286,10 @@ async fn main() -> Result<()> {
         bail!("sampled stack capture is currently supported only on x86_64");
     }
     let mut external_probes = args.uprobes.clone();
+    external_probes.extend(resolve_mapped_module_probes(
+        &args.uprobe_modules,
+        args.pid,
+    )?);
     if let (Some(binary), Some(symbol)) = (&args.uprobe_binary, &args.uprobe_symbol) {
         external_probes.push(ExternalProbe {
             binary: binary.clone(),
@@ -1609,6 +1719,24 @@ mod tests {
         assert_eq!(default_label.label, "do_nanosleep");
         assert!("=empty".parse::<KernelFunctionProbe>().is_err());
         assert!("empty=".parse::<KernelFunctionProbe>().is_err());
+    }
+
+    #[test]
+    fn parses_mapped_module_probe_spec() {
+        let probe: MappedModuleProbe = "libc.so.6:pthread_mutex_lock=sync.lock".parse().unwrap();
+        assert_eq!(
+            probe,
+            MappedModuleProbe {
+                module: "libc.so.6".to_owned(),
+                symbol: "pthread_mutex_lock".to_owned(),
+                label: "sync.lock".to_owned(),
+            }
+        );
+        let default_label: MappedModuleProbe = "libm.so.6:cos".parse().unwrap();
+        assert_eq!(default_label.label, "cos");
+        assert!("libc.so.6".parse::<MappedModuleProbe>().is_err());
+        assert!(":symbol".parse::<MappedModuleProbe>().is_err());
+        assert!("libc.so.6:".parse::<MappedModuleProbe>().is_err());
     }
 
     #[test]

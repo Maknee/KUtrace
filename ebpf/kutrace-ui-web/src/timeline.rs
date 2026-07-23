@@ -97,11 +97,15 @@ fn category_fill(category: &str, colorblind: bool) -> &'static str {
         ("syscall", true) => "#009e73",
         ("kernel", true) => "#e69f00",
         ("scheduler", true) => "#d55e00",
+        ("rpc", true) => "#0072b2",
+        ("resource", true) => "#f0e442",
         ("user", true) => "#56b4e9",
         ("agent" | "annotation" | "mark", false) => "#d783ff",
         ("syscall", false) => "#53d6a5",
         ("kernel", false) => "#ffb454",
         ("scheduler", false) => "#f07178",
+        ("rpc", false) => "#4f71c6",
+        ("resource", false) => "#c94e86",
         ("user", false) => "#6ea8fe",
         _ => "#7d899c",
     }
@@ -110,6 +114,8 @@ fn category_fill(category: &str, colorblind: bool) -> &'static str {
 fn track_keys(events: &[TraceEvent], mode: TrackMode, range: Range) -> Vec<String> {
     let mut cpus = BTreeSet::new();
     let mut pids = BTreeSet::new();
+    let mut rpcs = BTreeSet::new();
+    let mut resources = BTreeSet::new();
     for event in events {
         if event.duration <= 0.0 || event.start >= range.end || event.end <= range.start {
             continue;
@@ -127,9 +133,27 @@ fn track_keys(events: &[TraceEvent], mode: TrackMode, range: Range) -> Vec<Strin
             {
                 pids.insert(pid);
             }
+            if let Some(rpc) = track
+                .strip_prefix("rpc:")
+                .and_then(|value| value.parse().ok())
+            {
+                rpcs.insert(rpc);
+            }
+            if let Some(resource) = track
+                .strip_prefix("resource:")
+                .and_then(|value| value.parse().ok())
+            {
+                resources.insert(resource);
+            }
         } else if event.pid > 0 && event.cpu >= 0 {
             cpus.insert(event.cpu);
             pids.insert(event.pid);
+        }
+        if event.rpc > 0 {
+            rpcs.insert(event.rpc);
+        }
+        if event.category == "resource" && event.arg0 >= 0 {
+            resources.insert(event.arg0);
         }
     }
     match mode {
@@ -138,6 +162,13 @@ fn track_keys(events: &[TraceEvent], mode: TrackMode, range: Range) -> Vec<Strin
             .take(64)
             .map(|cpu| format!("cpu:{cpu}"))
             .chain(pids.into_iter().take(64).map(|pid| format!("pid:{pid}")))
+            .chain(rpcs.into_iter().take(64).map(|rpc| format!("rpc:{rpc}")))
+            .chain(
+                resources
+                    .into_iter()
+                    .take(64)
+                    .map(|resource| format!("resource:{resource}")),
+            )
             .collect(),
         TrackMode::Cpu => cpus
             .into_iter()
@@ -157,6 +188,10 @@ fn track_label(track: &str) -> String {
         format!("CPU {cpu}")
     } else if let Some(pid) = track.strip_prefix("pid:") {
         format!("PID {pid}")
+    } else if let Some(rpc) = track.strip_prefix("rpc:") {
+        format!("RPC {rpc}")
+    } else if let Some(resource) = track.strip_prefix("resource:") {
+        format!("RES {resource}")
     } else {
         track.to_owned()
     }
@@ -204,7 +239,7 @@ pub fn timeline(props: &TimelineProps) -> Html {
         .collect();
     let height = (tracks.len().max(1) as f64 * ROW_HEIGHT + 20.0).max(240.0);
     let track_groups = match props.mode {
-        TrackMode::CpuPid => "cpu,pid",
+        TrackMode::CpuPid => "cpu,pid,rpc,resource",
         TrackMode::Cpu => "cpu",
         TrackMode::Pid => "pid",
     };
@@ -243,6 +278,16 @@ pub fn timeline(props: &TimelineProps) -> Html {
                 targets.push(format!("pid:{}", event.pid));
             }
         }
+        if matches!(props.mode, TrackMode::CpuPid) {
+            if event.rpc > 0 {
+                targets.push(format!("rpc:{}", event.rpc));
+            }
+            if event.category == "resource" && event.arg0 >= 0 {
+                targets.push(format!("resource:{}", event.arg0));
+            }
+        }
+        targets.sort();
+        targets.dedup();
         for track in targets {
             if let Some(index) = row_index.get(track.as_str()).copied() {
                 rendered_events.push((track, index, event));
@@ -563,7 +608,7 @@ pub fn overview(props: &OverviewProps) -> Html {
     html! {
       <div class="overview-shell" aria-label="Full trace overview">
         <svg id="overview" viewBox="0 0 1000 32" preserveAspectRatio="none" {onclick}>
-          <rect x="0" y="0" width="1000" height="32" fill="#080b11"/>
+          <rect x="0" y="0" width="1000" height="32" fill="#ffffff"/>
           {for counts.iter().enumerate().map(|(index, count)| {
               let h = (*count as f64 / *max * 28.0).max(if *count > 0 {1.0} else {0.0});
               html!{<rect x={(index as f64*5.0).to_string()} y={(32.0-h).to_string()} width="5.2" height={h.to_string()} fill={if props.colorblind {"#56b4e9"} else {"#5f91df"}}/>}

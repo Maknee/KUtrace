@@ -1,0 +1,4 @@
+interface:
+  display_name: "Debug with KUtrace"
+  short_description: "Navigate and query KUtrace system traces"
+  default_prompt: "Use $kutrace-debug to inspect this KUtrace capture and explain the execution path."

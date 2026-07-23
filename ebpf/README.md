@@ -260,6 +260,24 @@ symbol or probe note in the target. Offsets are file offsets, not runtime virtua
 addresses, and must identify the first instruction of the function in that exact
 binary build.
 
+For a library already mapped by the target, the collector can resolve the
+module path from `/proc/<pid>/maps` rather than requiring the caller to find the
+host-specific path:
+
+```sh
+sudo ebpf/target/release/kutrace-collector \
+  --ebpf ebpf/kutrace-ebpf/target/bpfel-unknown-none/release/kutrace-ebpf \
+  --pid "$target_pid" \
+  --uprobe-module "libc.so.6:pthread_mutex_lock=pthread.mutex.lock" \
+  --output pthread.kuevents
+```
+
+Repeat `--uprobe-module MODULE:SYMBOL=LABEL` as needed. The module basename must
+resolve to exactly one executable mapping when the collector starts. On modern
+glibc, pthread entry points such as `pthread_mutex_lock` live in `libc.so.6`.
+Libraries loaded later with `dlopen` are not watched yet; use an absolute
+`--uprobe` path after the module is present or restart the collector.
+
 One arbitrary traceable kernel function can be captured as the same paired,
 labeled span by attaching a kprobe and kretprobe:
 
@@ -308,9 +326,9 @@ counts when multiple collectors start or stop concurrently without holding the
 lock for the trace duration. Repeat `--usdt` for multiple pairs; external
 uprobes and USDT pairs share the 64-label limit.
 
-`verify_uprobe.sh` proves both paths against an uninstrumented recursive
-fixture. It then strips every symbol from a copy and repeats the 400-span
-100-root/300-child assertion by absolute offset:
+`verify_uprobe.sh` proves both executable attachment paths against an
+uninstrumented recursive fixture. It then strips every symbol from a copy and
+repeats the 400-span 100-root/300-child assertion by absolute offset:
 
 ```sh
 make -C ebpf build build-ebpf
@@ -333,11 +351,16 @@ ebpf/verify_usdt.sh
 ```
 
 Run all dynamic-attachment integration gates against freshly built example
-programs and a live kernel function with:
+programs, a mapped pthread function, paired USDT sites, and a live kernel
+function with:
 
 ```sh
 make -C ebpf verify-dynamic-probes
 ```
+
+The mapped-library gate calls the real `pthread_mutex_lock` ABI 200 times,
+resolves it from the fixture's executable `libc.so.6` mapping, and requires 200
+positive-duration spans, strict version-3 JSON, and zero BPF/probe loss.
 
 The isolated generic-kprobe timing benchmark is also reproducible:
 

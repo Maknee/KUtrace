@@ -14,9 +14,11 @@ not the implementation of the modern timeline.
 
 Agent data is deliberately not the main visualization. It is supporting
 evidence that a person can correlate with scheduling, system calls, RPC,
-resource activity, and sampled stacks. A future MCP or skill should consume
-the structured query and trace APIs; it should not infer system behavior from
-screenshots of this human interface.
+resource activity, and sampled stacks. The repository skill at
+`.agents/skills/kutrace-debug` consumes the structured query API and drives the
+same browser viewport for reproducible human inspection; it does not infer
+system behavior from screenshots of this interface. A future MCP can use the
+same bounded read-only contract.
 
 ## Interaction and rendering
 
@@ -32,9 +34,9 @@ screenshots of this human interface.
   and pointer capture keeps a drag attached to the timeline even when it crosses
   event glyphs. The drag overlay is updated directly, without reconciling the
   event tree for every mouse move.
-- Shift-click toggles the clicked CPU or PID row in the highlight set. CPU and
-  PID rows are derived only from visible positive-duration process spans, so
-  empty cores are not fabricated.
+- Shift-click toggles the clicked CPU, PID, RPC, or resource row in the
+  highlight set. Rows are derived only from visible positive-duration spans,
+  so empty cores and inactive identities are not fabricated.
 - Marks, samples, wakeups, lock rails, CPU frequency, IPC, idle/wait lines, and
   KUtrace user-mode inner stripes are vector overlays on the same time domain.
 - The overview, timeline, selection, details, flamegraph, and SQL notebook share
@@ -82,9 +84,11 @@ Each legacy ten-element event becomes one indexed `events` row:
 | 8 | `ipc` | Packed IPC/LLC sample |
 | 9 | `name` | Human-readable label |
 
-`ts_end` and `category` are derived during import. Composite indexes cover
-time, CPU, PID, category, event, RPC, return value, and name access. The schema
-also exposes `agent_spans`, `agent_annotations`, `rpc_activity`,
+`ts_end` and `category` are derived during import. The combined KUtrace view
+derives aligned CPU, PID, RPC, and resource lanes from the current range, with
+the same exact spans represented on each applicable lane. Composite indexes
+cover time, CPU, PID, category, event, RPC, return value, and name access. The
+schema also exposes `agent_spans`, `agent_annotations`, `rpc_activity`,
 `resource_activity`, and `event_summary` views.
 
 All browser SQL is read-only, limited to at most 50,000 returned rows by the
@@ -138,7 +142,10 @@ symbolized-stack fixture. Chromium and Firefox verify the Yew/WASM entry point,
 absence of the retired `/app.js`, SVG rendering, repeated held-key updates,
 wheel zoom, Alt-drag pan, selection, Shift highlighting, Escape, filters,
 search, SQL/schema inspection, saved and portable workspace state, honest
-flamegraph fallback, normalized callchains, and the separate legacy route.
+flamegraph fallback, normalized callchains, agent-span navigation and context,
+and the separate legacy route. Chromium also owns a deterministic screenshot
+baseline for the original KUtrace light visual grammar, blue labels, black
+execution rails, and aligned CPU/PID/RPC/resource lanes.
 
 ```sh
 make -C ebpf test-ui
@@ -160,7 +167,7 @@ are under [`benchmarks`](benchmarks/).
 
 The primary renderer is now a native reimplementation rather than an embedded
 legacy page. It covers the continuous KUtrace execution bands and the primary
-annotations and gestures above, but it does not claim pixel-for-pixel parity
-with every historical RPC/resource lane or every gesture in `show_cpu.html`.
-The `/legacy` route remains the exact compatibility surface while those less
-common layouts are ported.
+annotations and gestures above, including dynamically visible RPC/resource
+lanes, but it does not claim pixel-for-pixel parity with every historical
+annotation or every gesture in `show_cpu.html`. The `/legacy` route remains the
+exact compatibility surface while those less common interactions are ported.
