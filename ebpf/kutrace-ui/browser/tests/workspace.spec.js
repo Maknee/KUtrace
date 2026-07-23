@@ -518,6 +518,70 @@ test('draws original execution rails, Morse waits, lock stacks, frequency, and I
   }
 });
 
+test('renders and independently drags original notched callout bubbles and tips', async ({page, browserName}) => {
+  await page.goto('http://127.0.0.1:39134/');
+  await expect(page.locator('#trace-title')).toContainText('Draggable callout grammar fixture');
+  await waitForTimeline(page);
+
+  const timeline = page.locator('#timeline');
+  const callout = page.locator('[data-overlay-glyph="callout"]');
+  const bubble = callout.locator('[data-callout-handle="bubble"]');
+  const spike = callout.locator('[data-callout-handle="spike"]');
+  await expect(timeline).toHaveAttribute('data-callouts', '1');
+  await expect(callout).toHaveCount(1);
+  await expect(callout).toHaveAttribute('data-callout-anchor', 'cpu:0');
+  await expect(callout).toHaveAttribute('data-callout-delta-x', '120.000');
+  await expect(callout).toHaveAttribute('data-callout-delta-rows', '1.000');
+  await expect(bubble).toHaveAttribute('fill', '#fff');
+  await expect(spike).toHaveAttribute('stroke', '#000');
+  await expect(callout.locator('.callout-text')).toHaveText('LookHere');
+
+  const bubbleBox = await bubble.boundingBox();
+  expect(bubbleBox).not.toBeNull();
+  await page.mouse.move(bubbleBox.x + bubbleBox.width / 2, bubbleBox.y + bubbleBox.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(
+    bubbleBox.x + bubbleBox.width / 2 + 80,
+    bubbleBox.y + bubbleBox.height / 2 + 30,
+    {steps: 4},
+  );
+  await page.mouse.up();
+  await expect.poll(async () => Number(await callout.getAttribute('data-callout-delta-x'))).toBeGreaterThan(190);
+  await expect.poll(async () => Number(await callout.getAttribute('data-callout-delta-rows'))).toBeGreaterThan(1.5);
+  await expect(callout).toHaveAttribute('data-callout-anchor', 'cpu:0');
+
+  const timelineBox = await timeline.boundingBox();
+  expect(timelineBox).not.toBeNull();
+  const viewBoxHeight = Number((await timeline.getAttribute('viewBox')).split(' ')[3]);
+  const toClientX = logical => timelineBox.x + logical * timelineBox.width / 1400;
+  const toClientY = logical => timelineBox.y + logical * timelineBox.height / viewBoxHeight;
+  const tipX = 116 + (4.005 - 4.0) / 0.020 * (1400 - 116);
+  const targetX = 116 + (4.004 - 4.0) / 0.020 * (1400 - 116);
+  const draggedDeltaX = Number(await callout.getAttribute('data-callout-delta-x'));
+  const draggedDeltaRows = Number(await callout.getAttribute('data-callout-delta-rows'));
+  const tipY = 42 + 52 / 2 + 40 / 2;
+  await page.mouse.move(
+    toClientX(tipX + draggedDeltaX / 2),
+    toClientY(tipY + draggedDeltaRows * 52 / 2),
+  );
+  await page.mouse.down();
+  await page.mouse.move(toClientX(targetX), toClientY(120), {steps: 4});
+  await page.mouse.up();
+  await expect(callout).toHaveAttribute('data-callout-anchor', 'cpu:1');
+  await expect.poll(async () => Number(await callout.getAttribute('data-callout-time'))).toBeCloseTo(4.004, 6);
+
+  await page.locator('[data-overlay="annotate_all"]').click();
+  await expect(callout.locator('xpath=..')).toHaveAttribute('data-annotated', 'false');
+  await page.locator('[data-overlay="annotate_all"]').click();
+
+  if (browserName === 'chromium') {
+    await expect(page.locator('.timeline-card')).toHaveScreenshot('callout-glyphs.png', {
+      animations: 'disabled',
+      caret: 'hide',
+    });
+  }
+});
+
 test('uses a real bounded density summary and preserves CPU/PID rows', async ({page}) => {
   let sawMipmap = false;
   let sawPidSummary = false;

@@ -48,6 +48,13 @@ export default defineConfig({
       url: 'http://127.0.0.1:39133/',
       reuseExistingServer: false,
       timeout: 30_000
+    },
+    {
+      command: '../../target/release/kutrace-ui tests/fixtures/callout_trace.json --database tests/fixtures/callout.sqlite --listen 127.0.0.1:39134 --rebuild',
+      cwd: '.',
+      url: 'http://127.0.0.1:39134/',
+      reuseExistingServer: false,
+      timeout: 30_000
     }
   ]
 });

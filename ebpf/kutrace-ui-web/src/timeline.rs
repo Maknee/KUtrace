@@ -26,6 +26,30 @@ pub struct Selection {
     pub event: Option<TraceEvent>,
 }
 
+#[derive(Clone, Debug, PartialEq)]
+struct CalloutPlacement {
+    anchor_time: f64,
+    anchor_track: String,
+    delta_x: f64,
+    delta_rows: f64,
+}
+
+#[derive(Clone, Copy, Debug)]
+enum CalloutDragKind {
+    Bubble,
+    Spike,
+}
+
+#[derive(Clone, Debug)]
+struct CalloutDrag {
+    event_id: i64,
+    kind: CalloutDragKind,
+    pointer_id: i32,
+    start_x: f64,
+    start_y: f64,
+    original: CalloutPlacement,
+}
+
 #[derive(Properties, PartialEq)]
 pub struct TimelineProps {
     pub events: Rc<Vec<TraceEvent>>,
@@ -276,6 +300,52 @@ fn track_label(track: &str) -> String {
 
 fn x_at(time: f64, range: Range) -> f64 {
     LABEL_WIDTH + (time - range.start) * (VIEW_WIDTH - LABEL_WIDTH) / range.span()
+}
+
+fn time_at(x: f64, range: Range) -> f64 {
+    let fraction = ((x - LABEL_WIDTH) / (VIEW_WIDTH - LABEL_WIDTH)).clamp(0.0, 1.0);
+    range.start + range.span() * fraction
+}
+
+fn rounded_rect_path(center_x: f64, center_y: f64, width: f64, height: f64) -> String {
+    let radius = height / 3.0;
+    let x = center_x - width / 2.0;
+    let y = center_y - height / 2.0;
+    format!(
+        "M {} {} h {} a {radius} {radius} 0 0 1 {radius} {radius} v {} \
+         a {radius} {radius} 0 0 1 {} {radius} h {} \
+         a {radius} {radius} 0 0 1 {} {} v {} \
+         a {radius} {radius} 0 0 1 {radius} {} z",
+        x + radius,
+        y,
+        width - 2.0 * radius,
+        height - 2.0 * radius,
+        -radius,
+        2.0 * radius - width,
+        -radius,
+        -radius,
+        2.0 * radius - height,
+        -radius
+    )
+}
+
+fn callout_spike_path(
+    center_x: f64,
+    center_y: f64,
+    tip_x: f64,
+    tip_y: f64,
+    half_width: f64,
+) -> String {
+    format!(
+        "M {} {} H {} L {} {} L {} {} Z",
+        center_x - half_width,
+        center_y,
+        center_x + half_width,
+        tip_x,
+        tip_y,
+        center_x - half_width,
+        center_y
+    )
 }
 
 fn rpc_wire_interval(event: &TraceEvent) -> Option<(f64, f64, bool, bool)> {
@@ -654,6 +724,27 @@ fn logical_x(client_x: i32, timeline: &NodeRef) -> Option<f64> {
     Some((client_x as f64 - rect.left()) * VIEW_WIDTH / rect.width())
 }
 
+fn logical_point(
+    client_x: i32,
+    client_y: i32,
+    timeline: &NodeRef,
+    height: f64,
+) -> Option<(f64, f64)> {
+    let element = timeline.cast::<Element>()?;
+    let rect = element.get_bounding_client_rect();
+    if !rect.width().is_finite()
+        || rect.width() <= f64::EPSILON
+        || !rect.height().is_finite()
+        || rect.height() <= f64::EPSILON
+    {
+        return None;
+    }
+    Some((
+        (client_x as f64 - rect.left()) * VIEW_WIDTH / rect.width(),
+        (client_y as f64 - rect.top()) * height / rect.height(),
+    ))
+}
+
 #[function_component(Timeline)]
 pub fn timeline(props: &TimelineProps) -> Html {
     // Pointer motion is kept outside component state so a selection drag does
@@ -664,6 +755,8 @@ pub fn timeline(props: &TimelineProps) -> Html {
     let suppress_click = use_mut_ref(|| false);
     let drag_overlay = use_node_ref();
     let timeline_node = use_node_ref();
+    let callout_placements = use_state(HashMap::<i64, CalloutPlacement>::new);
+    let callout_drag = use_mut_ref(|| None::<CalloutDrag>);
     let tracks = track_keys(
         &props.events,
         &props.track_catalog,
@@ -707,7 +800,18 @@ pub fn timeline(props: &TimelineProps) -> Html {
     {
         let mut targets = Vec::with_capacity(4);
         let wire_event = rpc_wire_interval(event).is_some();
-        if let Some(track) = &event.render_track {
+        let callout_event = event.event == -4;
+        if callout_event {
+            if let Some(track) = &event.render_track {
+                targets.push(track.clone());
+            } else if event.cpu >= 0 && props.groups.enabled("cpu") {
+                targets.push(format!("cpu:{}", event.cpu));
+            } else if event.pid > 0 && props.groups.enabled("pid") {
+                targets.push(format!("pid:{}", event.pid));
+            } else if event.rpc > 0 && props.groups.enabled("rpc") {
+                targets.push(format!("rpc:{}", event.rpc));
+            }
+        } else if let Some(track) = &event.render_track {
             targets.push(track.clone());
         } else if event.pid > 0 && event.cpu >= 0 {
             if wire_event {
@@ -727,10 +831,14 @@ pub fn timeline(props: &TimelineProps) -> Html {
                 }
             }
         }
-        if !wire_event && props.groups.enabled("rpc") && event.rpc > 0 {
+        if !callout_event && !wire_event && props.groups.enabled("rpc") && event.rpc > 0 {
             targets.push(format!("rpc:{}", event.rpc));
         }
-        if props.groups.enabled("resource") && event.category == "resource" && event.arg0 >= 0 {
+        if !callout_event
+            && props.groups.enabled("resource")
+            && event.category == "resource"
+            && event.arg0 >= 0
+        {
             targets.push(format!("resource:{}", event.arg0));
         }
         targets.sort();
@@ -754,6 +862,26 @@ pub fn timeline(props: &TimelineProps) -> Html {
         .filter_map(|(_, _, event)| matches!(event.event, 0x214 | 0x215).then_some(event.id))
         .collect::<HashSet<_>>()
         .len();
+    let callout_count = rendered_events
+        .iter()
+        .filter_map(|(_, _, event)| (event.event == -4).then_some(event.id))
+        .collect::<HashSet<_>>()
+        .len();
+    let mut callout_anchor_candidates = HashMap::<String, Vec<f64>>::new();
+    for (track, _, event) in &rendered_events {
+        if event.event != -4 {
+            callout_anchor_candidates
+                .entry(track.clone())
+                .or_default()
+                .push(event.start);
+        }
+    }
+    for candidates in callout_anchor_candidates.values_mut() {
+        candidates.sort_by(f64::total_cmp);
+        candidates.dedup_by(|left, right| left.total_cmp(right).is_eq());
+    }
+    let callout_anchor_candidates = Rc::new(callout_anchor_candidates);
+    let callout_tracks = Rc::new(tracks.clone());
     let mut lock_levels = HashMap::<(String, i64), usize>::new();
     let mut pending_locks = HashMap::<String, Vec<f64>>::new();
     for (track, _, event) in &rendered_events {
@@ -790,6 +918,11 @@ pub fn timeline(props: &TimelineProps) -> Html {
         for (track, _, event) in &rendered_events {
             if annotation_tracks.len() >= 64
                 || event.name.is_empty()
+                || matches!(
+                    event.event,
+                    -4 | 0x209 | 0x20a..=0x20d | 0x214 | 0x215 | 0x21c | 0x280 | 0x281
+                )
+                || event.event == 65_536
                 || !event_is_highlighted(event, &props.highlighted)
             {
                 continue;
@@ -839,10 +972,60 @@ pub fn timeline(props: &TimelineProps) -> Html {
         let suppress_click = suppress_click.clone();
         let drag_overlay = drag_overlay.clone();
         let timeline_node = timeline_node.clone();
+        let callout_drag = callout_drag.clone();
+        let callout_placements = callout_placements.clone();
+        let callout_anchor_candidates = callout_anchor_candidates.clone();
+        let callout_tracks = callout_tracks.clone();
         let range = props.range;
         let full = props.full;
         let on_range = props.on_range.clone();
         Callback::from(move |event: PointerEvent| {
+            if let Some(drag) = callout_drag.borrow().clone() {
+                if drag.pointer_id != event.pointer_id() {
+                    return;
+                }
+                if let Some((pointer_x, pointer_y)) =
+                    logical_point(event.client_x(), event.client_y(), &timeline_node, height)
+                {
+                    event.prevent_default();
+                    let mut next = (*callout_placements).clone();
+                    let placement = next
+                        .entry(drag.event_id)
+                        .or_insert_with(|| drag.original.clone());
+                    match drag.kind {
+                        CalloutDragKind::Bubble => {
+                            placement.delta_x = drag.original.delta_x + pointer_x - drag.start_x;
+                            placement.delta_rows =
+                                drag.original.delta_rows + (pointer_y - drag.start_y) / row_height;
+                        }
+                        CalloutDragKind::Spike => {
+                            if !callout_tracks.is_empty() {
+                                let row = (((pointer_y - NETWORK_BAND_HEIGHT) / row_height).floor()
+                                    as isize)
+                                    .clamp(0, callout_tracks.len() as isize - 1)
+                                    as usize;
+                                let track = callout_tracks[row].clone();
+                                let requested_time = time_at(pointer_x, range);
+                                let snapped_time = callout_anchor_candidates
+                                    .get(&track)
+                                    .and_then(|candidates| {
+                                        candidates.iter().min_by(|left, right| {
+                                            (*left - requested_time)
+                                                .abs()
+                                                .total_cmp(&(*right - requested_time).abs())
+                                        })
+                                    })
+                                    .copied()
+                                    .unwrap_or(requested_time);
+                                placement.anchor_time = snapped_time;
+                                placement.anchor_track = track;
+                            }
+                        }
+                    }
+                    callout_placements.set(next);
+                }
+                return;
+            }
             if let Some(start) = *drag_start.borrow() {
                 let basis = (*drag_origin.borrow()).unwrap_or(range);
                 if let Some(time) = pointer_time(&event, basis, &timeline_node) {
@@ -876,9 +1059,22 @@ pub fn timeline(props: &TimelineProps) -> Html {
         let suppress_click = suppress_click.clone();
         let drag_overlay = drag_overlay.clone();
         let timeline_node = timeline_node.clone();
+        let callout_drag = callout_drag.clone();
         let on_select = props.on_select.clone();
         let range = props.range;
         Callback::from(move |event: PointerEvent| {
+            if callout_drag
+                .borrow()
+                .as_ref()
+                .is_some_and(|drag| drag.pointer_id == event.pointer_id())
+            {
+                *callout_drag.borrow_mut() = None;
+                if let Some(element) = timeline_node.cast::<Element>() {
+                    element.release_pointer_capture(event.pointer_id()).ok();
+                }
+                event.prevent_default();
+                return;
+            }
             let basis = (*drag_origin.borrow()).unwrap_or(range);
             if !*drag_pan.borrow() {
                 if let (Some(a), Some(b)) = (
@@ -917,6 +1113,7 @@ pub fn timeline(props: &TimelineProps) -> Html {
         let drag_origin = drag_origin.clone();
         let suppress_click = suppress_click.clone();
         let drag_overlay = drag_overlay.clone();
+        let callout_drag = callout_drag.clone();
         Callback::from(move |_event: PointerEvent| {
             if let Some(overlay) = drag_overlay.cast::<Element>() {
                 overlay.set_attribute("visibility", "hidden").ok();
@@ -925,6 +1122,7 @@ pub fn timeline(props: &TimelineProps) -> Html {
             *drag_pan.borrow_mut() = false;
             *drag_origin.borrow_mut() = None;
             *suppress_click.borrow_mut() = false;
+            *callout_drag.borrow_mut() = None;
         })
     };
     let onwheel = {
@@ -975,7 +1173,7 @@ pub fn timeline(props: &TimelineProps) -> Html {
     html! {
       <div class="timeline-vector-shell">
         <svg id="timeline"
-          ref={timeline_node}
+          ref={timeline_node.clone()}
           class="timeline-vector"
           viewBox={format!("0 0 {VIEW_WIDTH} {height}")}
           preserveAspectRatio="none"
@@ -1008,6 +1206,7 @@ pub fn timeline(props: &TimelineProps) -> Html {
           data-rendered-events={rendered_event_count.to_string()}
           data-rpc-messages={rpc_message_count.to_string()}
           data-network-packets={network_packet_count.to_string()}
+          data-callouts={callout_count.to_string()}
           data-network-band={NETWORK_BAND_HEIGHT.to_string()}
           {onpointerdown} {onpointermove} {onpointerup} {onpointercancel} {onwheel}>
           <rect x="0" y="0" width={VIEW_WIDTH.to_string()} height={height.to_string()} fill="#fff"/>
@@ -1092,6 +1291,7 @@ pub fn timeline(props: &TimelineProps) -> Html {
                   let is_idle = event.event == 65_536;
                   let is_wait = event.event & 0x0f_ffe0 == 768;
                   let is_lock_rail = matches!(event.event, 0x282 | 0x283);
+                  let is_callout = event.event == -4;
                   let is_kernel_rail = matches!(event.category.as_str(), "kernel" | "syscall");
                   let is_user_rail = event.category == "user";
                   let rpc_wire = rpc_wire_glyph(event, row_height, props.range, props.overlays.colorblind);
@@ -1125,6 +1325,75 @@ pub fn timeline(props: &TimelineProps) -> Html {
                       Html::default()
                   };
                   let ipc_mark = ipc_visible.then(|| ipc_glyph(event,x,width,center,event_height,props.overlays.colorblind));
+                  let callout = if is_callout {
+                      let placement = callout_placements.get(&event.id).cloned().unwrap_or_else(|| CalloutPlacement {
+                          anchor_time: event.start,
+                          anchor_track: track.clone(),
+                          delta_x: event.arg0 as f64,
+                          delta_rows: event.retval as f64,
+                      });
+                      let anchor_index = row_index.get(placement.anchor_track.as_str()).copied().unwrap_or(index);
+                      let anchor_center = NETWORK_BAND_HEIGHT + anchor_index as f64 * row_height + row_height / 2.0;
+                      let tip_x = x_at(placement.anchor_time, props.range);
+                      let tip_y = anchor_center + if placement.delta_rows <= 0.0 {-event_height/2.0} else {event_height/2.0};
+                      let font_size = (event_height*0.75).clamp(18.0,32.0);
+                      let bubble_height = font_size*1.5;
+                      let bubble_width = (((event.name.chars().count()+1) as f64)*font_size*0.55+font_size/6.0).max(bubble_height*2.0);
+                      let bubble_x = tip_x + placement.delta_x;
+                      let bubble_y = tip_y + placement.delta_rows*row_height;
+                      let bubble_path = rounded_rect_path(bubble_x,bubble_y,bubble_width,bubble_height);
+                      let spike_path = callout_spike_path(bubble_x,bubble_y,tip_x,tip_y,bubble_height/4.0);
+                      let event_id = event.id;
+                      let start_drag = |kind: CalloutDragKind| {
+                          let callout_drag = callout_drag.clone();
+                          let timeline_node = timeline_node.clone();
+                          let placement = placement.clone();
+                          Callback::from(move |event: PointerEvent| {
+                              if event.button()!=0 {return;}
+                              event.stop_propagation();
+                              event.prevent_default();
+                              if let Some((start_x,start_y)) = logical_point(event.client_x(),event.client_y(),&timeline_node,height) {
+                                  if let Some(element)=timeline_node.cast::<Element>() {
+                                      element.set_pointer_capture(event.pointer_id()).ok();
+                                  }
+                                  *callout_drag.borrow_mut()=Some(CalloutDrag {
+                                      event_id,
+                                      kind,
+                                      pointer_id:event.pointer_id(),
+                                      start_x,
+                                      start_y,
+                                      original:placement.clone(),
+                                  });
+                              }
+                          })
+                      };
+                      let onspikedown = start_drag(CalloutDragKind::Spike);
+                      let onbubbledown = start_drag(CalloutDragKind::Bubble);
+                      let swallow_click = Callback::from(|event: MouseEvent| event.stop_propagation());
+                      Some(html! {
+                        <g data-overlay-glyph="callout" data-callout-id={event.id.to_string()}
+                          data-callout-anchor={placement.anchor_track.clone()}
+                          data-callout-time={format!("{:.9}",placement.anchor_time)}
+                          data-callout-delta-x={format!("{:.3}",placement.delta_x)}
+                          data-callout-delta-rows={format!("{:.3}",placement.delta_rows)}
+                          onclick={swallow_click}>
+                          <path data-callout-handle="spike" d={spike_path}
+                            fill="#fff" stroke="#000" stroke-width="2"
+                            vector-effect="non-scaling-stroke" style="cursor:crosshair"
+                            onpointerdown={onspikedown}/>
+                          <path data-callout-handle="bubble" d={bubble_path}
+                            fill="#fff" stroke="#000" stroke-width="2"
+                            vector-effect="non-scaling-stroke" style="cursor:move"
+                            onpointerdown={onbubbledown}/>
+                          <text class="callout-text" x={(bubble_x-bubble_width/2.0+font_size/12.0).to_string()}
+                            y={(bubble_y+font_size/2.0-font_size/6.0).to_string()}
+                            font-size={font_size.to_string()} font-family="sans-serif"
+                            fill="#0000aa" pointer-events="none">{event.name.clone()}</text>
+                        </g>
+                      })
+                  } else {
+                      None
+                  };
                   let (kernel_outer,kernel_background) = if event.category=="syscall" {
                       ("#808080","#e0ffe0")
                   } else if event.event&0x0f00==0x0400 || event.event&0x0f00==0x0600 {
@@ -1136,7 +1405,9 @@ pub fn timeline(props: &TimelineProps) -> Html {
                   };
                   html! {<g class="trace-event" opacity={opacity.to_string()} data-event-id={event.id.to_string()} data-annotated={annotated.to_string()} {onclick}>
                     <title>{format!("{} · {} · {} · {:.9}s · {:.2}us", if event.name.is_empty() {"(unnamed)"} else {&event.name}, event.category, track_label(&track), event.start, event.duration.max(0.0)*1e6)}</title>
-                    if is_mark {
+                    if let Some(callout) = callout {
+                      {callout}
+                    } else if is_mark {
                       <path data-overlay-glyph="mark" d={format!("M {x} {y} l -5 10 h 10 z")} fill={dark}/>
                     } else if is_sample {
                       <line data-overlay-glyph="sample" x1={x.to_string()} y1={y.to_string()} x2={x.to_string()} y2={(y+h).to_string()} stroke={dark} stroke-width="1.5"/>

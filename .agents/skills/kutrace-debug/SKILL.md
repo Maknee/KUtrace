@@ -68,9 +68,9 @@ The helper prints JSON containing the current X range, vertical row range and
 scale, visible and highlighted tracks, each group and display state, annotated
 event count, parsed search state and match count, renderer source, selection,
 quick-view slot availability, visible RPC-message/network-packet/wakeup glyph
-counts, execution-rail/wait/lock/frequency/IPC glyph counts, and agent context.
-Treat failures to find a requested span or control as failed navigation, not
-as absence of trace data.
+counts, execution-rail/wait/lock/frequency/IPC/callout glyph counts, draggable
+callout anchor/offset placement, and agent context. Treat failures to find a
+requested span or control as failed navigation, not as absence of trace data.
 
 ## Capture guidance
 

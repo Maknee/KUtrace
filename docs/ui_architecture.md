@@ -64,6 +64,11 @@ same bounded read-only contract.
   stacked held/try lock braces, frequency-opacity bands, and notched IPC
   speedometer needles. The same glyphs are derived independently for visible
   CPU and PID rows.
+  Legacy event `-4` callouts retain their original rounded white bubble,
+  dark-blue label, and triangular black notch. Dragging the bubble changes its
+  pixel/row offset without moving the tip; dragging the tip snaps the anchor to
+  the nearest event on the chosen visible track. Callout placement is exposed
+  as structured timeline state for agent navigation.
   RPC messages and kernel packet sightings use the original shared network band
   above CPU rows: receive traffic slopes backward in dark red, transmit traffic
   slopes forward in dark cyan, long messages show packetized dashes and RPC
@@ -181,8 +186,8 @@ symbolization. It is not required for normal KUtrace event tracing.
 ## Verification
 
 The Playwright suite starts release servers for an ordinary trace, a
-symbolized-stack fixture, a focused RPC-wire fixture, and a deterministic
-execution-glyph fixture. Chromium and Firefox
+symbolized-stack fixture, focused RPC-wire and execution-glyph fixtures, and a
+deterministic draggable-callout fixture. Chromium and Firefox
 verify the Yew/WASM entry point,
 absence of the retired `/app.js`, SVG rendering, repeated held-key updates,
 wheel zoom, Alt-drag pan, selection, Shift highlighting, Escape, filters,
@@ -191,9 +196,10 @@ flamegraph fallback, normalized callchains, agent-span navigation and context,
 three-state track groups, line-label highlighting, virtualized vertical
 pan/zoom, uncapped many-core navigation, directional RPC messages and packets,
 independent wakeup arcs, the original execution-rail glyph families, and the
-separate legacy route. Chromium also owns deterministic screenshot baselines
-for the original KUtrace light visual grammar, RPC wire band, and execution
-rails, including blue labels, black execution rails, and aligned
+original two-handle notched callouts, plus the separate legacy route. Chromium
+also owns deterministic screenshot baselines for the original KUtrace light
+visual grammar, RPC wire band, execution rails, and callouts, including blue
+labels, black execution rails, and aligned
 CPU/PID/RPC/resource lanes.
 
 ```sh

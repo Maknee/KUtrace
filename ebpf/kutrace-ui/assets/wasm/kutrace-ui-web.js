@@ -196,6 +196,10 @@ function __wbg_get_imports() {
             const ret = arg0[arg1 >>> 0];
             return isLikeNone(ret) ? 0 : addToExternrefTable0(ret);
         },
+        __wbg_height_96c07d9559d0200a: function(arg0) {
+            const ret = arg0.height;
+            return ret;
+        },
         __wbg_host_18450e7fb2bf2108: function(arg0) {
             const ret = arg0.host;
             return ret;

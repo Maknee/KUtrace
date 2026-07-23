@@ -19,7 +19,7 @@ comparison surface, not a substitute for reimplementation.
 | Vertical-axis pan and zoom for very large row sets | implemented | Catalog-backed virtual viewport, native Y scrolling, label-wheel zoom, explicit controls, and 128-core/128-PID browser gate |
 | Original CPU/PID/RPC/resource Y sorting rules | implemented | CPU/PID/resource IDs are numeric; RPC IDs retain first-occurrence order as in `show_cpu.html` |
 | Mark, arc, lock, frequency, IPC, sample, and color-blind controls | implemented | Original click and Shift-click multi-state cycles have Rust and Chromium/Firefox regressions |
-| User/all annotation modes and callout placement | partial | Mutually exclusive user/all modes and bounded on-canvas labels exist; original draggable/notched callout placement remains |
+| User/all annotation modes and callout placement | implemented | Mutually exclusive user/all modes retain bounded on-canvas labels; legacy event `-4` renders the original blue-on-white rounded bubble and triangular notch, with independently draggable bubble placement and a tip that snaps across visible CPU/PID/RPC rows. A real-legacy comparison plus Chromium/Firefox drag and visual regressions cover both handles |
 | Text search and inverse search | implemented | Browser search/inversion regression |
 | Duration min/max search and `CPUI`/`CPUU`/`CPUK`/`RPC`/`PID`/`RES` syntax | implemented | Inclusive nsec/µsec/msec bounds and all six documented selectors share Rust and Chromium/Firefox matching tests |
 | Search respects visible X and Y ranges | implemented | Toolbar and timeline counts are restricted to the current time and virtualized row viewport |

@@ -192,7 +192,17 @@ try {
       lockRails: await page.locator('[data-overlay-glyph="lock"]').count(),
       frequencyBands: await page.locator('[data-overlay-glyph="frequency"]').count(),
       ipcMarks: await page.locator('[data-overlay-glyph="ipc"]').count(),
+      callouts: Number(await timeline.getAttribute('data-callouts')),
     },
+    calloutPlacements: await page.locator('[data-overlay-glyph="callout"]').evaluateAll(callouts =>
+      callouts.map(callout => ({
+        id: Number(callout.getAttribute('data-callout-id')),
+        anchor: callout.getAttribute('data-callout-anchor'),
+        time: Number(callout.getAttribute('data-callout-time')),
+        deltaX: Number(callout.getAttribute('data-callout-delta-x')),
+        deltaRows: Number(callout.getAttribute('data-callout-delta-rows')),
+      })),
+    ),
     selection: (await page.locator('#selection-summary').textContent())?.trim() ?? '',
     agentContext: (await page.locator('#agent-context-title').textContent())?.trim() ?? '',
     searchMatches: (await page.locator('#search-count').textContent())?.trim() ?? '',
