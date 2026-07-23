@@ -386,7 +386,10 @@ search/inversion, wheel zoom, and red-dot reset. The modern renderer now
 independently cycles its CPU, PID, RPC, and resource groups through the
 original full, highlighted-only, and hidden states in exact and density modes.
 Shift-clicking a line label toggles that row and propagates event emphasis
-across corresponding lane copies. `/legacy` remains the byte-identical comparison surface
+across corresponding lane copies. A range-bounded track catalog and virtual
+Y viewport remove the former 64-row family cap, preserve first-occurrence RPC
+ordering, and constrain density work to visible rows. `/legacy` remains the
+byte-identical comparison surface
 while every applicable behavior is reimplemented; it does not close modern
 parity by itself. See [`ui_architecture.md`](ui_architecture.md) and the
 [`UI parity checklist`](ui_parity.md).

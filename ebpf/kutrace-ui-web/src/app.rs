@@ -21,13 +21,18 @@ use crate::{
         Filter, Metadata, Overlays, Range, TraceEvent, TrackGroupMode, TrackGroups, TrackMode,
         filter_sql, where_sql,
     },
-    timeline::{Overview, Selection, Timeline},
+    timeline::{
+        DEFAULT_ROW_HEIGHT, MAX_ROW_HEIGHT, MIN_ROW_HEIGHT, Overview, Selection, Timeline,
+    },
 };
 
 const DEFAULT_SQL: &str = "SELECT category, name, COUNT(*) AS count, ROUND(SUM(dur) * 1000, 3) AS total_ms\nFROM events\nGROUP BY category, name\nORDER BY total_ms DESC\nLIMIT 50";
 const WORKSPACE_KEY: &str = "kutrace-workspace";
 const TIMELINE_BINS: usize = 96;
 const TIMELINE_DETAIL_GLYPH_BUDGET: usize = 1_000;
+const TRACK_CATALOG_LIMIT: usize = 50_000;
+const DEFAULT_TIMELINE_VIEWPORT_HEIGHT: f64 = 600.0;
+const ROW_OVERSCAN: usize = 4;
 
 #[derive(Clone, Debug, PartialEq)]
 struct TimelineCache {
@@ -37,6 +42,7 @@ struct TimelineCache {
     mode: TrackMode,
     groups: TrackGroups,
     highlighted: HashSet<String>,
+    viewport_tracks: Vec<String>,
 }
 
 fn prefetched_range(range: Range, full: Range) -> Range {
@@ -70,6 +76,105 @@ fn highlighted_track_values(
     values
 }
 
+fn track_catalog_sql(filters: &[Filter], range: Range) -> String {
+    let scope = format!(
+        "ts < {} AND ts_end > {} AND dur>0",
+        range.end, range.start
+    );
+    format!(
+        r#"WITH scoped AS (
+             SELECT ts,cpu,pid,rpc,category,arg0
+               FROM events {where_clause}),
+           tracks(group_order,group_name,track,first_ts) AS (
+             SELECT 0,'cpu',cpu,MIN(ts) FROM scoped
+              WHERE pid>0 AND cpu>=0 GROUP BY cpu
+             UNION ALL
+             SELECT 1,'pid',pid,MIN(ts) FROM scoped
+              WHERE pid>0 AND cpu>=0 GROUP BY pid
+             UNION ALL
+             SELECT 2,'rpc',rpc,MIN(ts) FROM scoped
+              WHERE rpc>0 GROUP BY rpc
+             UNION ALL
+             SELECT 3,'resource',arg0,MIN(ts) FROM scoped
+              WHERE category='resource' AND arg0>=0 GROUP BY arg0)
+         SELECT group_name,track,first_ts FROM tracks
+          ORDER BY group_order,
+                   CASE WHEN group_name='rpc' THEN first_ts ELSE track END,
+                   track
+          LIMIT {limit}"#,
+        where_clause = where_sql(filters, &scope),
+        limit = TRACK_CATALOG_LIMIT + 1,
+    )
+}
+
+fn track_is_visible(
+    track: &str,
+    groups: TrackGroups,
+    highlighted: &HashSet<String>,
+) -> bool {
+    let group = track.split_once(':').map_or("", |(group, _)| group);
+    match groups.mode(group) {
+        TrackGroupMode::Hidden => false,
+        TrackGroupMode::Full => true,
+        TrackGroupMode::Highlighted => {
+            let prefix = format!("{group}:");
+            !highlighted.iter().any(|track| track.starts_with(&prefix))
+                || highlighted.contains(track)
+        }
+    }
+}
+
+fn viewport_catalog_tracks(
+    catalog: &[String],
+    groups: TrackGroups,
+    highlighted: &HashSet<String>,
+    vertical_scroll: f64,
+    viewport_height: f64,
+    row_height: f64,
+) -> Vec<String> {
+    let tracks = catalog
+        .iter()
+        .filter(|track| track_is_visible(track, groups, highlighted))
+        .collect::<Vec<_>>();
+    let row_height = row_height.clamp(MIN_ROW_HEIGHT, MAX_ROW_HEIGHT);
+    let first = ((vertical_scroll / row_height).floor().max(0.0) as usize)
+        .saturating_sub(ROW_OVERSCAN)
+        .min(tracks.len());
+    let last = (((vertical_scroll + viewport_height.max(240.0)) / row_height).ceil() as usize
+        + ROW_OVERSCAN)
+        .min(tracks.len());
+    tracks[first..last]
+        .iter()
+        .map(|track| (*track).clone())
+        .collect()
+}
+
+fn viewport_track_values(tracks: &[String], group: &str) -> Vec<i64> {
+    let prefix = format!("{group}:");
+    tracks
+        .iter()
+        .filter_map(|track| track.strip_prefix(&prefix)?.parse::<i64>().ok())
+        .collect()
+}
+
+fn event_on_visible_track(
+    event: &TraceEvent,
+    visible_tracks: &HashSet<String>,
+    catalog_available: bool,
+) -> bool {
+    (!catalog_available && visible_tracks.is_empty())
+        || event
+            .render_track
+            .as_ref()
+            .is_some_and(|track| visible_tracks.contains(track))
+        || (event.cpu >= 0 && visible_tracks.contains(&format!("cpu:{}", event.cpu)))
+        || (event.pid > 0 && visible_tracks.contains(&format!("pid:{}", event.pid)))
+        || (event.rpc > 0 && visible_tracks.contains(&format!("rpc:{}", event.rpc)))
+        || (event.category == "resource"
+            && event.arg0 >= 0
+            && visible_tracks.contains(&format!("resource:{}", event.arg0)))
+}
+
 fn valid_track_highlights(values: Vec<String>) -> HashSet<String> {
     values
         .into_iter()
@@ -89,8 +194,9 @@ fn density_sql(
     coverage: Range,
     track_name: &str,
     highlighted_tracks: &[i64],
+    bins: usize,
 ) -> String {
-    let bucket = coverage.span() / TIMELINE_BINS as f64;
+    let bucket = coverage.span() / bins as f64;
     let common = format!(
         "ts < {} AND ts_end > {} AND dur>0",
         coverage.end, coverage.start
@@ -163,7 +269,7 @@ fn density_sql(
                 {start}+bin*{bucket},{bucket},MIN({end},{start}+(bin+1)*{bucket}),
                 {cpu},{pid},{rpc},event,name,category,track,0,ipc,{label}
            FROM ranked WHERE rank=1 ORDER BY bin,track LIMIT 10000"#,
-        bins = TIMELINE_BINS,
+        bins = bins,
         start = coverage.start,
         end = coverage.end,
         bucket = bucket,
@@ -180,8 +286,9 @@ fn mipmap_density_sql(
     filters: &[Filter],
     coverage: Range,
     highlighted_cpus: &[i64],
+    bins: usize,
 ) -> String {
-    let bucket = coverage.span() / TIMELINE_BINS as f64;
+    let bucket = coverage.span() / bins as f64;
     let table = if bucket < 0.016 {
         "timeline_mipmap"
     } else {
@@ -227,7 +334,7 @@ fn mipmap_density_sql(
                 {start}+bin*{bucket},{bucket},MIN({end},{start}+(bin+1)*{bucket}),
                 track,0,0,event,name,category,0,0,ipc,'cpu:' || track
            FROM ranked WHERE rank=1 ORDER BY bin,track LIMIT 10000"#,
-        bins = TIMELINE_BINS,
+        bins = bins,
         start = coverage.start,
         end = coverage.end,
         bucket = bucket,
@@ -300,8 +407,16 @@ struct WorkspaceFile {
     track_groups: Option<TrackGroups>,
     #[serde(default)]
     highlighted_tracks: Vec<String>,
+    #[serde(default = "default_workspace_row_height")]
+    row_height: f64,
+    #[serde(default)]
+    vertical_scroll: f64,
     #[serde(default)]
     overlays: Overlays,
+}
+
+fn default_workspace_row_height() -> f64 {
+    DEFAULT_ROW_HEIGHT
 }
 
 fn value_string(value: &Value) -> String {
@@ -493,6 +608,9 @@ pub fn app() -> Html {
     let metadata = use_state(Metadata::default);
     let range = use_state(Range::default);
     let events = use_state(|| Rc::new(Vec::<TraceEvent>::new()));
+    let track_catalog = use_state(|| Rc::new(Vec::<String>::new()));
+    let track_catalog_truncated = use_state(|| false);
+    let track_catalog_generation = use_mut_ref(|| 0_u64);
     let timeline_loading = use_state(|| true);
     let timeline_truncated = use_state(|| false);
     let timeline_source = use_state(|| "events".to_owned());
@@ -525,6 +643,10 @@ pub fn app() -> Html {
     let workspace_loaded = use_state(|| false);
     let follow_tail = use_state(|| false);
     let navigation_keys = use_state(HashSet::<String>::new);
+    let row_height = use_state(|| DEFAULT_ROW_HEIGHT);
+    let vertical_scroll = use_state(|| 0.0_f64);
+    let timeline_viewport_height = use_state(|| DEFAULT_TIMELINE_VIEWPORT_HEIGHT);
+    let timeline_scroll_node = use_node_ref();
 
     {
         let metadata = metadata.clone();
@@ -595,6 +717,9 @@ pub fn app() -> Html {
         let track_mode = track_mode.clone();
         let track_groups = track_groups.clone();
         let highlighted = highlighted.clone();
+        let row_height = row_height.clone();
+        let vertical_scroll = vertical_scroll.clone();
+        let timeline_scroll_node = timeline_scroll_node.clone();
         let overlays = overlays.clone();
         let workspace_loaded = workspace_loaded.clone();
         let status = sql_status.clone();
@@ -609,7 +734,7 @@ pub fn app() -> Html {
                     match serde_json::from_str::<WorkspaceFile>(&stored) {
                         Ok(workspace)
                             if workspace.kind == "kutrace-workspace"
-                                && matches!(workspace.version, 1..=4) =>
+                                && matches!(workspace.version, 1..=5) =>
                         {
                             filters.set(workspace.filters.into_iter().take(64).collect());
                             if !workspace.sql.is_empty() {
@@ -627,6 +752,16 @@ pub fn app() -> Html {
                             );
                             highlighted
                                 .set(valid_track_highlights(workspace.highlighted_tracks));
+                            row_height.set(
+                                workspace
+                                    .row_height
+                                    .clamp(MIN_ROW_HEIGHT, MAX_ROW_HEIGHT),
+                            );
+                            let saved_scroll = workspace.vertical_scroll.max(0.0);
+                            vertical_scroll.set(saved_scroll);
+                            if let Some(element) = timeline_scroll_node.cast::<HtmlElement>() {
+                                element.set_scroll_top(saved_scroll.round() as i32);
+                            }
                             overlays.set(workspace.overlays);
                         }
                         Ok(_) => status.set("Unsupported saved workspace".to_owned()),
@@ -769,6 +904,71 @@ pub fn app() -> Html {
     }
 
     {
+        let catalog = track_catalog.clone();
+        let truncated = track_catalog_truncated.clone();
+        let generation = track_catalog_generation.clone();
+        let status = sql_status.clone();
+        let current_range = *range;
+        let current_filters = (*filters).clone();
+        use_effect_with(
+            (current_range, current_filters),
+            move |(current_range, current_filters)| {
+                *generation.borrow_mut() += 1;
+                let request_generation = *generation.borrow();
+                if current_range.end > current_range.start {
+                    let catalog = catalog.clone();
+                    let truncated = truncated.clone();
+                    let generation = generation.clone();
+                    let status = status.clone();
+                    let current_range = *current_range;
+                    let current_filters = current_filters.clone();
+                    spawn_local(async move {
+                        match query(
+                            &track_catalog_sql(&current_filters, current_range),
+                            TRACK_CATALOG_LIMIT,
+                        )
+                        .await
+                        {
+                            Ok(response) if *generation.borrow() == request_generation => {
+                                let tracks = response
+                                    .rows
+                                    .iter()
+                                    .filter_map(|row| {
+                                        let group = row.first()?.as_str()?;
+                                        let value = row.get(1)?.as_i64()?;
+                                        Some(format!("{group}:{value}"))
+                                    })
+                                    .collect::<Vec<_>>();
+                                truncated.set(response.truncated);
+                                catalog.set(Rc::new(tracks));
+                            }
+                            Err(message) if *generation.borrow() == request_generation => {
+                                status.set(format!("Track catalog: {message}"));
+                            }
+                            _ => {}
+                        }
+                    });
+                }
+                || ()
+            },
+        );
+    }
+
+    {
+        let timeline_scroll_node = timeline_scroll_node.clone();
+        let desired_scroll = *vertical_scroll;
+        use_effect_with(
+            (track_catalog.len(), *row_height),
+            move |_| {
+                if let Some(element) = timeline_scroll_node.cast::<HtmlElement>() {
+                    element.set_scroll_top(desired_scroll.round() as i32);
+                }
+                || ()
+            },
+        );
+    }
+
+    {
         let events = events.clone();
         let loading = timeline_loading.clone();
         let truncated = timeline_truncated.clone();
@@ -782,6 +982,15 @@ pub fn app() -> Html {
         let current_mode = *track_mode;
         let current_groups = *track_groups;
         let current_highlighted = (*highlighted).clone();
+        let current_catalog = (*track_catalog).clone();
+        let current_viewport_tracks = viewport_catalog_tracks(
+            &current_catalog,
+            current_groups,
+            &current_highlighted,
+            *vertical_scroll,
+            *timeline_viewport_height,
+            *row_height,
+        );
         let full = metadata.full;
         use_effect_with(
             (
@@ -791,6 +1000,8 @@ pub fn app() -> Html {
                 current_mode,
                 current_groups,
                 current_highlighted,
+                current_catalog,
+                current_viewport_tracks,
                 full,
             ),
             move |(
@@ -800,6 +1011,8 @@ pub fn app() -> Html {
                 current_mode,
                 current_groups,
                 current_highlighted,
+                current_catalog,
+                current_viewport_tracks,
                 full,
             )| {
                 *generation.borrow_mut() += 1;
@@ -809,6 +1022,7 @@ pub fn app() -> Html {
                         && cached.mode == *current_mode
                         && cached.groups == *current_groups
                         && cached.highlighted == *current_highlighted
+                        && (cached.detail || cached.viewport_tracks == *current_viewport_tracks)
                         && range_contains(cached.coverage, *current_range)
                         && (cached.detail || current_range.span() >= cached.coverage.span() / 5.0)
                 });
@@ -828,6 +1042,8 @@ pub fn app() -> Html {
                     let current_mode = *current_mode;
                     let current_groups = *current_groups;
                     let current_highlighted = current_highlighted.clone();
+                    let current_catalog = current_catalog.clone();
+                    let current_viewport_tracks = current_viewport_tracks.clone();
                     let coverage = prefetched_range(current_range, *full);
                     Some(Timeout::new(70, move || {
                         loading.set(true);
@@ -861,96 +1077,137 @@ pub fn app() -> Html {
                                 let mut rows = Vec::new();
                                 let mut used_mipmap = false;
                                 let mut partial = false;
+                                let density_bins = if current_catalog.is_empty() {
+                                    TIMELINE_BINS
+                                } else {
+                                    (TIMELINE_DETAIL_GLYPH_BUDGET
+                                        / current_viewport_tracks.len().max(1))
+                                    .clamp(8, TIMELINE_BINS)
+                                };
                                 if current_groups.enabled("cpu") {
-                                    let highlighted_cpus = highlighted_track_values(
-                                        current_groups,
-                                        &current_highlighted,
-                                        "cpu",
-                                    );
-                                    let sql = if mmap_compatible {
-                                        used_mipmap = true;
-                                        mipmap_density_sql(
-                                            &current_filters,
-                                            coverage,
-                                            &highlighted_cpus,
+                                    let cpu_tracks = if current_catalog.is_empty() {
+                                        highlighted_track_values(
+                                            current_groups,
+                                            &current_highlighted,
+                                            "cpu",
                                         )
                                     } else {
-                                        density_sql(
-                                            &current_filters,
-                                            coverage,
-                                            "cpu",
-                                            &highlighted_cpus,
-                                        )
+                                        viewport_track_values(&current_viewport_tracks, "cpu")
                                     };
-                                    let response = query(&sql, 10_000).await?;
-                                    rows.extend(
-                                        response.rows.iter().map(|row| TraceEvent::from_row(row)),
-                                    );
-                                    partial |= response.truncated;
-                                    if used_mipmap {
-                                        let long_events = query(
-                                            &long_cpu_event_sql(
+                                    if current_catalog.is_empty() || !cpu_tracks.is_empty() {
+                                        let sql = if mmap_compatible {
+                                            used_mipmap = true;
+                                            mipmap_density_sql(
                                                 &current_filters,
                                                 coverage,
-                                                &highlighted_cpus,
-                                            ),
-                                            4_000,
-                                        )
-                                        .await?;
-                                        partial |=
-                                            long_events.truncated || long_events.rows.len() > 4_000;
+                                                &cpu_tracks,
+                                                density_bins,
+                                            )
+                                        } else {
+                                            density_sql(
+                                                &current_filters,
+                                                coverage,
+                                                "cpu",
+                                                &cpu_tracks,
+                                                density_bins,
+                                            )
+                                        };
+                                        let response = query(&sql, 10_000).await?;
                                         rows.extend(
-                                            long_events
+                                            response
                                                 .rows
                                                 .iter()
                                                 .map(|row| TraceEvent::from_row(row)),
                                         );
+                                        partial |= response.truncated;
+                                        if used_mipmap {
+                                            let long_events = query(
+                                                &long_cpu_event_sql(
+                                                    &current_filters,
+                                                    coverage,
+                                                    &cpu_tracks,
+                                                ),
+                                                4_000,
+                                            )
+                                            .await?;
+                                            partial |= long_events.truncated
+                                                || long_events.rows.len() > 4_000;
+                                            rows.extend(
+                                                long_events
+                                                    .rows
+                                                    .iter()
+                                                    .map(|row| TraceEvent::from_row(row)),
+                                            );
+                                        }
                                     }
                                 }
                                 if current_groups.enabled("pid") {
-                                    let highlighted_pids = highlighted_track_values(
-                                        current_groups,
-                                        &current_highlighted,
-                                        "pid",
-                                    );
-                                    let response = query(
-                                        &density_sql(
-                                            &current_filters,
-                                            coverage,
+                                    let pid_tracks = if current_catalog.is_empty() {
+                                        highlighted_track_values(
+                                            current_groups,
+                                            &current_highlighted,
                                             "pid",
-                                            &highlighted_pids,
-                                        ),
-                                        10_000,
-                                    )
-                                    .await?;
-                                    rows.extend(
-                                        response.rows.iter().map(|row| TraceEvent::from_row(row)),
-                                    );
-                                    partial |= response.truncated;
+                                        )
+                                    } else {
+                                        viewport_track_values(&current_viewport_tracks, "pid")
+                                    };
+                                    if current_catalog.is_empty() || !pid_tracks.is_empty() {
+                                        let response = query(
+                                            &density_sql(
+                                                &current_filters,
+                                                coverage,
+                                                "pid",
+                                                &pid_tracks,
+                                                density_bins,
+                                            ),
+                                            10_000,
+                                        )
+                                        .await?;
+                                        rows.extend(
+                                            response
+                                                .rows
+                                                .iter()
+                                                .map(|row| TraceEvent::from_row(row)),
+                                        );
+                                        partial |= response.truncated;
+                                    }
                                 }
                                 for semantic_track in ["rpc", "resource"]
                                     .into_iter()
                                     .filter(|track| current_groups.enabled(track))
                                 {
-                                    let highlighted_tracks = highlighted_track_values(
-                                        current_groups,
-                                        &current_highlighted,
-                                        semantic_track,
-                                    );
-                                    let response = query(
-                                        &density_sql(
-                                            &current_filters,
-                                            coverage,
+                                    let semantic_tracks = if current_catalog.is_empty() {
+                                        highlighted_track_values(
+                                            current_groups,
+                                            &current_highlighted,
                                             semantic_track,
-                                            &highlighted_tracks,
-                                        ),
-                                        10_000,
-                                    )
-                                    .await?;
-                                    rows.extend(
-                                        response.rows.iter().map(|row| TraceEvent::from_row(row)),
-                                    );
-                                    partial |= response.truncated;
+                                        )
+                                    } else {
+                                        viewport_track_values(
+                                            &current_viewport_tracks,
+                                            semantic_track,
+                                        )
+                                    };
+                                    if current_catalog.is_empty() || !semantic_tracks.is_empty() {
+                                        let response = query(
+                                            &density_sql(
+                                                &current_filters,
+                                                coverage,
+                                                semantic_track,
+                                                &semantic_tracks,
+                                                density_bins,
+                                            ),
+                                            10_000,
+                                        )
+                                        .await?;
+                                        rows.extend(
+                                            response
+                                                .rows
+                                                .iter()
+                                                .map(|row| TraceEvent::from_row(row)),
+                                        );
+                                        partial |= response.truncated;
+                                    }
                                 }
                                 let overlays =
                                     query(&overlay_sql(&current_filters, coverage), 2_000).await?;
@@ -987,6 +1244,7 @@ pub fn app() -> Html {
                                         mode: current_mode,
                                         groups: current_groups,
                                         highlighted: current_highlighted,
+                                        viewport_tracks: current_viewport_tracks,
                                     }));
                                     error.set(String::new());
                                 }
@@ -1239,7 +1497,7 @@ pub fn app() -> Html {
     highlighted_tracks.sort();
     let workspace = WorkspaceFile {
         kind: "kutrace-workspace".to_owned(),
-        version: 4,
+        version: 5,
         filters: (*filters).clone(),
         sql: (*sql).clone(),
         range: Some(*range),
@@ -1247,6 +1505,8 @@ pub fn app() -> Html {
         track_mode: *track_mode,
         track_groups: Some(*track_groups),
         highlighted_tracks,
+        row_height: *row_height,
+        vertical_scroll: *vertical_scroll,
         overlays: *overlays,
     };
     let save_workspace = {
@@ -1319,6 +1579,9 @@ pub fn app() -> Html {
         let track_mode = track_mode.clone();
         let track_groups = track_groups.clone();
         let highlighted = highlighted.clone();
+        let row_height = row_height.clone();
+        let vertical_scroll = vertical_scroll.clone();
+        let timeline_scroll_node = timeline_scroll_node.clone();
         let overlays = overlays.clone();
         let status = sql_status.clone();
         let full = metadata.full;
@@ -1334,6 +1597,9 @@ pub fn app() -> Html {
             let track_mode = track_mode.clone();
             let track_groups = track_groups.clone();
             let highlighted = highlighted.clone();
+            let row_height = row_height.clone();
+            let vertical_scroll = vertical_scroll.clone();
+            let timeline_scroll_node = timeline_scroll_node.clone();
             let overlays = overlays.clone();
             let status = status.clone();
             spawn_local(async move {
@@ -1345,7 +1611,7 @@ pub fn app() -> Html {
                         .ok_or_else(|| "Workspace file is not text".to_owned())?;
                     let workspace = serde_json::from_str::<WorkspaceFile>(&text)
                         .map_err(|error| format!("Invalid workspace: {error}"))?;
-                    if workspace.kind != "kutrace-workspace" || !matches!(workspace.version, 1..=4)
+                    if workspace.kind != "kutrace-workspace" || !matches!(workspace.version, 1..=5)
                     {
                         return Err("Unsupported workspace file".to_owned());
                     }
@@ -1372,6 +1638,16 @@ pub fn app() -> Html {
                             .unwrap_or_else(|| TrackGroups::for_mode(workspace.track_mode)),
                     );
                     highlighted.set(valid_track_highlights(workspace.highlighted_tracks));
+                    row_height.set(
+                        workspace
+                            .row_height
+                            .clamp(MIN_ROW_HEIGHT, MAX_ROW_HEIGHT),
+                    );
+                    let saved_scroll = workspace.vertical_scroll.max(0.0);
+                    vertical_scroll.set(saved_scroll);
+                    if let Some(element) = timeline_scroll_node.cast::<HtmlElement>() {
+                        element.set_scroll_top(saved_scroll.round() as i32);
+                    }
                     overlays.set(workspace.overlays);
                     Ok::<_, String>(())
                 }
@@ -1645,17 +1921,39 @@ pub fn app() -> Html {
         })
     };
 
+    let visible_search_tracks = viewport_catalog_tracks(
+        &track_catalog,
+        *track_groups,
+        &highlighted,
+        *vertical_scroll,
+        *timeline_viewport_height,
+        *row_height,
+    )
+    .into_iter()
+    .collect::<HashSet<_>>();
     let search_matches = if search.is_empty() {
         0
     } else {
         events
             .iter()
             .filter(|event| {
+                if event.start >= range.end
+                    || event.end <= range.start
+                    || !event_on_visible_track(
+                        event,
+                        &visible_search_tracks,
+                        !track_catalog.is_empty(),
+                    )
+                {
+                    return false;
+                }
                 let needle = search.to_lowercase();
                 let matched = event.name.to_lowercase().contains(&needle)
                     || event.category.to_lowercase().contains(&needle)
                     || event.pid.to_string().contains(&needle)
-                    || event.cpu.to_string().contains(&needle);
+                    || event.cpu.to_string().contains(&needle)
+                    || event.rpc.to_string().contains(&needle)
+                    || event.event.to_string().contains(&needle);
                 if *search_invert { !matched } else { matched }
             })
             .count()
@@ -1686,6 +1984,56 @@ pub fn app() -> Html {
               </div>
             }
         })} </>}
+    };
+    let on_timeline_scroll = {
+        let vertical_scroll = vertical_scroll.clone();
+        let timeline_viewport_height = timeline_viewport_height.clone();
+        Callback::from(move |event: Event| {
+            let element = event.target_unchecked_into::<HtmlElement>();
+            vertical_scroll.set(element.scroll_top().max(0) as f64);
+            timeline_viewport_height.set(element.client_height().max(240) as f64);
+        })
+    };
+    let on_row_zoom = {
+        let row_height = row_height.clone();
+        let vertical_scroll = vertical_scroll.clone();
+        let timeline_scroll_node = timeline_scroll_node.clone();
+        Callback::from(move |(next_height, next_scroll): (f64, f64)| {
+            let next_height = next_height.clamp(MIN_ROW_HEIGHT, MAX_ROW_HEIGHT);
+            let next_scroll = next_scroll.max(0.0);
+            row_height.set(next_height);
+            vertical_scroll.set(next_scroll);
+            if let Some(element) = timeline_scroll_node.cast::<HtmlElement>() {
+                element.set_scroll_top(next_scroll.round() as i32);
+            }
+        })
+    };
+    let zoom_rows = |factor: f64| {
+        let row_height = row_height.clone();
+        let vertical_scroll = vertical_scroll.clone();
+        let timeline_scroll_node = timeline_scroll_node.clone();
+        Callback::from(move |_| {
+            let next_height =
+                (*row_height * factor).clamp(MIN_ROW_HEIGHT, MAX_ROW_HEIGHT);
+            let next_scroll = *vertical_scroll * next_height / *row_height;
+            row_height.set(next_height);
+            vertical_scroll.set(next_scroll);
+            if let Some(element) = timeline_scroll_node.cast::<HtmlElement>() {
+                element.set_scroll_top(next_scroll.round() as i32);
+            }
+        })
+    };
+    let fit_rows = {
+        let row_height = row_height.clone();
+        let vertical_scroll = vertical_scroll.clone();
+        let timeline_scroll_node = timeline_scroll_node.clone();
+        Callback::from(move |_| {
+            row_height.set(DEFAULT_ROW_HEIGHT);
+            vertical_scroll.set(0.0);
+            if let Some(element) = timeline_scroll_node.cast::<HtmlElement>() {
+                element.set_scroll_top(0);
+            }
+        })
     };
     let group_buttons = [
         ("cpu", "CPUs"),
@@ -1740,8 +2088,8 @@ pub fn app() -> Html {
           <div class="workspace">
           <section id="timeline-view" class={classes!("view-pane",(*active_view=="timeline").then_some("active"),(*dock_open).then_some("dock-open"))} hidden={*active_view!="timeline"}>
             <section class="timeline-card"><div class="section-head timeline-title"><div><h2>{"System timeline"}</h2><span id="renderer-label" class="mode-badge">{"Native KUtrace · Rust/WASM"}</span></div><div class="renderer-tabs"><button class="renderer-tab active" data-renderer="kutrace" aria-selected="true">{"Native KUtrace"}</button></div></div>
-              <div id="kutrace-renderer" class="timeline-renderer modern-renderer active"><div class="modern-renderer-head"><span id="timeline-mode" class="mode-badge">{if timeline_source.ends_with("-partial") {"Density summary · partial"} else if *timeline_truncated {"Density summary"} else {"Exact vector events"}}</span><span id="range-label">{range_label(*range)}</span><div class="timeline-actions"><button id="zoom-selection" disabled={selection.is_none()} onclick={{let range=range.clone();let selection=selection.clone();Callback::from(move |_|if let Some(selected)=&*selection{range.set(selected.range)})}}>{"Zoom selection"}</button><button id="clear-selection" disabled={selection.is_none()} onclick={{let selection=selection.clone();Callback::from(move |_|selection.set(None))}}>{"Clear selection"}</button><span class="shortcut-help">{"drag select · Shift+click highlight · Ctrl+wheel · WASD"}</span></div></div>
-              <Overview events={(*events).clone()} range={*range} full={metadata.full} colorblind={overlays.colorblind} on_range={set_range.clone()}/><div class="time-ruler"><span id="ruler-start">{format!("{:.6}s",range.start)}</span><span id="ruler-center">{format!("{:.6}s",(range.start+range.end)/2.0)}</span><span id="ruler-end">{format!("{:.6}s",range.end)}</span></div><div class="timeline-scroll"><div class="timeline-shell"><Timeline events={(*events).clone()} range={*range} full={metadata.full} mode={*track_mode} groups={*track_groups} overlays={*overlays} search={(*search).clone()} search_invert={*search_invert} highlighted={(*highlighted).clone()} loading={*timeline_loading||!navigation_keys.is_empty()} truncated={*timeline_truncated} source={(*timeline_source).clone()} selection={(*selection).clone()} on_range={set_range} on_select={on_select} on_highlight={on_highlight}/></div></div>
+              <div id="kutrace-renderer" class="timeline-renderer modern-renderer active"><div class="modern-renderer-head"><span id="timeline-mode" class="mode-badge">{if timeline_source.ends_with("-partial") {"Density summary · partial"} else if *timeline_truncated {"Density summary"} else {"Exact vector events"}}</span><span id="range-label">{range_label(*range)}</span><div class="timeline-actions"><span class="y-controls" aria-label="Vertical row navigation"><button id="y-zoom-out" title="Shrink rows" onclick={zoom_rows(0.8)}>{"Y−"}</button><button id="y-fit" title="Reset vertical viewport" onclick={fit_rows}>{"Y fit"}</button><button id="y-zoom-in" title="Grow rows" onclick={zoom_rows(1.25)}>{"Y+"}</button></span><button id="zoom-selection" disabled={selection.is_none()} onclick={{let range=range.clone();let selection=selection.clone();Callback::from(move |_|if let Some(selected)=&*selection{range.set(selected.range)})}}>{"Zoom selection"}</button><button id="clear-selection" disabled={selection.is_none()} onclick={{let selection=selection.clone();Callback::from(move |_|selection.set(None))}}>{"Clear selection"}</button><span class="shortcut-help">{"drag select · Shift+click highlight · label-wheel Y zoom · Ctrl+wheel X zoom · WASD"}</span></div></div>
+              <Overview events={(*events).clone()} range={*range} full={metadata.full} colorblind={overlays.colorblind} on_range={set_range.clone()}/><div class="time-ruler"><span id="ruler-start">{format!("{:.6}s",range.start)}</span><span id="ruler-center">{format!("{:.6}s",(range.start+range.end)/2.0)}</span><span id="ruler-end">{format!("{:.6}s",range.end)}</span></div><div id="timeline-scroll" class="timeline-scroll" ref={timeline_scroll_node} onscroll={on_timeline_scroll}><div class="timeline-shell"><Timeline events={(*events).clone()} track_catalog={(*track_catalog).clone()} catalog_truncated={*track_catalog_truncated} range={*range} full={metadata.full} mode={*track_mode} groups={*track_groups} overlays={*overlays} search={(*search).clone()} search_invert={*search_invert} highlighted={(*highlighted).clone()} loading={*timeline_loading||!navigation_keys.is_empty()} truncated={*timeline_truncated} source={(*timeline_source).clone()} row_height={*row_height} vertical_scroll={*vertical_scroll} viewport_height={*timeline_viewport_height} selection={(*selection).clone()} on_range={set_range} on_select={on_select} on_highlight={on_highlight} on_row_zoom={on_row_zoom}/></div></div>
               <div class="legend"><i class="agent"></i>{"agent "}<i class="syscall"></i>{"syscall "}<i class="kernel"></i>{"kernel "}<i class="user"></i>{"user "}<i class="scheduler"></i>{"scheduler "}<i class="special"></i>{"other "}<span id="perf-legend">{if metadata.flags&128!=0 {"◆ IPC"} else {""}}</span></div></div></section>
             <section class={classes!("analysis-dock",(!*dock_open).then_some("collapsed"))}><div class="dock-tabs">{for [("details","Details"),("flamegraph","Flamegraph"),("sql","SQL"),("agent","Agent reasoning")].map(|(name,label)|{let active=*active_dock==name;let active_dock=active_dock.clone();let dock_open=dock_open.clone();html!{<button class={classes!("dock-tab",active.then_some("active"))} data-dock={name} aria-selected={active.to_string()} onclick={Callback::from(move |_|{active_dock.set(name.to_owned());dock_open.set(true)})}>{label}</button>}})}<button id="toggle-dock" class="dock-toggle" aria-expanded={dock_open.to_string()} onclick={{let dock_open=dock_open.clone();Callback::from(move |_|dock_open.set(!*dock_open))}}>{if *dock_open{"⌄"}else{"⌃"}}</button></div><div class="dock-body">
               <section class={classes!("dock-panel",(*active_dock=="details").then_some("active"))} data-dock-panel="details"><div id="selection-summary" class="selection-summary">{selection.as_ref().map(|selected|if let Some(event)=&selected.event{format!("{} · {} · {:.6}s · {:.3} ms",event.name,event.category,event.start,event.duration*1000.0)}else{format!("Selected {}",range_label(selected.range))}).unwrap_or_else(||"Select an event or drag across tracks to inspect a region.".to_owned())}</div><div class="section-head"><h2>{"Events"}</h2><span id="event-count">{format!("{}{} rows",events.len(),if *timeline_truncated{"+"}else{""})}</span></div><div class="table-wrap"><table id="event-table"><thead><tr>{for ["ts","dur","cpu","pid","event","name","category","arg0","retval","ipc"].map(|name|html!{<th>{name}</th>})}</tr></thead><tbody>{for events.iter().take(500).map(|event|html!{<tr><td>{event.start}</td><td>{event.duration}</td><td>{event.cpu}</td><td>{event.pid}</td><td>{event.event}</td><td>{event.name.clone()}</td><td>{event.category.clone()}</td><td>{event.arg0}</td><td>{event.retval}</td><td>{event.ipc}</td></tr>})}</tbody></table></div></section>

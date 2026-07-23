@@ -40,20 +40,24 @@ row and time limits.
 ## Browser navigation
 
 Available actions are `zoom-in`, `zoom-out`, `pan-left`, `pan-right`, `fit`,
+`y-zoom-in`, `y-zoom-out`, `y-fit`, `y-pan-up`, `y-pan-down`,
 `dock:details`, `dock:flamegraph`, `dock:sql`, `dock:agent`,
 `agent:SPAN_ID`, `search:TEXT`, and `group:cpu|pid|rpc|resource`. Group actions
 cycle the same human-visible KUtrace lane families through full,
 highlighted-only, and hidden when that family has highlighted rows; without a
-highlight they toggle full/hidden. `highlight:TRACK` toggles a visible row such
-as `cpu:0`, `pid:123`, `rpc:77`, or `resource:9`.
+highlight they toggle full/hidden. `track:TRACK` moves the virtualized vertical
+viewport until that row is visible. `highlight:TRACK` does the same and toggles
+the row, for example `cpu:0`, `pid:123`, `rpc:77`, or `resource:9`.
 
 ```sh
 node scripts/navigate.mjs http://127.0.0.1:3000 \
-  highlight:cpu:0 group:cpu zoom-in pan-right dock:agent agent:42
+  track:cpu:96 y-zoom-in highlight:cpu:96 group:cpu \
+  zoom-in pan-right dock:agent agent:42
 ```
 
-The helper prints JSON containing the current range, visible and highlighted
-tracks, each group state, renderer source, selection, and agent context. Treat
+The helper prints JSON containing the current X range, vertical row range and
+scale, visible and highlighted tracks, each group state, renderer source,
+selection, and agent context. Treat
 failures to find a requested span or control as failed navigation, not as
 absence of trace data.
 

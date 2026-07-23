@@ -15,6 +15,28 @@ const playwright = require('playwright');
 const browser = await playwright.chromium.launch({headless: true});
 const page = await browser.newPage({viewport: {width: 1440, height: 1000}});
 
+async function ensureTrackVisible(track) {
+  const label = page.locator(`.track-label[data-track="${track}"]`);
+  if (await label.count() === 1) return label;
+
+  const timeline = page.locator('#timeline');
+  const scroll = page.locator('#timeline-scroll');
+  await scroll.evaluate(element => element.scrollTop = 0);
+  const rowCount = Number(await timeline.getAttribute('data-track-count'));
+  for (let pageIndex = 0; pageIndex < rowCount + 1; pageIndex += 1) {
+    if (await label.count() === 1) return label;
+    const end = Number(await timeline.getAttribute('data-y-end'));
+    if (end >= rowCount) break;
+    const before = await timeline.getAttribute('data-y-start');
+    await scroll.evaluate(element => element.scrollBy({top: element.clientHeight * .8, behavior: 'instant'}));
+    await page.waitForFunction(
+      previous => document.querySelector('#timeline')?.getAttribute('data-y-start') !== previous,
+      before,
+    );
+  }
+  throw new Error(`track not found in vertical viewport: ${track}`);
+}
+
 try {
   const response = await page.goto(url, {waitUntil: 'domcontentloaded'});
   if (!response?.ok()) {
@@ -27,6 +49,22 @@ try {
       await page.locator(`#${action}`).click();
     } else if (action === 'fit') {
       await page.locator('#reset-range').click();
+    } else if (['y-zoom-in', 'y-zoom-out', 'y-fit'].includes(action)) {
+      await page.locator(`#${action}`).click();
+    } else if (action === 'y-pan-down' || action === 'y-pan-up') {
+      const before = await page.locator('#timeline').getAttribute('data-y-scroll');
+      const direction = action === 'y-pan-down' ? 1 : -1;
+      await page.locator('#timeline-scroll').evaluate(
+        (element, direction) => element.scrollBy({
+          top: direction * element.clientHeight * .75,
+          behavior: 'instant',
+        }),
+        direction,
+      );
+      await page.waitForFunction(
+        previous => document.querySelector('#timeline')?.getAttribute('data-y-scroll') !== previous,
+        before,
+      );
     } else if (action.startsWith('dock:')) {
       const dock = action.slice('dock:'.length);
       await page.locator(`[data-dock="${dock}"]`).click();
@@ -49,14 +87,17 @@ try {
       );
     } else if (action.startsWith('highlight:')) {
       const track = action.slice('highlight:'.length);
-      const label = page.locator(`.track-label[data-track="${track}"]`);
-      if (await label.count() !== 1) {
-        throw new Error(`visible track not found: ${track}`);
-      }
+      const label = await ensureTrackVisible(track);
       await label.press('Enter');
+    } else if (action.startsWith('track:')) {
+      await ensureTrackVisible(action.slice('track:'.length));
     } else {
       throw new Error(`unknown action: ${action}`);
     }
+    // Timeline fetches are deliberately delayed by 70 ms so held navigation
+    // stays smooth. Let that debounce begin before asserting the settled state;
+    // otherwise an agent can observe the previous ready=true frame.
+    await page.waitForTimeout(90);
     await page.locator('#timeline[data-ready="true"]').waitFor();
   }
 
@@ -82,6 +123,14 @@ try {
       .split(',')
       .filter(Boolean),
     renderedEvents: Number(await timeline.getAttribute('data-rendered-events')),
+    rowCount: Number(await timeline.getAttribute('data-track-count')),
+    rowHeight: Number(await timeline.getAttribute('data-row-height')),
+    verticalScroll: Number(await timeline.getAttribute('data-y-scroll')),
+    visibleRowRange: [
+      Number(await timeline.getAttribute('data-y-start')),
+      Number(await timeline.getAttribute('data-y-end')),
+    ],
+    trackCatalogTruncated: await timeline.getAttribute('data-track-catalog-truncated') === 'true',
     selection: (await page.locator('#selection-summary').textContent())?.trim() ?? '',
     agentContext: (await page.locator('#agent-context-title').textContent())?.trim() ?? '',
     searchMatches: (await page.locator('#search-count').textContent())?.trim() ?? '',

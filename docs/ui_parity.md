@@ -16,13 +16,13 @@ comparison surface, not a substitute for reimplementation.
 | Auto-prune rows without positive spans in the visible range | implemented | Track derivation and visible-core tests |
 | Shift-toggle line/event highlights with dim surrounding context | implemented | Shift-click and keyboard line-label toggles propagate event emphasis across CPU/PID/RPC/resource copies |
 | Three-state group display: hidden, highlight-only, full | implemented | Original skip-highlight-only rule without selected rows is preserved in exact and density modes |
-| Vertical-axis pan and zoom for very large row sets | missing | Current view scrolls and caps each family at 64 rows |
-| Original CPU/PID/RPC/resource Y sorting rules | partial | Numeric order is implemented; RPC start-time and resource type ordering remain |
+| Vertical-axis pan and zoom for very large row sets | implemented | Catalog-backed virtual viewport, native Y scrolling, label-wheel zoom, explicit controls, and 128-core/128-PID browser gate |
+| Original CPU/PID/RPC/resource Y sorting rules | implemented | CPU/PID/resource IDs are numeric; RPC IDs retain first-occurrence order as in `show_cpu.html` |
 | Mark, arc, lock, frequency, IPC, sample, and color-blind controls | partial | Boolean controls and vector overlays exist; original multi-state cycles remain |
 | User/all annotation modes and callout placement | missing | Details dock does not reproduce on-canvas annotation modes |
 | Text search and inverse search | implemented | Browser search/inversion regression |
 | Duration min/max search and `CPUI`/`CPUU`/`CPUK`/`RPC`/`PID`/`RES` syntax | missing | Needs the original line-oriented semantics |
-| Search respects visible X and Y ranges | partial | X range is bounded; collapsed groups are not yet excluded from the toolbar count |
+| Search respects visible X and Y ranges | implemented | Toolbar and timeline counts are restricted to the current time and virtualized row viewport |
 | Quick saved viewport slots and restore | missing | Portable workspace save/import exists, but not original quick slots |
 | Tiny-span deferral/density refinement | implemented | Exact-to-density budget and mipmap tests |
 | Specialized RPC packet/message and wakeup glyphs | partial | RPC lanes and wakeup arcs exist; legacy message geometry/labels remain |

@@ -80,6 +80,13 @@ test('independently expands and collapses original KUtrace track groups', async 
   await expect(timeline).toHaveAttribute('data-track-groups', 'cpu,resource');
   await expect(timeline.locator('.track-label', {hasText: 'RPC 77'})).toHaveCount(0);
 
+  await page.locator('[data-track-group="cpu"]').click();
+  await page.locator('[data-track-group="resource"]').click();
+  await waitForTimeline(page);
+  await page.locator('#trace-search').fill('agent');
+  await expect(page.locator('#search-count')).toHaveText('0 matches');
+  await page.locator('#trace-search').fill('');
+
   await page.locator('#track-mode').selectOption('pid');
   await waitForTimeline(page);
   await expect(timeline).toHaveAttribute('data-track-groups', 'pid');
@@ -336,27 +343,76 @@ test('switches to density before exact SVG glyphs exceed the interaction budget'
   expect(Number(await timeline.getAttribute('data-rendered-events'))).toBeLessThan(1000);
 });
 
-test('caps CPU and PID rows independently in combined mode', async ({page}) => {
+test('virtualizes every catalogued CPU and PID row without the old 64-row cap', async ({page}) => {
+  const densityQueries = [];
   await page.route('**/api/query', async route => {
     const request = route.request();
     if (request.method() === 'POST') {
       const sql = request.postDataJSON().sql;
-      if (sql.startsWith('SELECT id,ts,dur,ts_end,cpu,pid,rpc,event,name,category,arg0,retval,ipc FROM events') && sql.includes('ORDER BY ts,dur DESC LIMIT 10001')) {
-        const rows = Array.from({length: 64}, (_, index) => [index + 1, 1.01, .001, 1.011, index, 100 + index, 0, 1024, `task.${index}`, 'user', 0, 0, 0]);
+      if (sql.includes('tracks(group_order,group_name,track,first_ts)')) {
+        const rows = [
+          ...Array.from({length: 128}, (_, index) => ['cpu', index, 1.01]),
+          ...Array.from({length: 128}, (_, index) => ['pid', 100 + index, 1.01]),
+        ];
         await route.fulfill({
           contentType: 'application/json',
-          body: JSON.stringify({columns: [], rows, truncated: false, elapsed_ms: .1, sql}),
+          body: JSON.stringify({
+            columns: ['group_name', 'track', 'first_ts'],
+            rows,
+            truncated: false,
+            elapsed_ms: .1,
+            sql,
+          }),
         });
         return;
+      }
+      if (sql.startsWith('SELECT id,ts,dur,ts_end,cpu,pid,rpc,event,name,category,arg0,retval,ipc FROM events') && sql.includes('ORDER BY ts,dur DESC LIMIT 10001')) {
+        const rows = Array.from({length: 128}, (_, index) => [index + 1, 1.01, .001, 1.011, index, 100 + index, 0, 1024, `task.${index}`, 'user', 0, 0, 0]);
+        await route.fulfill({
+          contentType: 'application/json',
+          body: JSON.stringify({columns: [], rows, truncated: true, elapsed_ms: .1, sql}),
+        });
+        return;
+      }
+      if (sql.includes(' IN (') && (sql.includes('timeline_mipmap') || sql.includes('WITH RECURSIVE scoped'))) {
+        densityQueries.push(sql);
       }
     }
     await route.continue();
   });
   await page.reload();
   await waitForTimeline(page);
-  const tracks = (await page.locator('#timeline').getAttribute('data-visible-tracks')).split(',');
-  expect(tracks.filter(track => track.startsWith('cpu:'))).toHaveLength(64);
-  expect(tracks.filter(track => track.startsWith('pid:'))).toHaveLength(64);
+  const timeline = page.locator('#timeline');
+  const scroll = page.locator('#timeline-scroll');
+  await expect(timeline).toHaveAttribute('data-track-count', '256');
+  await expect(timeline).toHaveAttribute('data-track-catalog-truncated', 'false');
+  expect((await timeline.getAttribute('data-visible-tracks')).split(',').length).toBeLessThan(64);
+  expect(Number(await timeline.getAttribute('data-rendered-events'))).toBeLessThan(1000);
+
+  await scroll.evaluate(element => element.scrollTop = 100 * 52);
+  await expect(timeline.locator('.track-label[data-track="cpu:100"]')).toBeVisible();
+  expect(Number(await timeline.getAttribute('data-y-start'))).toBeGreaterThan(80);
+  await expect.poll(() => densityQueries.some(sql => /cpu IN \([^)]*\b100\b/.test(sql)))
+    .toBe(true);
+
+  await scroll.evaluate(element => element.scrollTop = 128 * 52);
+  await expect(timeline.locator('.track-label[data-track="pid:100"]')).toBeVisible();
+  await expect.poll(() => densityQueries.some(sql => /pid IN \([^)]*\b100\b/.test(sql)))
+    .toBe(true);
+  const beforeZoom = Number(await timeline.getAttribute('data-row-height'));
+  await page.locator('#y-zoom-in').click();
+  await expect.poll(async () => Number(await timeline.getAttribute('data-row-height')))
+    .toBeGreaterThan(beforeZoom);
+  await expect(timeline).toHaveAttribute('data-track-count', '256');
+  const savedRowHeight = Number(await timeline.getAttribute('data-row-height'));
+  const savedScroll = Number(await timeline.getAttribute('data-y-scroll'));
+  await page.locator('#save-workspace').click();
+  await page.reload();
+  await waitForTimeline(page);
+  await expect(timeline).toHaveAttribute('data-track-count', '256');
+  await expect(timeline).toHaveAttribute('data-row-height', savedRowHeight.toFixed(3));
+  await expect.poll(async () => Number(await timeline.getAttribute('data-y-scroll')))
+    .toBeGreaterThan(savedScroll * .9);
 });
 
 test('discards stale timeline responses after a newer viewport/filter request', async ({page}) => {
@@ -431,9 +487,11 @@ test('keeps SQL, schema inspection, saved views, and portable workspace state', 
   const exported = await download;
   const workspace = JSON.parse(await readFile(await exported.path(), 'utf8'));
   expect(workspace.kind).toBe('kutrace-workspace');
-  expect(workspace.version).toBe(4);
+  expect(workspace.version).toBe(5);
   expect(workspace.trackGroups).toEqual({cpu: 'highlighted', pid: 'full', rpc: 'full', resource: 'full'});
   expect(workspace.highlightedTracks).toEqual(['cpu:0']);
+  expect(workspace.rowHeight).toBe(52);
+  expect(workspace.verticalScroll).toBe(0);
   expect(workspace.views).toEqual([{name: 'Agent spans', sql: 'SELECT COUNT(*) AS agent_count FROM agent_spans'}]);
 
   workspace.sql = 'SELECT name FROM profile_callchains LIMIT 3';

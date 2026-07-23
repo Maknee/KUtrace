@@ -533,10 +533,10 @@ symbolized leaves. Opt-in callchains become normalized `profile_samples` and
 `profile_frames` rows and render as a sample-weighted prefix tree; traces
 without callchains get an explicit event-hierarchy fallback rather than
 synthetic stacks. SQL can be retained as one of 32 validated named read-only
-views in the portable version-4 workspace format, which also retains the four
-KUtrace lane groups in full, highlighted-only, or hidden states; version-1
-through version-3 files remain importable. The original self-contained viewer
-is a separate compatibility tab
+views in the portable version-5 workspace format, which also retains the four
+KUtrace lane groups in full, highlighted-only, or hidden states plus the
+vertical row scale and position; version-1 through version-4 files remain
+importable. The original self-contained viewer is a separate compatibility tab
 and is served unchanged when `--legacy-html` is supplied:
 
 ```sh

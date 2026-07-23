@@ -14,7 +14,10 @@ use crate::model::{
 
 const VIEW_WIDTH: f64 = 1_400.0;
 const LABEL_WIDTH: f64 = 116.0;
-const ROW_HEIGHT: f64 = 52.0;
+pub const DEFAULT_ROW_HEIGHT: f64 = 52.0;
+pub const MIN_ROW_HEIGHT: f64 = 18.0;
+pub const MAX_ROW_HEIGHT: f64 = 96.0;
+const ROW_OVERSCAN: usize = 4;
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct Selection {
@@ -25,6 +28,8 @@ pub struct Selection {
 #[derive(Properties, PartialEq)]
 pub struct TimelineProps {
     pub events: Rc<Vec<TraceEvent>>,
+    pub track_catalog: Rc<Vec<String>>,
+    pub catalog_truncated: bool,
     pub range: Range,
     pub full: Range,
     pub mode: TrackMode,
@@ -36,10 +41,14 @@ pub struct TimelineProps {
     pub loading: bool,
     pub truncated: bool,
     pub source: String,
+    pub row_height: f64,
+    pub vertical_scroll: f64,
+    pub viewport_height: f64,
     pub selection: Option<Selection>,
     pub on_range: Callback<Range>,
     pub on_select: Callback<Option<Selection>>,
     pub on_highlight: Callback<String>,
+    pub on_row_zoom: Callback<(f64, f64)>,
 }
 
 fn event_visible(event: &TraceEvent, overlays: Overlays) -> bool {
@@ -153,13 +162,21 @@ fn event_is_highlighted(event: &TraceEvent, highlighted: &HashSet<String>) -> bo
 
 fn track_keys(
     events: &[TraceEvent],
+    catalog: &[String],
     groups: TrackGroups,
     highlighted: &HashSet<String>,
     range: Range,
 ) -> Vec<String> {
+    if !catalog.is_empty() {
+        return catalog
+            .iter()
+            .filter(|track| track_visible(track, groups, highlighted))
+            .cloned()
+            .collect();
+    }
     let mut cpus = BTreeSet::new();
     let mut pids = BTreeSet::new();
-    let mut rpcs = BTreeSet::new();
+    let mut rpcs = HashMap::<i64, f64>::new();
     let mut resources = BTreeSet::new();
     for event in events {
         if event.duration <= 0.0 || event.start >= range.end || event.end <= range.start {
@@ -182,7 +199,10 @@ fn track_keys(
                 .strip_prefix("rpc:")
                 .and_then(|value| value.parse().ok())
             {
-                rpcs.insert(rpc);
+                rpcs
+                    .entry(rpc)
+                    .and_modify(|first| *first = first.min(event.start))
+                    .or_insert(event.start);
             }
             if let Some(resource) = track
                 .strip_prefix("resource:")
@@ -195,7 +215,10 @@ fn track_keys(
             pids.insert(event.pid);
         }
         if event.rpc > 0 {
-            rpcs.insert(event.rpc);
+            rpcs
+                .entry(event.rpc)
+                .and_modify(|first| *first = first.min(event.start))
+                .or_insert(event.start);
         }
         if event.category == "resource" && event.arg0 >= 0 {
             resources.insert(event.arg0);
@@ -203,19 +226,28 @@ fn track_keys(
     }
     let mut tracks = Vec::new();
     if groups.enabled("cpu") {
-        tracks.extend(cpus.into_iter().take(64).map(|cpu| format!("cpu:{cpu}")));
+        tracks.extend(cpus.into_iter().map(|cpu| format!("cpu:{cpu}")));
     }
     if groups.enabled("pid") {
-        tracks.extend(pids.into_iter().take(64).map(|pid| format!("pid:{pid}")));
+        tracks.extend(pids.into_iter().map(|pid| format!("pid:{pid}")));
     }
     if groups.enabled("rpc") {
-        tracks.extend(rpcs.into_iter().take(64).map(|rpc| format!("rpc:{rpc}")));
+        let mut ordered_rpcs = rpcs.into_iter().collect::<Vec<_>>();
+        ordered_rpcs.sort_by(|(left_id, left_ts), (right_id, right_ts)| {
+            left_ts
+                .total_cmp(right_ts)
+                .then_with(|| left_id.cmp(right_id))
+        });
+        tracks.extend(
+            ordered_rpcs
+                .into_iter()
+                .map(|(rpc, _)| format!("rpc:{rpc}")),
+        );
     }
     if groups.enabled("resource") {
         tracks.extend(
             resources
                 .into_iter()
-                .take(64)
                 .map(|resource| format!("resource:{resource}")),
         );
     }
@@ -244,21 +276,25 @@ fn x_at(time: f64, range: Range) -> f64 {
 fn pointer_time(
     event: &PointerEvent,
     range: Range,
-    view_height: f64,
     timeline: &NodeRef,
 ) -> Option<f64> {
     let element = timeline.cast::<Element>()?;
     let rect = element.get_bounding_client_rect();
-    let scale = (rect.width() / VIEW_WIDTH).min(rect.height() / view_height);
-    if !scale.is_finite() || scale <= f64::EPSILON {
+    if !rect.width().is_finite() || rect.width() <= f64::EPSILON {
         return None;
     }
-    // The default SVG viewport is xMidYMid/meet. Account for its horizontal
-    // letterbox instead of interpolating across the outer element bounds.
-    let content_left = rect.left() + (rect.width() - VIEW_WIDTH * scale) / 2.0;
-    let logical_x = (event.client_x() as f64 - content_left) / scale;
+    let logical_x = (event.client_x() as f64 - rect.left()) * VIEW_WIDTH / rect.width();
     let fraction = ((logical_x - LABEL_WIDTH) / (VIEW_WIDTH - LABEL_WIDTH)).clamp(0.0, 1.0);
     Some(range.start + range.span() * fraction)
+}
+
+fn logical_x(client_x: i32, timeline: &NodeRef) -> Option<f64> {
+    let element = timeline.cast::<Element>()?;
+    let rect = element.get_bounding_client_rect();
+    if !rect.width().is_finite() || rect.width() <= f64::EPSILON {
+        return None;
+    }
+    Some((client_x as f64 - rect.left()) * VIEW_WIDTH / rect.width())
 }
 
 #[function_component(Timeline)]
@@ -273,32 +309,35 @@ pub fn timeline(props: &TimelineProps) -> Html {
     let timeline_node = use_node_ref();
     let tracks = track_keys(
         &props.events,
+        &props.track_catalog,
         props.groups,
         &props.highlighted,
         props.range,
     );
+    let row_height = props
+        .row_height
+        .clamp(MIN_ROW_HEIGHT, MAX_ROW_HEIGHT);
+    let viewport_height = props.viewport_height.max(240.0);
+    let first_visible_row = ((props.vertical_scroll / row_height).floor().max(0.0) as usize)
+        .saturating_sub(ROW_OVERSCAN)
+        .min(tracks.len());
+    let last_visible_row = (((props.vertical_scroll + viewport_height) / row_height).ceil()
+        as usize
+        + ROW_OVERSCAN)
+        .min(tracks.len());
     let row_index: HashMap<&str, usize> = tracks
         .iter()
         .enumerate()
         .map(|(index, track)| (track.as_str(), index))
         .collect();
-    let height = (tracks.len().max(1) as f64 * ROW_HEIGHT + 20.0).max(240.0);
+    let height = (tracks.len().max(1) as f64 * row_height + 20.0).max(viewport_height);
     let track_groups = props.groups.names();
-    let visible_tracks = tracks.join(",");
+    let visible_tracks = tracks[first_visible_row..last_visible_row].join(",");
     let highlighted_tracks = {
         let mut values = props.highlighted.iter().cloned().collect::<Vec<_>>();
         values.sort();
         values.join(",")
     };
-    let search_count = props
-        .events
-        .iter()
-        .filter(|event| {
-            event_overlaps(event, props.range)
-                && event_matches(event, &props.search, props.search_invert)
-        })
-        .count();
-
     // Associate each visible event with its enabled KUtrace rows in one pass. The old
     // track × event nested scan became quadratic on many-core traces and also
     // rendered every event in the five-viewport prefetch margin at an edge.
@@ -329,11 +368,20 @@ pub fn timeline(props: &TimelineProps) -> Html {
         targets.dedup();
         for track in targets {
             if let Some(index) = row_index.get(track.as_str()).copied() {
-                rendered_events.push((track, index, event));
+                if (first_visible_row..last_visible_row).contains(&index) {
+                    rendered_events.push((track, index, event));
+                }
             }
         }
     }
     let rendered_event_count = rendered_events.len();
+    let search_count = rendered_events
+        .iter()
+        .filter_map(|(_, _, event)| {
+            event_matches(event, &props.search, props.search_invert).then_some(event.id)
+        })
+        .collect::<HashSet<_>>()
+        .len();
 
     let onpointerdown = {
         let drag_start = drag_start.clone();
@@ -345,7 +393,7 @@ pub fn timeline(props: &TimelineProps) -> Html {
         let range = props.range;
         Callback::from(move |event: PointerEvent| {
             if event.button() == 0 {
-                if let Some(time) = pointer_time(&event, range, height, &timeline_node) {
+                if let Some(time) = pointer_time(&event, range, &timeline_node) {
                     event.prevent_default();
                     if let Some(element) = timeline_node.cast::<Element>() {
                         element.set_pointer_capture(event.pointer_id()).ok();
@@ -374,7 +422,7 @@ pub fn timeline(props: &TimelineProps) -> Html {
         Callback::from(move |event: PointerEvent| {
             if let Some(start) = *drag_start.borrow() {
                 let basis = (*drag_origin.borrow()).unwrap_or(range);
-                if let Some(time) = pointer_time(&event, basis, height, &timeline_node) {
+                if let Some(time) = pointer_time(&event, basis, &timeline_node) {
                     if *drag_pan.borrow() {
                         let delta = start - time;
                         on_range.emit(
@@ -412,7 +460,7 @@ pub fn timeline(props: &TimelineProps) -> Html {
             if !*drag_pan.borrow() {
                 if let (Some(a), Some(b)) = (
                     *drag_start.borrow(),
-                    pointer_time(&event, basis, height, &timeline_node),
+                    pointer_time(&event, basis, &timeline_node),
                 ) {
                     if (a - b).abs() > f64::EPSILON {
                         on_select.emit(Some(Selection {
@@ -459,8 +507,28 @@ pub fn timeline(props: &TimelineProps) -> Html {
     let onwheel = {
         let range = props.range;
         let full = props.full;
+        let vertical_scroll = props.vertical_scroll;
         let on_range = props.on_range.clone();
+        let on_row_zoom = props.on_row_zoom.clone();
+        let timeline_node = timeline_node.clone();
         Callback::from(move |event: WheelEvent| {
+            if logical_x(event.client_x(), &timeline_node).is_some_and(|x| x < LABEL_WIDTH) {
+                event.prevent_default();
+                event.stop_propagation();
+                let next_height = (row_height * (-event.delta_y() * 0.002).exp())
+                    .clamp(MIN_ROW_HEIGHT, MAX_ROW_HEIGHT);
+                let desired_scroll = timeline_node
+                    .cast::<Element>()
+                    .map(|element| {
+                        let rect = element.get_bounding_client_rect();
+                        let absolute_y = event.client_y() as f64 - rect.top();
+                        let local_y = absolute_y - vertical_scroll;
+                        (absolute_y / row_height * next_height - local_y).max(0.0)
+                    })
+                    .unwrap_or(vertical_scroll * next_height / row_height);
+                on_row_zoom.emit((next_height, desired_scroll));
+                return;
+            }
             if event.ctrl_key() || event.meta_key() {
                 event.prevent_default();
                 let factor = (event.delta_y() * 0.002).exp();
@@ -487,6 +555,7 @@ pub fn timeline(props: &TimelineProps) -> Html {
           ref={timeline_node}
           class="timeline-vector"
           viewBox={format!("0 0 {VIEW_WIDTH} {height}")}
+          preserveAspectRatio="none"
           style={format!("height:{height}px")}
           tabindex="0"
           aria-label="KUtrace vector timeline; drag to select, Shift click a span to highlight its track, Ctrl wheel to zoom"
@@ -499,7 +568,13 @@ pub fn timeline(props: &TimelineProps) -> Html {
           data-track-mode={props.mode.value()}
           data-track-groups={track_groups}
           data-track-group-states={props.groups.states()}
+          data-track-count={tracks.len().to_string()}
+          data-track-catalog-truncated={props.catalog_truncated.to_string()}
           data-visible-tracks={visible_tracks}
+          data-row-height={format!("{row_height:.3}")}
+          data-y-scroll={format!("{:.3}",props.vertical_scroll)}
+          data-y-start={first_visible_row.to_string()}
+          data-y-end={last_visible_row.to_string()}
           data-highlighted-tracks={highlighted_tracks}
           data-search-count={search_count.to_string()}
           data-rendered-events={rendered_event_count.to_string()}
@@ -510,8 +585,9 @@ pub fn timeline(props: &TimelineProps) -> Html {
               let time = props.range.start + props.range.span() * tick as f64 / 10.0;
               html! {<g class="time-grid"><line x1={x.to_string()} y1="0" x2={x.to_string()} y2={height.to_string()}/><text x={x.to_string()} y="12">{format!("{:.3}", time * 1000.0)}</text></g>}
           })}
-          { for tracks.iter().enumerate().map(|(index, track)| {
-              let y = index as f64 * ROW_HEIGHT + 18.0;
+          { for tracks.iter().enumerate().skip(first_visible_row).take(last_visible_row-first_visible_row).map(|(index, track)| {
+              let row_top = index as f64 * row_height;
+              let center = row_top + row_height / 2.0;
               let emphasized = props.highlighted.is_empty() || props.highlighted.contains(track);
               let selected = props.highlighted.contains(track);
               let track_copy = track.clone();
@@ -535,18 +611,18 @@ pub fn timeline(props: &TimelineProps) -> Html {
                   event.stop_propagation();
               });
               html! {<g class={classes!("track-row", (!emphasized).then_some("dimmed"))}>
-                <rect x="0" y={(y-16.0).to_string()} width={VIEW_WIDTH.to_string()} height={ROW_HEIGHT.to_string()} class="track-background"/>
-                <text x="8" y={(y+13.0).to_string()}
+                <rect x="0" y={row_top.to_string()} width={VIEW_WIDTH.to_string()} height={row_height.to_string()} class="track-background"/>
+                <text x="8" y={(center+4.0).to_string()}
                   class={classes!("track-label",selected.then_some("highlighted"))}
                   data-track={track.clone()}
                   tabindex="0" role="button" aria-pressed={selected.to_string()}
                   aria-label={format!("Highlight {}",track_label(track))}
                   {onclick} {onkeydown} {onpointerdown}>{track_label(track)}</text>
-                <line x1={LABEL_WIDTH.to_string()} y1={(y+13.0).to_string()} x2={VIEW_WIDTH.to_string()} y2={(y+13.0).to_string()} class="track-center"/>
+                <line x1={LABEL_WIDTH.to_string()} y1={center.to_string()} x2={VIEW_WIDTH.to_string()} y2={center.to_string()} class="track-center"/>
               </g>}
           })}
           { for rendered_events.into_iter().map(|(track, index, event)| {
-              let center = index as f64 * ROW_HEIGHT + 31.0;
+              let center = index as f64 * row_height + row_height / 2.0;
                   let x = x_at(event.start.max(props.range.start), props.range);
                   let end = event.end.max(event.start + props.range.span() / (VIEW_WIDTH - LABEL_WIDTH));
                   let width = (x_at(end.min(props.range.end), props.range) - x).max(0.8);
@@ -582,14 +658,16 @@ pub fn timeline(props: &TimelineProps) -> Html {
                   let is_idle = event.event == 65_536;
                   let is_wait = event.event & 0x0f_ffe0 == 768;
                   let wake_target = if event.category == "wakeup" && track.starts_with("cpu:") {
-                      row_index.get(format!("pid:{}", event.arg0).as_str()).copied().map(|target| target as f64 * ROW_HEIGHT + 31.0)
+                      row_index.get(format!("pid:{}", event.arg0).as_str()).copied().map(|target| target as f64 * row_height + row_height / 2.0)
                   } else { None };
-                  let y = if is_mark { center - 22.0 } else if is_sample { center - 20.0 } else { center - 12.0 };
-                  let h = if is_mark || is_sample { 40.0 } else { 24.0 };
+                  let event_height = (row_height - 8.0).clamp(8.0, 24.0);
+                  let annotation_height = (row_height - 4.0).clamp(10.0, 40.0);
+                  let h = if is_mark || is_sample { annotation_height } else { event_height };
+                  let y = center - h / 2.0;
                   html! {<g class="trace-event" opacity={opacity.to_string()} {onclick}>
                     <title>{format!("{} · {} · {} · {:.9}s · {:.2}us", if event.name.is_empty() {"(unnamed)"} else {&event.name}, event.category, track_label(&track), event.start, event.duration.max(0.0)*1e6)}</title>
                     if is_mark {
-                      <path d={format!("M {x} {} l -5 10 h 10 z", center-22.0)} fill={dark}/>
+                      <path d={format!("M {x} {y} l -5 10 h 10 z")} fill={dark}/>
                     } else if is_sample {
                       <line x1={x.to_string()} y1={y.to_string()} x2={x.to_string()} y2={(y+h).to_string()} stroke={dark} stroke-width="1.5"/>
                     } else if let Some(target) = wake_target {

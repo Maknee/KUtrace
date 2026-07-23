@@ -8,11 +8,11 @@ fn main() -> std::io::Result<()> {
     let output = PathBuf::from(
         arguments
             .next()
-            .expect("usage: kutrace-ui-fixture OUTPUT COUNT [NAME_CARDINALITY]"),
+            .expect("usage: kutrace-ui-fixture OUTPUT COUNT [NAME_CARDINALITY] [CPU_CARDINALITY]"),
     );
     let count: u64 = arguments
         .next()
-        .expect("usage: kutrace-ui-fixture OUTPUT COUNT [NAME_CARDINALITY]")
+        .expect("usage: kutrace-ui-fixture OUTPUT COUNT [NAME_CARDINALITY] [CPU_CARDINALITY]")
         .to_string_lossy()
         .parse()
         .expect("COUNT must be an integer");
@@ -25,9 +25,22 @@ fn main() -> std::io::Result<()> {
                 .expect("NAME_CARDINALITY must be an integer")
         })
         .unwrap_or(1);
+    let cpu_cardinality: u64 = arguments
+        .next()
+        .map(|value| {
+            value
+                .to_string_lossy()
+                .parse()
+                .expect("CPU_CARDINALITY must be an integer")
+        })
+        .unwrap_or(64);
     assert!(
         name_cardinality > 0 && name_cardinality <= count,
         "NAME_CARDINALITY must be between 1 and COUNT"
+    );
+    assert!(
+        cpu_cardinality > 0 && cpu_cardinality <= 65_536,
+        "CPU_CARDINALITY must be between 1 and 65536"
     );
     let mut writer = BufWriter::new(std::fs::File::create(output)?);
     writer.write_all(
@@ -37,7 +50,7 @@ fn main() -> std::io::Result<()> {
     for index in 0..count {
         let comma = if index == 0 { "" } else { ",\n" };
         let ts = index as f64 / 1_000_000.0;
-        let cpu = index % 64;
+        let cpu = index % cpu_cardinality;
         let pid = 10_000 + index % 256;
         if index % 10 == 0 {
             let span = index / 10 + 1;

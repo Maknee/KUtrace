@@ -43,8 +43,18 @@ same bounded read-only contract.
   RPC, and resource lanes through full, highlighted-only, and hidden. As in the
   original, a group without highlighted rows skips highlighted-only. The choice
   applies to exact and density rendering, is keyboard accessible, and survives
-  version-4 workspace save/export/import; version-1 through version-3 state is
+  version-5 workspace save/export/import; version-1 through version-4 state is
   migrated while loading.
+- The Y axis has its own continuous viewport. Native scrolling pans it;
+  scrolling over the blue label region or using the `Y−`/`Y+` controls changes
+  row scale while preserving the anchored row. A range-bounded SQL catalog
+  removes inactive rows, keeps CPU/PID/resource IDs numeric, retains RPC
+  first-occurrence order, and lets the browser virtualize row SVG nodes instead
+  of imposing the former 64-row family cap. Density SQL is constrained to the
+  overscanned Y window, so a many-core trace does not spend its glyph budget on
+  off-screen cores. The catalog is bounded at the query API's 50,000-row limit
+  and exposes an explicit truncation attribute rather than silently claiming
+  completeness.
 - Marks, samples, wakeups, lock rails, CPU frequency, IPC, idle/wait lines, and
   KUtrace user-mode inner stripes are vector overlays on the same time domain.
 - The overview, timeline, selection, details, flamegraph, and SQL notebook share
@@ -102,8 +112,9 @@ schema also exposes `agent_spans`, `agent_annotations`, `rpc_activity`,
 All browser SQL is read-only, limited to at most 50,000 returned rows by the
 server, and interrupted after two seconds. UI queries use smaller explicit
 limits. Filter values are escaped before becoming SQL predicates. Workspace
-files are validated, versioned JSON containing filters, the current range,
-track/display state, notebook SQL, and up to 32 saved read-only views. The
+files are validated, versioned JSON containing filters, the current X and Y
+ranges, row scale, track/display state, notebook SQL, and up to 32 saved
+read-only views. The
 server binds to loopback by default.
 
 The importer builds 1 ms and 16 ms materialized timeline mipmaps for bounded
@@ -151,8 +162,9 @@ absence of the retired `/app.js`, SVG rendering, repeated held-key updates,
 wheel zoom, Alt-drag pan, selection, Shift highlighting, Escape, filters,
 search, SQL/schema inspection, saved and portable workspace state, honest
 flamegraph fallback, normalized callchains, agent-span navigation and context,
-three-state track groups, line-label highlighting, and the separate legacy
-route. Chromium also owns a deterministic screenshot
+three-state track groups, line-label highlighting, virtualized vertical
+pan/zoom, uncapped many-core navigation, and the separate legacy route.
+Chromium also owns a deterministic screenshot
 baseline for the original KUtrace light visual grammar, blue labels, black
 execution rails, and aligned CPU/PID/RPC/resource lanes.
 
