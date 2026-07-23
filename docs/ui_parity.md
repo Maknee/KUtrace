@@ -26,7 +26,7 @@ comparison surface, not a substitute for reimplementation.
 | Quick saved viewport slots and restore | implemented | Back plus four Shift-save/click-restore slots preserve the complete investigative view and have Chromium/Firefox and agent-navigation regressions |
 | Tiny-span deferral/density refinement | implemented | Exact-to-density budget and mipmap tests |
 | Specialized RPC packet/message and wakeup glyphs | implemented | A deterministic wire fixture exercises one shared network band, red RX/cyan TX slopes, packet ticks, packetized dashes, RPC IDs, legacy 10ns size reconstruction, independent arc toggling, color-blind colors, and agent-visible glyph counts in Chromium/Firefox |
-| Idle, wait, user stripes, lock rails, frequency, and IPC glyph grammar | partial | Core glyphs exist; remaining event-family differential screenshots are needed |
+| Idle, wait, user stripes, lock rails, frequency, and IPC glyph grammar | implemented | A deterministic fixture is rendered through both the original gzip/hex viewer pipeline and the Rust/WASM view; Chromium owns the differential baseline while Chromium/Firefox assert solid/dashed idle, two/four-line rails, Morse wait colors, stacked held/try braces, frequency bands, IPC needles, display cycles, and agent-visible glyph counts |
 | Exact event inspection | implemented differently | Human details dock and bounded SQL expose exact rows |
 | Sampled-stack flamegraph | modern extension | Normalized symbolized callchain browser fixture |
 | Agent reasoning/RPC/resource context | modern extension | Agent tree, exact SQL, annotations, and browser navigation helper |

@@ -460,6 +460,64 @@ test('draws original directional RPC messages, packets, and independent wakeup a
   }
 });
 
+test('draws original execution rails, Morse waits, lock stacks, frequency, and IPC', async ({page, browserName}) => {
+  await page.goto('http://127.0.0.1:39133/');
+  await expect(page.locator('#trace-title')).toContainText('Execution rail grammar fixture');
+  await waitForTimeline(page);
+
+  const idle = page.locator('[data-overlay-glyph="idle"]');
+  const userRails = page.locator('[data-overlay-glyph="user-rail"]');
+  const kernelRails = page.locator('[data-overlay-glyph="kernel-rail"]');
+  const waits = page.locator('[data-overlay-glyph="wait"]');
+  const locks = page.locator('[data-overlay-glyph="lock"]');
+  const frequency = page.locator('[data-overlay-glyph="frequency"]');
+  await expect(idle).toHaveCount(4);
+  await expect(page.locator('[data-overlay-glyph="idle"][stroke-dasharray="8 2"]')).toHaveCount(2);
+  await expect(userRails).toHaveCount(4);
+  await expect(userRails.first().locator('[data-user-stripe]')).toHaveCount(2);
+  await expect(kernelRails).toHaveCount(4);
+  await expect(kernelRails.first().locator('line')).toHaveCount(4);
+  await expect(waits).toHaveCount(6);
+  await expect(page.locator('[data-wait-code="770"]').first()).toHaveAttribute('data-wait-color', '#ffc000');
+  await expect(page.locator('[data-wait-code="779"]').first()).toHaveAttribute('data-wait-color', '#ff4040');
+  await expect(page.locator('[data-wait-code="781"]').first()).toHaveAttribute('data-wait-color', '#8080ff');
+  await expect(locks).toHaveCount(4);
+  await expect(page.locator('[data-lock-level="1"]')).toHaveCount(2);
+  await expect(page.locator('[data-lock-kind="try"] line').first()).toHaveAttribute('stroke-dasharray', '3 3');
+  await expect(frequency).toHaveCount(4);
+  await expect(page.locator('[data-frequency-mhz="800"] line').first()).toHaveAttribute('stroke', '#e00000');
+  await expect(page.locator('[data-frequency-mhz="3200"] line').first()).toHaveAttribute('stroke', '#00c000');
+
+  await page.locator('[data-overlay="ipc"]').click();
+  await expect(page.locator('[data-overlay="ipc"]')).toHaveAttribute('data-state', '3');
+  const ipc = page.locator('[data-overlay-glyph="ipc"]');
+  await expect(ipc).toHaveCount(8);
+  await expect(page.locator('[data-ipc-value="4"]').first()).toHaveAttribute('fill', '#fff');
+  await expect(page.locator('[data-ipc-value="7"]').first()).toHaveAttribute('d', /L .* L .* L .* Z/);
+  await expect(page.locator('[data-ipc-value="12"]').first()).toHaveAttribute('stroke', '#aa0000');
+
+  await page.locator('[data-overlay="locks"]').click();
+  await expect.poll(async () => Number(
+    await page.locator('[data-lock-kind="held"] line').first().getAttribute('stroke-width'),
+  )).toBeCloseTo(4.5, 5);
+  await page.locator('[data-overlay="locks"]').click();
+  await expect(locks).toHaveCount(0);
+  await page.locator('[data-overlay="locks"]').click();
+
+  await page.locator('[data-overlay="frequency"]').click();
+  await expect(page.locator('[data-frequency-mhz="800"] line').first()).toHaveAttribute('stroke-opacity', '0.6');
+  await page.locator('[data-overlay="frequency"]').click();
+  await expect(frequency).toHaveCount(0);
+  await page.locator('[data-overlay="frequency"]').click();
+
+  if (browserName === 'chromium') {
+    await expect(page.locator('.timeline-card')).toHaveScreenshot('execution-rail-glyphs.png', {
+      animations: 'disabled',
+      caret: 'hide',
+    });
+  }
+});
+
 test('uses a real bounded density summary and preserves CPU/PID rows', async ({page}) => {
   let sawMipmap = false;
   let sawPidSummary = false;

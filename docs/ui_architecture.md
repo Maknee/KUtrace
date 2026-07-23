@@ -59,6 +59,11 @@ same bounded read-only contract.
   KUtrace user-mode inner stripes are vector overlays on the same time domain.
   Marks, arcs, locks, frequency, IPC, and samples retain the original numeric
   display-state cycles, including Samples' distinct Shift-click behavior.
+  Execution spans reproduce the original geometry: two-stripe user rails,
+  four-line kernel/syscall rails, solid and dashed idle, Morse-coded waits,
+  stacked held/try lock braces, frequency-opacity bands, and notched IPC
+  speedometer needles. The same glyphs are derived independently for visible
+  CPU and PID rows.
   RPC messages and kernel packet sightings use the original shared network band
   above CPU rows: receive traffic slopes backward in dark red, transmit traffic
   slopes forward in dark cyan, long messages show packetized dashes and RPC
@@ -89,7 +94,7 @@ changing the fixed 112-byte `KUEBPF01` event ABI.
 
 After capture stops, `kutrace-transform` snapshots the stack maps and resolves
 every frame with Blazesym. It emits folded root-to-leaf names such as
-`main;dispatch;parse_request`. Import schema version 10 normalizes these into:
+`main;dispatch;parse_request`. Import schema version 11 normalizes these into:
 
 - `profile_samples(sample_id,event_id,ts,cpu,pid,stack_depth,has_callchain)`
 - `profile_frames(sample_id,depth,name)`
@@ -176,7 +181,8 @@ symbolization. It is not required for normal KUtrace event tracing.
 ## Verification
 
 The Playwright suite starts release servers for an ordinary trace, a
-symbolized-stack fixture, and a focused RPC-wire fixture. Chromium and Firefox
+symbolized-stack fixture, a focused RPC-wire fixture, and a deterministic
+execution-glyph fixture. Chromium and Firefox
 verify the Yew/WASM entry point,
 absence of the retired `/app.js`, SVG rendering, repeated held-key updates,
 wheel zoom, Alt-drag pan, selection, Shift highlighting, Escape, filters,
@@ -184,10 +190,11 @@ search, SQL/schema inspection, saved and portable workspace state, honest
 flamegraph fallback, normalized callchains, agent-span navigation and context,
 three-state track groups, line-label highlighting, virtualized vertical
 pan/zoom, uncapped many-core navigation, directional RPC messages and packets,
-independent wakeup arcs, and the separate legacy route. Chromium also owns
-deterministic screenshot baselines for the original KUtrace light visual
-grammar and RPC wire band, including blue labels, black execution rails, and
-aligned CPU/PID/RPC/resource lanes.
+independent wakeup arcs, the original execution-rail glyph families, and the
+separate legacy route. Chromium also owns deterministic screenshot baselines
+for the original KUtrace light visual grammar, RPC wire band, and execution
+rails, including blue labels, black execution rails, and aligned
+CPU/PID/RPC/resource lanes.
 
 ```sh
 make -C ebpf test-ui

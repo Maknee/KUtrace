@@ -22,7 +22,7 @@ use serde::{
 use serde_json::Value;
 
 type RawEvent = (f64, f64, i64, i64, i64, i64, i64, i64, i64, String);
-const UI_SCHEMA_VERSION: i64 = 10;
+const UI_SCHEMA_VERSION: i64 = 11;
 const EVENT_INSERT_BATCH: usize = 64;
 const TIMELINE_MIPMAP_WIDTH_SECONDS: f64 = 0.001;
 const TIMELINE_MIPMAP_COARSE_WIDTH_SECONDS: f64 = 0.016;
@@ -313,7 +313,8 @@ fn category(event: i64, retval: i64, name: &str) -> &'static str {
         0x20a..=0x20d => "mark",
         0x210..=0x212 => "lock",
         0x219..=0x21b => "resource",
-        0x280..=0x284 => "sample",
+        0x280..=0x281 => "sample",
+        0x282..=0x283 => "lock",
         value if value > 0xffff => "user",
         _ => "special",
     }
@@ -906,6 +907,10 @@ mod tests {
         assert_eq!(category(0x20a, 1, "ordinary.mark"), "mark");
         assert_eq!(category(0x20a, 0, "agent.query.sql"), "mark");
         assert_eq!(category(0x210, 0, "lock"), "lock");
+        assert_eq!(category(0x280, 0, "user-pc"), "sample");
+        assert_eq!(category(0x281, 0, "kernel-pc"), "sample");
+        assert_eq!(category(0x282, 0, "lock-held"), "lock");
+        assert_eq!(category(0x283, 0, "lock-try"), "lock");
         assert_eq!(category(0x219, 0, "resource"), "resource");
 
         let bounded = run_query(

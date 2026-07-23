@@ -80,23 +80,36 @@ fn event_overlaps(event: &TraceEvent, range: Range) -> bool {
 }
 
 fn event_colors(event: i64, colorblind: bool) -> (&'static str, &'static str) {
-    const LIGHT: [&str; 17] = [
-        "#f7b6d2", "#a8e6cf", "#ffd3a5", "#b5d8ff", "#d5b3ff", "#ffe58a", "#b8f2e6", "#ffcab1",
-        "#c7ceea", "#c9f0c1", "#f6c1c7", "#a0d8ef", "#e2c2ff", "#f9e2ae", "#bde0fe", "#cdeac0",
-        "#ffc8dd",
+    const UPPER: [&str; 17] = [
+        "#cc0000", "#cc4700", "#cc8f00", "#becc00", "#77cc00", "#30cc00", "#00cc18", "#00cc5f",
+        "#00cca7", "#00a7cc", "#005fcc", "#0018cc", "#3000cc", "#7700cc", "#be00cc", "#cc008f",
+        "#cc0047",
     ];
-    const DARK: [&str; 15] = [
-        "#b00060", "#008060", "#d06000", "#0050b0", "#7030a0", "#a07800", "#007c78", "#b04020",
-        "#3f51a3", "#348c31", "#a52a3a", "#166088", "#663399", "#8a5a00", "#1d5d9b",
+    const LOWER: [&str; 15] = [
+        "#ff0000", "#ff6600", "#ffcc00", "#cce000", "#66e000", "#00ff00", "#00ff66", "#00ffcc",
+        "#00ccff", "#0066ff", "#0000ff", "#6600ff", "#cc00ff", "#ff00cc", "#ff0066",
     ];
-    if colorblind {
-        return ("#b9dcf2", "#0072b2");
-    }
+    const CB_UPPER: [&str; 17] = [
+        "#00cc00", "#00cc47", "#00cc8f", "#00becc", "#0077cc", "#0030cc", "#1800cc", "#5f00cc",
+        "#a700cc", "#cc00a7", "#cc005f", "#cc0018", "#cc3000", "#cc7700", "#ccbe00", "#8fcc00",
+        "#47cc00",
+    ];
+    const CB_LOWER: [&str; 15] = [
+        "#00ff00", "#00ff66", "#00ffcc", "#00ccff", "#0066ff", "#0000ff", "#6600ff", "#cc00ff",
+        "#ff00cc", "#ff0066", "#ff0000", "#ff6600", "#ffcc00", "#cce000", "#66e000",
+    ];
     let value = event.unsigned_abs() as usize;
-    (
-        LIGHT[(value * 4) % LIGHT.len()],
-        DARK[(value * 7 + 6) % DARK.len()],
-    )
+    if colorblind {
+        (
+            CB_UPPER[(value * 4) % CB_UPPER.len()],
+            CB_LOWER[(value * 7 + 6) % CB_LOWER.len()],
+        )
+    } else {
+        (
+            UPPER[(value * 4) % UPPER.len()],
+            LOWER[(value * 7 + 6) % LOWER.len()],
+        )
+    }
 }
 
 fn category_fill(category: &str, colorblind: bool) -> &'static str {
@@ -373,6 +386,254 @@ fn rpc_wire_glyph(
     })
 }
 
+const WAIT_DASH: [(&str, f64); 32] = [
+    ("3 3 9 9", 24.0),
+    ("9 3 3 3 3 3 3 9", 36.0),
+    ("9 3 3 3 9 3 3 9", 42.0),
+    ("9 3 3 3 3 9", 30.0),
+    ("3 9", 12.0),
+    ("3 3 3 3 9 3 3 9", 36.0),
+    ("9 3 9 3 3 9", 36.0),
+    ("3 3 3 3 3 3 3 9", 30.0),
+    ("3 3 3 9", 18.0),
+    ("3 3 9 3 9 3 9 9", 48.0),
+    ("9 3 3 3 9 9", 36.0),
+    ("3 3 9 3 3 3 3 9", 36.0),
+    ("9 3 9 9", 30.0),
+    ("9 3 3 9", 24.0),
+    ("9 3 9 3 9 9", 42.0),
+    ("3 3 9 3 9 3 3 9", 42.0),
+    ("9 3 9 3 3 3 9 9", 48.0),
+    ("3 3 9 3 3 9", 30.0),
+    ("3 3 3 3 3 9", 24.0),
+    ("9 9", 18.0),
+    ("3 3 3 3 9 9", 30.0),
+    ("3 3 3 3 3 3 9 9", 36.0),
+    ("3 3 9 3 9 9", 36.0),
+    ("9 3 3 3 3 3 9 9", 42.0),
+    ("9 3 3 3 9 3 9 9", 48.0),
+    ("9 3 9 3 3 3 3 9", 42.0),
+    ("1 1", 2.0),
+    ("1 1", 2.0),
+    ("1 1", 2.0),
+    ("1 1", 2.0),
+    ("1 1", 2.0),
+    ("1 1", 2.0),
+];
+
+fn wait_color(letter: usize, colorblind: bool) -> &'static str {
+    match (letter, colorblind) {
+        (2, false) => "#ffc000",
+        (3, false) => "#55aa55",
+        (11, false) => "#ff4040",
+        (12, false) => "#aa5500",
+        (13, false) => "#8080ff",
+        (15, false) => "#555555",
+        (19, false) => "#e0e0e0",
+        (2, true) => "#e69f00",
+        (3, true) => "#009e73",
+        (11, true) => "#d55e00",
+        (12, true) => "#cc79a7",
+        (13, true) => "#0072b2",
+        (15, true) => "#555555",
+        (19, true) => "#c8c8c8",
+        _ => "#808080",
+    }
+}
+
+fn wait_glyph(
+    event: &TraceEvent,
+    x: f64,
+    width: f64,
+    center: f64,
+    event_height: f64,
+    colorblind: bool,
+) -> Option<Html> {
+    if width < 2.0 {
+        return None;
+    }
+    let letter = event.event.checked_sub(0x300)? as usize;
+    let (dash, character_width) = *WAIT_DASH.get(letter)?;
+    let character_count = ((width / character_width) - 0.5).floor().clamp(0.0, 3.0) as usize;
+    let character_length = character_count as f64 * character_width;
+    let line_length = width - character_length;
+    let y = center - event_height / 4.0;
+    let stroke_width = (event_height * 0.075).max(0.5);
+    let color = wait_color(letter, colorblind);
+    Some(html! {
+      <g data-overlay-glyph="wait" data-wait-code={event.event.to_string()}
+        data-wait-color={color}>
+        <line x1={x.to_string()} y1={y.to_string()} x2={(x+width).to_string()}
+          y2={y.to_string()} stroke="#fff" stroke-width={event_height.to_string()}/>
+        <line x1={x.to_string()} y1={y.to_string()} x2={(x+line_length).to_string()}
+          y2={y.to_string()} stroke={color} stroke-width={stroke_width.to_string()}
+          vector-effect="non-scaling-stroke"/>
+        if character_count > 0 {
+          <line x1={(x+line_length).to_string()} y1={y.to_string()}
+            x2={(x+width).to_string()} y2={y.to_string()} stroke={color}
+            stroke-width={(stroke_width*2.0).to_string()} stroke-dasharray={dash}
+            stroke-dashoffset="-2" vector-effect="non-scaling-stroke"/>
+        }
+      </g>
+    })
+}
+
+#[derive(Clone, Copy)]
+struct RailGeometry {
+    x: f64,
+    width: f64,
+    center: f64,
+    height: f64,
+}
+
+fn lock_rail_glyph(
+    event: &TraceEvent,
+    geometry: RailGeometry,
+    level: usize,
+    mode: u8,
+    colorblind: bool,
+) -> Option<Html> {
+    let RailGeometry {
+        x,
+        width,
+        center,
+        height: event_height,
+    } = geometry;
+    if width < 8.0 || mode == 0 {
+        return None;
+    }
+    let (_, color) = event_colors(event.arg0, colorblind);
+    let base = (event_height * 0.075).max(1.0);
+    let acquired = event.event == 0x282;
+    let stroke_width = if mode == 1 && acquired {
+        base * 1.5
+    } else {
+        base
+    };
+    let y = center - event_height * 0.55 - level as f64 * stroke_width * 1.5;
+    let radius = stroke_width;
+    let endcaps = format!(
+        "M {} {} Q {} {} {} {} M {} {} Q {} {} {} {}",
+        x + 6.0,
+        y - radius,
+        x - 6.0,
+        y,
+        x + 6.0,
+        y + radius,
+        x + width - 6.0,
+        y - radius,
+        x + width + 6.0,
+        y,
+        x + width - 6.0,
+        y + radius
+    );
+    Some(html! {
+      <g data-overlay-glyph="lock" data-lock-level={level.to_string()}
+        data-lock-kind={if acquired {"held"} else {"try"}}>
+        <line x1={x.to_string()} y1={y.to_string()} x2={(x+width).to_string()}
+          y2={y.to_string()} stroke={color} stroke-width={stroke_width.to_string()}
+          stroke-dasharray={if acquired {"none"} else {"3 3"}}
+          vector-effect="non-scaling-stroke"/>
+        <path d={endcaps} fill="none" stroke={color} stroke-width="2"
+          vector-effect="non-scaling-stroke"/>
+      </g>
+    })
+}
+
+fn frequency_glyph(
+    event: &TraceEvent,
+    geometry: RailGeometry,
+    minimum: i64,
+    maximum: i64,
+    mode: u8,
+) -> Option<Html> {
+    let RailGeometry {
+        x,
+        width,
+        center,
+        height: event_height,
+    } = geometry;
+    if mode == 0 || (mode == 2 && width < 2.0) {
+        return None;
+    }
+    let divisor = ((maximum - minimum) as f64 / 8.0).max(1.0);
+    let band = (((event.arg0 - minimum) as f64 / divisor).floor() as usize).min(15);
+    let color = if band == 0 {
+        "#e00000"
+    } else if band < 7 {
+        "#e0c000"
+    } else {
+        "#00c000"
+    };
+    const NORMAL: [f64; 16] = [
+        0.5, 0.4, 0.4, 0.3, 0.3, 0.2, 0.2, 0.05, 0.05, 0.05, 0.05, 0.05, 0.05, 0.05, 0.05, 0.05,
+    ];
+    const BOLD: [f64; 16] = [
+        0.6, 0.5, 0.5, 0.4, 0.4, 0.3, 0.3, 0.15, 0.15, 0.15, 0.15, 0.15, 0.15, 0.15, 0.15, 0.15,
+    ];
+    let opacity = if mode == 1 { BOLD[band] } else { NORMAL[band] };
+    Some(html! {
+      <g data-overlay-glyph="frequency" data-frequency-mhz={event.arg0.to_string()}
+        data-frequency-band={band.to_string()}>
+        <line x1={x.to_string()} y1={center.to_string()} x2={(x+width).to_string()}
+          y2={center.to_string()} stroke={color} stroke-opacity={opacity.to_string()}
+          stroke-width={event_height.to_string()} vector-effect="non-scaling-stroke"/>
+        if width > 34.0 {
+          <text x={(x+3.0).to_string()} y={(center+3.5).to_string()}
+            class="event-label">{format!("{}MHz",event.arg0)}</text>
+        }
+      </g>
+    })
+}
+
+fn ipc_glyph(
+    event: &TraceEvent,
+    x: f64,
+    width: f64,
+    center: f64,
+    event_height: f64,
+    colorblind: bool,
+) -> Html {
+    let value = (event.ipc & 0x0f) as usize;
+    let size = event_height * 0.67;
+    let angle = std::f64::consts::PI - value as f64 * std::f64::consts::PI / 16.0;
+    let sin = angle.sin();
+    let cos = angle.cos();
+    let center_x = x + width / 2.0;
+    let offset = size * 0.75;
+    let tip_x = center_x + offset * cos;
+    let tip_y = center - offset * sin;
+    let back = -size;
+    let half_width = size / 5.0;
+    let left_x = tip_x + back * cos - half_width * sin;
+    let left_y = tip_y - (back * sin + half_width * cos);
+    let right_x = tip_x + back * cos + half_width * sin;
+    let right_y = tip_y - (back * sin - half_width * cos);
+    let path = if value & 1 == 0 {
+        format!("M {tip_x} {tip_y} L {left_x} {left_y} L {right_x} {right_y} Z")
+    } else {
+        format!(
+            "M {tip_x} {tip_y} L {left_x} {left_y} L {center_x} {center} L {right_x} {right_y} Z"
+        )
+    };
+    let stroke = if colorblind {
+        if value < 4 {
+            "#555555"
+        } else if value < 12 {
+            "#0072b2"
+        } else {
+            "#d55e00"
+        }
+    } else {
+        ["#555555", "#0000ff", "#0000ff", "#aa0000"][value >> 2]
+    };
+    html! {
+      <path data-overlay-glyph="ipc" data-ipc-value={value.to_string()} d={path}
+        fill="#fff" stroke={stroke} stroke-width={(size/20.0).max(1.0).to_string()}
+        vector-effect="non-scaling-stroke"/>
+    }
+}
+
 fn pointer_time(event: &PointerEvent, range: Range, timeline: &NodeRef) -> Option<f64> {
     let element = timeline.cast::<Element>()?;
     let rect = element.get_bounding_client_rect();
@@ -493,6 +754,31 @@ pub fn timeline(props: &TimelineProps) -> Html {
         .filter_map(|(_, _, event)| matches!(event.event, 0x214 | 0x215).then_some(event.id))
         .collect::<HashSet<_>>()
         .len();
+    let mut lock_levels = HashMap::<(String, i64), usize>::new();
+    let mut pending_locks = HashMap::<String, Vec<f64>>::new();
+    for (track, _, event) in &rendered_events {
+        if !matches!(event.event, 0x282 | 0x283) {
+            continue;
+        }
+        let pending = pending_locks.entry(track.clone()).or_default();
+        pending.retain(|end| *end > event.start);
+        lock_levels.insert((track.clone(), event.id), pending.len());
+        pending.push(event.end);
+    }
+    let frequency_minimum = props
+        .events
+        .iter()
+        .filter(|event| matches!(event.event, 0x209 | 0x21c))
+        .map(|event| event.arg0)
+        .min()
+        .unwrap_or_default();
+    let frequency_maximum = props
+        .events
+        .iter()
+        .filter(|event| matches!(event.event, 0x209 | 0x21c))
+        .map(|event| event.arg0)
+        .max()
+        .unwrap_or(frequency_minimum);
     let search_count = rendered_events
         .iter()
         .filter_map(|(_, _, event)| props.search.matches(event).then_some(event.id))
@@ -802,15 +1088,18 @@ pub fn timeline(props: &TimelineProps) -> Html {
                   });
                   let is_mark = matches!(event.category.as_str(), "mark" | "annotation");
                   let is_sample = event.category == "sample";
-                  let is_lock = event.category == "lock";
                   let is_frequency = event.event == 521 || event.event == 540;
                   let is_idle = event.event == 65_536;
                   let is_wait = event.event & 0x0f_ffe0 == 768;
+                  let is_lock_rail = matches!(event.event, 0x282 | 0x283);
+                  let is_kernel_rail = matches!(event.category.as_str(), "kernel" | "syscall");
+                  let is_user_rail = event.category == "user";
                   let rpc_wire = rpc_wire_glyph(event, row_height, props.range, props.overlays.colorblind);
                   let wake_target = if event.category == "wakeup" && track.starts_with("cpu:") {
                       row_index.get(format!("pid:{}", event.arg0).as_str()).copied().map(|target| NETWORK_BAND_HEIGHT + target as f64 * row_height + row_height / 2.0)
                   } else { None };
-                  let event_height = (row_height - 8.0).clamp(8.0, 24.0);
+                  let event_height = (row_height - 8.0).clamp(8.0, 40.0);
+                  let rail_geometry = RailGeometry { x, width, center, height: event_height };
                   let annotation_height = (row_height - 4.0).clamp(10.0, 40.0);
                   let h = if is_mark || is_sample { annotation_height } else { event_height };
                   let y = center - h / 2.0;
@@ -819,6 +1108,32 @@ pub fn timeline(props: &TimelineProps) -> Html {
                   let ipc_visible = event.ipc != 0
                       && ((matches!(event.category.as_str(),"user"|"agent") && props.overlays.ipc&1 != 0)
                           || (!matches!(event.category.as_str(),"user"|"agent") && props.overlays.ipc&2 != 0));
+                  let wait_rail = if is_wait {
+                      wait_glyph(event, x, width, center, event_height, props.overlays.colorblind).unwrap_or_default()
+                  } else {
+                      Html::default()
+                  };
+                  let lock_rail = if is_lock_rail {
+                      let level = lock_levels.get(&(track.clone(),event.id)).copied().unwrap_or_default();
+                      lock_rail_glyph(event,rail_geometry,level,props.overlays.locks,props.overlays.colorblind).unwrap_or_default()
+                  } else {
+                      Html::default()
+                  };
+                  let frequency_rail = if is_frequency {
+                      frequency_glyph(event,rail_geometry,frequency_minimum,frequency_maximum,props.overlays.frequency).unwrap_or_default()
+                  } else {
+                      Html::default()
+                  };
+                  let ipc_mark = ipc_visible.then(|| ipc_glyph(event,x,width,center,event_height,props.overlays.colorblind));
+                  let (kernel_outer,kernel_background) = if event.category=="syscall" {
+                      ("#808080","#e0ffe0")
+                  } else if event.event&0x0f00==0x0400 || event.event&0x0f00==0x0600 {
+                      ("#ffffff","#ffc0c0")
+                  } else if event.event&0x0f00==0x0500 || event.event&0x0f00==0x0700 {
+                      ("#000000","#c0c0ff")
+                  } else {
+                      ("#55aa55","#ffffe0")
+                  };
                   html! {<g class="trace-event" opacity={opacity.to_string()} data-event-id={event.id.to_string()} data-annotated={annotated.to_string()} {onclick}>
                     <title>{format!("{} · {} · {} · {:.9}s · {:.2}us", if event.name.is_empty() {"(unnamed)"} else {&event.name}, event.category, track_label(&track), event.start, event.duration.max(0.0)*1e6)}</title>
                     if is_mark {
@@ -827,27 +1142,65 @@ pub fn timeline(props: &TimelineProps) -> Html {
                       <line data-overlay-glyph="sample" x1={x.to_string()} y1={y.to_string()} x2={x.to_string()} y2={(y+h).to_string()} stroke={dark} stroke-width="1.5"/>
                     } else if let Some(target) = wake_target {
                       <path data-overlay-glyph="arc" d={format!("M {x} {center} Q {} {} {} {target}",x+18.0,(center+target)/2.0-18.0,x+30.0)} fill="none" stroke={if props.overlays.arcs==1{"#0055aa"}else{"#0080ff"}} stroke-width={if props.overlays.arcs==1{"3"}else{"2"}} stroke-dasharray={if props.overlays.arcs==1{"4 4"}else{"3 3"}} marker-end="url(#arrowhead)"/>
-                    } else if is_lock {
-                      <line data-overlay-glyph="lock" x1={x.to_string()} y1={(center-15.0).to_string()} x2={(x+width).to_string()} y2={(center-15.0).to_string()} stroke={dark} stroke-width={if props.overlays.locks==1{"4"}else{"2"}} stroke-dasharray={if event.event&1==0{"none"}else{"5 3"}}/>
+                    } else if is_lock_rail {
+                      {lock_rail}
                     } else if is_frequency {
-                      <rect data-overlay-glyph="frequency" x={x.to_string()} y={(center-18.0).to_string()} width={width.to_string()} height={if props.overlays.frequency==1{"11"}else{"7"}} fill="#50b45a" opacity={if props.overlays.frequency==1{".8"}else{".45"}}/>
-                      if width > 34.0 {<text x={(x+3.0).to_string()} y={(center-12.0).to_string()} class="event-label">{format!("{}MHz",event.arg0)}</text>}
+                      {frequency_rail}
                     } else if let Some(glyph) = rpc_wire {
                       {glyph}
-                    } else if is_idle || is_wait {
-                      <line x1={x.to_string()} y1={center.to_string()} x2={(x+width).to_string()} y2={center.to_string()} stroke="#111" stroke-width={if is_idle{"2"}else{"1.5"}} stroke-dasharray={if is_wait{"5 3"}else{"none"}}/>
+                    } else if is_wait {
+                      {wait_rail}
+                    } else if is_idle {
+                      if event.arg0==1 {
+                        <line x1={x.to_string()} y1={center.to_string()}
+                          x2={(x+width).to_string()} y2={center.to_string()} stroke="#fff"
+                          stroke-width={event_height.to_string()}/>
+                      }
+                      <line data-overlay-glyph="idle" x1={x.to_string()} y1={center.to_string()}
+                        x2={(x+width).to_string()} y2={center.to_string()} stroke="#000"
+                        stroke-width={(event_height*if event.arg0==1{0.07}else{0.105}).max(1.0).to_string()}
+                        stroke-dasharray={if event.arg0==1{"8 2"}else{"none"}}
+                        vector-effect="non-scaling-stroke"/>
+                    } else if is_kernel_rail {
+                      <g data-overlay-glyph="kernel-rail">
+                        <line x1={x.to_string()} y1={center.to_string()} x2={(x+width).to_string()}
+                          y2={center.to_string()} stroke={kernel_outer} stroke-width={h.to_string()}/>
+                        <line x1={x.to_string()} y1={center.to_string()} x2={(x+width).to_string()}
+                          y2={center.to_string()} stroke={kernel_background} stroke-width={(h*0.93).to_string()}/>
+                        <line x1={x.to_string()} y1={center.to_string()} x2={(x+width).to_string()}
+                          y2={center.to_string()} stroke={dark} stroke-width={(h*0.53).to_string()}/>
+                        <line x1={x.to_string()} y1={center.to_string()} x2={(x+width).to_string()}
+                          y2={center.to_string()} stroke={light} stroke-width={(h*0.20).to_string()}/>
+                        if width > 34.0 {
+                          <text x={(x+3.0).to_string()} y={(center+3.5).to_string()} class="event-label">{event.name.clone()}</text>
+                        }
+                      </g>
+                    } else if is_user_rail {
+                      <g data-overlay-glyph="user-rail">
+                        <line data-user-stripe="upper" x1={x.to_string()}
+                          y1={(center-h*0.075).to_string()} x2={(x+width).to_string()}
+                          y2={(center-h*0.075).to_string()} stroke={light}
+                          stroke-width={(h*0.23).max(1.0).to_string()}/>
+                        <line data-user-stripe="lower" x1={x.to_string()}
+                          y1={(center+h*0.115).to_string()} x2={(x+width).to_string()}
+                          y2={(center+h*0.115).to_string()} stroke={dark}
+                          stroke-width={(h*0.15).max(1.0).to_string()}/>
+                        if width > 34.0 {
+                          <text x={(x+3.0).to_string()} y={(center+3.5).to_string()} class="event-label">{event.name.clone()}</text>
+                        }
+                      </g>
                     } else {
                       <rect x={x.to_string()} y={y.to_string()} width={width.to_string()} height={h.to_string()} rx="1" fill={fill} stroke={dark} stroke-width="1"/>
-                      if matches!(event.category.as_str(),"user"|"agent") && width > 3.0 {
+                      if event.category=="agent" && width > 3.0 {
                         <line x1={(x+1.0).to_string()} y1={(center-5.0).to_string()} x2={(x+width-1.0).to_string()} y2={(center-5.0).to_string()} stroke={dark} stroke-width="1"/>
                         <line x1={(x+1.0).to_string()} y1={(center+5.0).to_string()} x2={(x+width-1.0).to_string()} y2={(center+5.0).to_string()} stroke={dark} stroke-width="1"/>
                       }
                       if width > 34.0 {
                         <text x={(x+3.0).to_string()} y={(center+3.5).to_string()} class="event-label">{event.name.clone()}</text>
                       }
-                      if ipc_visible {
-                        <line data-overlay-glyph="ipc" x1={x.to_string()} y1={y.to_string()} x2={(x+width).to_string()} y2={y.to_string()} stroke="#fff" stroke-width="2"/>
-                      }
+                    }
+                    if let Some(ipc) = ipc_mark {
+                      {ipc}
                     }
                     if annotated {
                       <line class="canvas-annotation" x1={x.to_string()} y1={(center-h/2.0).to_string()} x2={x.to_string()} y2={(NETWORK_BAND_HEIGHT+index as f64*row_height+2.0).to_string()}/>

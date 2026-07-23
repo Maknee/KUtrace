@@ -574,9 +574,10 @@ The importer keeps failure-atomic staging and streams through a bounded 256 KiB
 reader with 64-event SQLite batches. Materialized 1 ms and 16 ms timeline mipmap levels keep
 low-zoom queries bounded while merging long spans from the raw table; compatible
 category/CPU/event filters use the aggregate, while PID/RPC/name and high-zoom
-queries remain exact. Schema version 10 adds normalized sampled callchains and
-still deliberately keeps names out of mipmap grouping so high-cardinality
-labels do not inflate it.
+queries remain exact. Schema version 11 keeps the normalized sampled
+callchains added in version 10 and corrects legacy `0x282`/`0x283` held/try
+records to the lock category. Names remain deliberately absent from mipmap
+grouping so high-cardinality labels do not inflate it.
 `bench_ui_import.sh` generates a configurable event set,
 verifies the exact imported count, measures wall time and peak RSS, and runs the
 production 8,000-row bucket query across every generated event through the HTTP
