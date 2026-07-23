@@ -260,6 +260,32 @@ symbol or probe note in the target. Offsets are file offsets, not runtime virtua
 addresses, and must identify the first instruction of the function in that exact
 binary build.
 
+One arbitrary traceable kernel function can be captured as the same paired,
+labeled span by attaching a kprobe and kretprobe:
+
+```sh
+sudo rg '^__do_sys_getpid$' /sys/kernel/tracing/available_filter_functions
+sudo ebpf/target/release/kutrace-collector \
+  --ebpf ebpf/kutrace-ebpf/target/bpfel-unknown-none/release/kutrace-ebpf \
+  --pid "$target_pid" \
+  --kprobe "__do_sys_getpid=kernel.getpid" \
+  --output kernel.kuevents
+```
+
+`--pid` is strongly recommended; omitting it captures that function across the
+host and prints a warning. The running kernel's
+`available_filter_functions` is authoritative: inline, `notrace`,
+kprobe-blacklisted, or configuration-dependent functions cannot be attached.
+The current Aya 0.14 kprobe API does not expose attach cookies, so one generic
+kernel function is supported per collector and reserves one of the 64 semantic
+probe labels. It shares the external-probe eight-frame per-thread nesting and
+explicit `probe_dropped_events` accounting. For broader interactive probe
+selection, established upstream implementations include
+[bpftrace](https://github.com/bpftrace/bpftrace) and
+[BCC](https://github.com/iovisor/bcc); the
+[libbpf-bootstrap kprobe example](https://github.com/libbpf/libbpf-bootstrap/tree/master/examples/c)
+shows the same paired entry/return attachment pattern.
+
 Paired SystemTap SDT probes provide the same nesting and parent-ID contract
 without requiring exported function symbols:
 
@@ -306,12 +332,24 @@ make -C ebpf build build-ebpf
 ebpf/verify_usdt.sh
 ```
 
-Run both dynamic-attachment integration gates against freshly built example
-programs with:
+Run all dynamic-attachment integration gates against freshly built example
+programs and a live kernel function with:
 
 ```sh
 make -C ebpf verify-dynamic-probes
 ```
+
+The isolated generic-kprobe timing benchmark is also reproducible:
+
+```sh
+make -C ebpf bench-kprobe
+```
+
+On this EPYC 9354P, the standard trace added 459.0 ns per `getpid`; adding the
+paired `__do_sys_getpid` probe added another 1,488.4 ns, for 1,947.4 ns total
+over baseline. All 201,002 kernel spans reached strict version-3 JSON with zero
+loss. See
+[`../docs/benchmarks/2026-07-23-epyc9354p-kprobe.json`](../docs/benchmarks/2026-07-23-epyc9354p-kprobe.json).
 
 ## Overhead benchmark
 
@@ -349,9 +387,10 @@ The real transformer sustained a 1.964 million-record/s median on the
 
 `bench_resource_usage.sh` separately measures collector CPU, collector peak
 RSS, and exact kernel BPF-map `memlock` for idle capture, the six core workload
-modes, IPC, 250 Hz sampling with and without stacks, uprobes, and USDT. CPU is
-reported both as a percentage of one logical core and of total host CPU
-capacity; memory uses host `MemTotal` as its denominator:
+modes, IPC, a generic kernel-function probe, 250 Hz sampling with and without
+stacks, uprobes, and USDT. CPU is reported both as a percentage of one logical
+core and of total host CPU capacity; memory uses host `MemTotal` as its
+denominator:
 
 ```sh
 make -C ebpf bench-resources
@@ -364,6 +403,10 @@ collector cost remained below 1% of one core at 250 Hz both without stacks
 rate-dependent and exceeded 1% in the high-rate fixtures; the measured
 per-operation limits and all zero-loss evidence are published in
 [`../docs/benchmarks/2026-07-23-epyc9354p-resource-usage.json`](../docs/benchmarks/2026-07-23-epyc9354p-resource-usage.json).
+The dense 200,000-call generic-kprobe fixture used 6.215% of one collector core
+(0.0971% of this 64-thread host) and 0.07525% of host memory. Combining its
+measured application and collector increments gives an approximately
+1,188-calls/s limit for staying below 1% of one core on this host.
 
 On the EPYC 9354P, the isolated 20 × 100,000 `getpid` run measured 138.35 ns
 baseline, 337.30 ns loaded-but-filtered, and 580.72 ns captured median time.

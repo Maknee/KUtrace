@@ -1,6 +1,6 @@
 {
-  "date_utc": "2026-07-23T05:51:07Z",
-  "tracer_commit": "cdd59bc",
+  "date_utc": "2026-07-23T06:09:14Z",
+  "tracer_commit": "9af0166",
   "host": {
     "cpu": "AMD EPYC 9354P 32-Core Processor",
     "logical_cpus": 64,
@@ -84,6 +84,18 @@
       "maximum_combined_memory_percent_host": 0.075244
     },
     {
+      "mode": "generic_kernel_kprobe",
+      "kernel_symbol": "__do_sys_getpid",
+      "collector_cpu_percent_one_core_median": 6.215247,
+      "collector_cpu_percent_one_core_range": [6.176384, 6.25411],
+      "collector_cpu_percent_host_capacity_median": 0.097113,
+      "maximum_combined_memory_percent_host": 0.075246,
+      "maximum_combined_memory_kib": 148696.086,
+      "normalized_events_per_run": [603074, 603068],
+      "application_added_ns_per_call": 1947.389,
+      "collector_incremental_ns_per_call_median": 1234.899
+    },
+    {
       "mode": "sampling_250hz",
       "collector_cpu_percent_one_core_median": 0.688526,
       "collector_cpu_percent_one_core_range": [0.686228, 0.690824],
@@ -149,6 +161,11 @@
         "mode": "ipc_getpid",
         "maximum_operations_per_second": 2106,
         "combined_added_ns_per_operation": 1800.644
+      },
+      {
+        "mode": "generic_kernel_kprobe",
+        "maximum_operations_per_second": 1188,
+        "combined_added_ns_per_operation": 3182.288
       },
       {
         "mode": "uprobe_span",

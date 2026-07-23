@@ -113,7 +113,12 @@ measure_collector() {
     'awk "/^memlock:/ {total += \$2} END {print total + 0}" /proc/"$1"/fdinfo/*' \
     sh "$collector_pid")
   local start_runtime_ns last_runtime_ns
-  start_runtime_ns=$(awk '{print $1}' "/proc/$collector_pid/schedstat")
+  start_runtime_ns=$(awk '{print $1}' \
+    "/proc/$collector_pid/schedstat" 2>/dev/null || true)
+  [[ -n "$start_runtime_ns" ]] || {
+    echo "collector exited before CPU sampling began for $label" >&2
+    return 1
+  }
   last_runtime_ns=$start_runtime_ns
   local start_ns last_ns
   start_ns=$(date +%s%N)
@@ -122,8 +127,13 @@ measure_collector() {
 
   while [[ -r "/proc/$collector_pid/schedstat" ]]; do
     if [[ -r "/proc/$collector_pid/status" ]]; then
-      last_runtime_ns=$(awk '{print $1}' "/proc/$collector_pid/schedstat")
-      last_ns=$(date +%s%N)
+      local runtime_ns
+      runtime_ns=$(awk '{print $1}' \
+        "/proc/$collector_pid/schedstat" 2>/dev/null || true)
+      if [[ -n "$runtime_ns" ]]; then
+        last_runtime_ns=$runtime_ns
+        last_ns=$(date +%s%N)
+      fi
       local rss_kib
       rss_kib=$(sudo -n awk '/^VmRSS:/ {print $2}' \
         "/proc/$collector_pid/status" 2>/dev/null || true)
@@ -235,6 +245,16 @@ taskset -c "$benchmark_cpu" "$bench" \
   >"$result_dir/ipc-workload.json" 2>"$result_dir/ipc-workload.log" &
 active_target_pid=$!
 measure_collector ipc "$active_target_pid" "$default_object" 3 --sample-hz 0 --ipc
+wait "$active_target_pid"
+active_target_pid=
+
+taskset -c "$benchmark_cpu" "$bench" \
+  --mode getpid --iterations 10000 --samples 20 --delay-ms 1200 \
+  >"$result_dir/kernel-kprobe-workload.json" \
+  2>"$result_dir/kernel-kprobe-workload.log" &
+active_target_pid=$!
+measure_collector kernel-kprobe "$active_target_pid" "$default_object" 3 \
+  --sample-hz 0 --kprobe "__do_sys_getpid=kernel.getpid.resource"
 wait "$active_target_pid"
 active_target_pid=
 

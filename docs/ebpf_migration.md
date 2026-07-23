@@ -16,7 +16,8 @@ The migration is complete only when all of these gates hold:
 4. The existing transform chain produces valid version-3 JSON and the existing
    KUtrace view without visual or interaction regressions.
 5. Rust and C client libraries support nested semantic spans; an agent can scope
-   capture to a PID/cgroup and attach uprobes/USDT probes to an unmodified target.
+   capture to a PID/cgroup and attach uprobes, USDT probes, or a generic
+   kernel-function kprobe/kretprobe pair to an unmodified target.
 6. Disabled overhead is statistically indistinguishable from baseline. Active
    overhead, loss rate, bytes/event, and tail latency are published for syscall,
    scheduler, client-span, and mixed workloads.
@@ -327,7 +328,8 @@ explicit BPF/client loss
 reporting, the portable capture ABI, legacy transform integration, client span
 ingestion, bounded client RPC/resource/queue/mark ingestion, process-scoped
 external uprobe/uretprobe spans selected by symbol or absolute executable file
-offset (including stripped binaries), and paired USDT spans
+offset (including stripped binaries), one PID-scoped generic traceable-kernel-
+function kprobe/kretprobe pair, and paired USDT spans
 discovered from `.note.stapsdt`, with eight levels of nesting and explicit
 overflow/mismatch accounting. USDT semaphores are enabled after successful
 attachment, reference-counted, rolled back on setup failure, and restored on
@@ -537,3 +539,15 @@ Across nine samples and 180,000 paired nested spans, active capture added
 3,271.2 ns median and 3,339.8 ns p95 per semantic span, including entry and
 return probes, nesting state, ring transport, and collection. All 180,000 spans
 reached strict legacy JSON with zero BPF or probe loss.
+
+The generic-kernel-function gate attached a kprobe/kretprobe pair to the
+running kernel's traceable `__do_sys_getpid` implementation. A short live run
+produced exactly 412 positive-duration PID-scoped root spans; the full
+[`generic-kprobe overhead run`](benchmarks/2026-07-23-epyc9354p-kprobe.json)
+produced 201,002 spans and strict version-3 JSON with zero BPF or probe-state
+loss. Standard tracing added 459.0 ns per call, while the paired generic probe
+added another 1,488.4 ns, for 1,947.4 ns total over baseline. Kernel-specific
+`available_filter_functions` remains the attachment authority. Aya 0.14 does
+not expose attach cookies on its public kprobe API, so this slice deliberately
+supports one generic kernel function per collector rather than silently
+mislabeling multiple functions.

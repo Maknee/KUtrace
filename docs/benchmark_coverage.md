@@ -30,6 +30,7 @@ rate-dependent and explicitly tabulated in the resource artifact.
 | Recoverable x86 trap | yes | yes | yes | yes | 2.132 us median added per UD2 operation |
 | Symbol uprobe/uretprobe | yes | yes | yes | covered by offset benchmark | 400 exact nested spans |
 | Stripped-binary offset uprobe/uretprobe | yes | yes | yes | yes | 180,000 spans; 2.935 us median added |
+| Generic kernel kprobe/kretprobe | yes | yes | yes | yes | 201,002 spans; 1.488 us incremental / 1.947 us total added |
 | Semaphore-guarded paired USDT | yes | yes | yes | yes | 80,000 spans; 2.644 us median added; 1.91 ns disabled |
 | Concurrent USDT collectors | yes | yes | yes | not separately timed | two collectors, exact spans, semaphore restored |
 | Legacy versus Aya PC profiling | yes | yes | yes | yes | 0.1158% versus 0.1358% at 250 Hz |
@@ -54,13 +55,16 @@ The first gate starts an uninstrumented recursive target, attaches entry and
 return probes by symbol, strips all symbols from a copy, and repeats by absolute
 ELF file offset. The second discovers real `.note.stapsdt` sites, changes the
 target semaphores, attaches two collectors concurrently, checks nested span
-identity, and proves that both semaphore values return to zero.
+identity, and proves that both semaphore values return to zero. The third
+attaches a real kprobe/kretprobe pair to `__do_sys_getpid`, requires 412 exact
+PID-scoped spans, and runs the result through strict legacy JSON.
 
 Reproduce the dynamic-probe timing distributions independently:
 
 ```sh
 make -C ebpf bench-uprobe
 make -C ebpf bench-usdt
+make -C ebpf bench-kprobe
 ```
 
 ## Capacity is not overhead
@@ -75,6 +79,9 @@ loss. Every reported overhead result must satisfy the zero-loss gate.
 
 “Everything is microbenchmarked” is still too broad. Packet correlation lacks
 an isolated per-packet cost, uncommon x86 trap vectors remain outside live
-coverage, and native arm64 needs a separate host. IRQ, power, page-fault, IPC,
-and several packet results are current functional coverage backed by earlier
-engineering measurements rather than fresh current-commit distributions.
+coverage, and native arm64 needs a separate host. Generic kernel attachment is
+limited to one traceable function per collector until Aya exposes kprobe attach
+cookies or the collector adopts a lower-level multi-attach API. IRQ, power,
+page-fault, IPC, and several packet results are current functional coverage
+backed by earlier engineering measurements rather than fresh current-commit
+distributions.

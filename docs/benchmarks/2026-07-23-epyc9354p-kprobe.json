@@ -1,0 +1,35 @@
+{
+  "date_utc": "2026-07-23T06:03:26Z",
+  "tracer_base_commit": "9af0166",
+  "host": {
+    "cpu": "AMD EPYC 9354P 32-Core Processor",
+    "logical_cpus": 64,
+    "kernel": "6.6.36",
+    "architecture": "x86_64"
+  },
+  "configuration": {
+    "kernel_symbol": "__do_sys_getpid",
+    "attachment": "paired generic kprobe/kretprobe",
+    "benchmark_cpu": 0,
+    "collector_cpu": 1,
+    "iterations_per_sample": 10000,
+    "samples": 20,
+    "semantic_spans": 201002,
+    "sample_hz": 0,
+    "ipc": false
+  },
+  "results": {
+    "baseline_median_ns_per_call": 224.0229,
+    "standard_trace_median_ns_per_call": 683.0398,
+    "kprobe_trace_median_ns_per_call": 2171.4119,
+    "standard_trace_added_ns_per_call": 459.0169,
+    "generic_kprobe_incremental_ns_per_call": 1488.3721,
+    "total_kprobe_trace_added_ns_per_call": 1947.389,
+    "kprobe_trace_p95_ns_per_call": 2182.0639,
+    "paired_kernel_spans": 201002,
+    "strict_v3_json": true,
+    "bpf_dropped_events": 0,
+    "probe_dropped_events": 0
+  },
+  "status": "pass"
+}

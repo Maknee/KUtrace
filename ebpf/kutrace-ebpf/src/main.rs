@@ -417,14 +417,22 @@ fn apply_probe_label(event: &mut Event, cookie: u64) -> bool {
 
 #[uprobe]
 pub fn kutrace_agent_enter(ctx: ProbeContext) -> u32 {
-    match try_agent_enter(ctx) {
+    let cookie = unsafe { bpf_get_attach_cookie(ctx.as_ptr()) };
+    match try_agent_enter_cookie(cookie) {
         Ok(()) => 0,
         Err(_) => 1,
     }
 }
 
-fn try_agent_enter(ctx: ProbeContext) -> Result<(), i32> {
-    let cookie = unsafe { bpf_get_attach_cookie(ctx.as_ptr()) };
+#[kprobe]
+pub fn kutrace_kernel_enter(_ctx: ProbeContext) -> u32 {
+    match try_agent_enter_cookie(u64::from(MAX_UPROBES)) {
+        Ok(()) => 0,
+        Err(_) => 1,
+    }
+}
+
+fn try_agent_enter_cookie(cookie: u64) -> Result<(), i32> {
     let Some(mut event) = base_event(EVENT_CLIENT_SPAN_BEGIN) else {
         return Ok(());
     };
@@ -486,6 +494,14 @@ pub fn kutrace_agent_exit(ctx: RetProbeContext) -> u32 {
 fn try_agent_exit(ctx: RetProbeContext) -> Result<(), i32> {
     let cookie = unsafe { bpf_get_attach_cookie(ctx.as_ptr()) };
     try_agent_exit_cookie(cookie)
+}
+
+#[kretprobe]
+pub fn kutrace_kernel_exit(_ctx: RetProbeContext) -> u32 {
+    match try_agent_exit_cookie(u64::from(MAX_UPROBES)) {
+        Ok(()) => 0,
+        Err(_) => 1,
+    }
 }
 
 #[uprobe]

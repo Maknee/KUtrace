@@ -1,4 +1,4 @@
-.PHONY: build build-ui build-ebpf build-ebpf-default build-ebpf-stack verify-ebpf-artifacts bench-overhead bench-profiler-overhead bench-resources bench-ui bench-ui-scale bench-uprobe bench-usdt check-arm64 test test-ui verify-arm64-live verify-dynamic-probes verify-live-differential smoke
+.PHONY: build build-ui build-ebpf build-ebpf-default build-ebpf-stack verify-ebpf-artifacts bench-kprobe bench-overhead bench-profiler-overhead bench-resources bench-ui bench-ui-scale bench-uprobe bench-usdt check-arm64 test test-ui verify-arm64-live verify-dynamic-probes verify-kprobe verify-live-differential smoke
 
 build: build-ui
 	cargo build --release --workspace
@@ -56,6 +56,9 @@ bench-ui-scale: build
 bench-uprobe: build build-ebpf-default
 	./bench_uprobe_overhead.sh
 
+bench-kprobe: build build-ebpf-default
+	./bench_kprobe_overhead.sh
+
 bench-usdt: build build-ebpf-default
 	./bench_usdt_overhead.sh
 
@@ -71,6 +74,10 @@ bench-profiler-overhead: build build-ebpf-default
 verify-dynamic-probes: build build-ebpf-default
 	./verify_uprobe.sh
 	./verify_usdt.sh
+	./verify_kprobe.sh
+
+verify-kprobe: build build-ebpf-default
+	./verify_kprobe.sh
 
 verify-live-differential: build build-ebpf-default
 	./verify_live_differential.sh

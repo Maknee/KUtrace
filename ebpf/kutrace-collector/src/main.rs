@@ -9,8 +9,6 @@ use std::{
 };
 
 use anyhow::{Context, Result, bail};
-#[cfg(target_arch = "x86_64")]
-use aya::programs::KProbe;
 #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
 use aya::programs::{
     PerfEvent,
@@ -20,7 +18,7 @@ use aya::{
     Ebpf, EbpfLoader,
     maps::{Array, HashMap as BpfHashMap, Map, PerCpuArray, RingBuf},
     programs::{
-        CgroupAttachMode, CgroupSkb, CgroupSkbAttachType, TracePoint, UProbe,
+        CgroupAttachMode, CgroupSkb, CgroupSkbAttachType, KProbe, TracePoint, UProbe,
         uprobe::{UProbeAttachLocation, UProbeAttachPoint, UProbeScope},
     },
     util::online_cpus,
@@ -55,6 +53,29 @@ struct ExternalProbe {
     binary: PathBuf,
     location: ExternalProbeLocation,
     label: String,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct KernelFunctionProbe {
+    symbol: String,
+    label: String,
+}
+
+impl FromStr for KernelFunctionProbe {
+    type Err = String;
+
+    fn from_str(value: &str) -> std::result::Result<Self, Self::Err> {
+        let (symbol, label) = value
+            .split_once('=')
+            .map_or((value, value), |(symbol, label)| (symbol, label));
+        if symbol.is_empty() || label.is_empty() {
+            return Err("kernel symbol and label must be nonempty".to_owned());
+        }
+        Ok(Self {
+            symbol: symbol.to_owned(),
+            label: label.to_owned(),
+        })
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -184,6 +205,9 @@ struct Args {
     /// Repeatable paired USDT span in BINARY:PROVIDER:BEGIN:END[=LABEL] form.
     #[arg(long = "usdt", value_name = "BINARY:PROVIDER:BEGIN:END[=LABEL]")]
     usdts: Vec<UsdtProbe>,
+    /// Pair one generic kernel function entry and return as a labeled span.
+    #[arg(long = "kprobe", value_name = "SYMBOL[=LABEL]")]
+    kprobe: Option<KernelFunctionProbe>,
     /// Unix datagram endpoint for kutrace-client spans. The client discovers it
     /// through KUTRACE_AGENT_SOCKET.
     #[arg(long, default_value = "/run/kutrace-agent.sock")]
@@ -732,6 +756,27 @@ fn attach_agent_probes(
     Ok(())
 }
 
+fn attach_kernel_function_probe(bpf: &mut Ebpf, probe: Option<&KernelFunctionProbe>) -> Result<()> {
+    let Some(probe) = probe else {
+        return Ok(());
+    };
+    for program_name in ["kutrace_kernel_enter", "kutrace_kernel_exit"] {
+        let program: &mut KProbe = bpf
+            .program_mut(program_name)
+            .with_context(|| format!("missing eBPF program {program_name}"))?
+            .try_into()?;
+        program.load()?;
+        program
+            .attach(&probe.symbol, 0)
+            .with_context(|| format!("attach {program_name} to {}", probe.symbol))?;
+    }
+    eprintln!(
+        "paired generic kernel probe attached: {} as {}",
+        probe.symbol, probe.label
+    );
+    Ok(())
+}
+
 #[derive(Debug)]
 struct ResolvedUsdtProbe {
     binary: PathBuf,
@@ -1142,10 +1187,11 @@ async fn main() -> Result<()> {
             label: args.uprobe_label.clone().unwrap_or_else(|| symbol.clone()),
         });
     }
-    let semantic_probe_count = external_probes.len() + args.usdts.len();
+    let semantic_probe_count =
+        external_probes.len() + args.usdts.len() + usize::from(args.kprobe.is_some());
     if semantic_probe_count > kutrace_common::MAX_UPROBES as usize {
         bail!(
-            "at most {} external uprobe/USDT spans are supported",
+            "at most {} external uprobe/USDT/kernel spans are supported",
             kutrace_common::MAX_UPROBES
         );
     }
@@ -1225,6 +1271,13 @@ async fn main() -> Result<()> {
                 0,
             )?;
         }
+        if let Some(probe) = &args.kprobe {
+            probes.set(
+                kutrace_common::MAX_UPROBES - 1,
+                ProbeConfig::with_label(probe.label.as_bytes()),
+                0,
+            )?;
+        }
     }
 
     let page_fault_return_probe = attach_page_fault_programs(&mut bpf)?;
@@ -1297,6 +1350,12 @@ async fn main() -> Result<()> {
     if !external_probes.is_empty() {
         attach_agent_probes(&mut bpf, &external_probes, args.pid, 0)?;
     }
+    if args.kprobe.is_some() && args.pid == 0 {
+        eprintln!(
+            "warning: --kprobe is capturing the selected kernel function across the whole host"
+        );
+    }
+    attach_kernel_function_probe(&mut bpf, args.kprobe.as_ref())?;
     let usdt_semaphores = attach_usdt_probes(
         &mut bpf,
         &args.usdts,
@@ -1533,6 +1592,23 @@ mod tests {
         );
         assert_eq!(offset.label, "agent.stripped");
         assert!("/tmp/stripped:@0=bad".parse::<ExternalProbe>().is_err());
+    }
+
+    #[test]
+    fn parses_generic_kernel_probe_spec() {
+        let probe: KernelFunctionProbe = "__x64_sys_getpid=kernel.getpid".parse().unwrap();
+        assert_eq!(
+            probe,
+            KernelFunctionProbe {
+                symbol: "__x64_sys_getpid".to_owned(),
+                label: "kernel.getpid".to_owned(),
+            }
+        );
+        let default_label: KernelFunctionProbe = "do_nanosleep".parse().unwrap();
+        assert_eq!(default_label.symbol, "do_nanosleep");
+        assert_eq!(default_label.label, "do_nanosleep");
+        assert!("=empty".parse::<KernelFunctionProbe>().is_err());
+        assert!("empty=".parse::<KernelFunctionProbe>().is_err());
     }
 
     #[test]
