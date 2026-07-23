@@ -10,6 +10,25 @@ Aya tracepoints -> KUEBPF01 records -> kutrace-transform -> eventtospan3 -> KUtr
 The existing `eventtospan3`, `spantotrim`, `makeself`, and `show_cpu.html`
 remain the authority for viewer compatibility while capture moves to eBPF.
 
+## Dynamic hook support
+
+| Target | Collector option | Attachment |
+|---|---|---|
+| Application function with symbols | `--uprobe BINARY:SYMBOL=LABEL` | paired uprobe/uretprobe |
+| Stripped application function | `--uprobe BINARY:@FILE_OFFSET=LABEL` | paired uprobe/uretprobe |
+| Function in a mapped or late-loaded library, including pthreads | `--uprobe-module MODULE:SYMBOL=LABEL` | paired uprobe/uretprobe |
+| Application-provided stable probe sites | `--usdt BINARY:PROVIDER:BEGIN:END=LABEL` | paired USDT probes |
+| Any traceable kernel function | `--kprobe FUNCTION=LABEL` | paired kprobe/kretprobe |
+
+“Any traceable kernel function” means a function listed by the running kernel
+in `/sys/kernel/tracing/available_filter_functions`; inline, `notrace`,
+kprobe-blacklisted, and configuration-dependent functions are excluded. This
+collector currently supports one arbitrary kernel function per capture. For
+broader interactive kernel-function selection, see
+[bpftrace](https://github.com/bpftrace/bpftrace),
+[BCC](https://github.com/iovisor/bcc), and the paired
+[libbpf-bootstrap kprobe example](https://github.com/libbpf/libbpf-bootstrap/tree/master/examples/c).
+
 ## Build and smoke test
 
 Aya's eBPF target currently needs Rust's `rust-src` component and `bpf-linker`.
