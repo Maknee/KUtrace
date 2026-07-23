@@ -241,12 +241,9 @@ test('supports persistent selection, Shift track highlighting, search, filters, 
   await page.locator('#search-invert').click();
   await expect(page.locator('#search-invert')).toHaveAttribute('aria-pressed', 'true');
 
-  for (const overlay of ['marks', 'arcs', 'locks', 'frequency', 'ipc', 'samples', 'colorblind']) {
-    const button = page.locator(`[data-overlay="${overlay}"]`);
-    const before = await button.getAttribute('aria-pressed');
-    await button.click();
-    await expect(button).toHaveAttribute('aria-pressed', before === 'true' ? 'false' : 'true');
-  }
+  const colorblind = page.locator('[data-overlay="colorblind"]');
+  await colorblind.click();
+  await expect(colorblind).toHaveAttribute('aria-pressed', 'true');
 
   await page.locator('#filter-field').selectOption('category');
   await page.locator('#filter-value').fill('agent');
@@ -257,6 +254,76 @@ test('supports persistent selection, Shift track highlighting, search, filters, 
   await page.locator('#filter-value').focus();
   await page.keyboard.press('Escape');
   await expect(timeline).toBeFocused();
+});
+
+test('matches original multi-state display cycles and annotation modes', async ({page}) => {
+  const display = name => page.locator(`[data-overlay="${name}"]`);
+  for (const [name, state] of Object.entries({
+    marks: '3',
+    arcs: '2',
+    locks: '2',
+    frequency: '2',
+    ipc: '0',
+    samples: '0',
+    annotate_user: '0',
+    annotate_all: '0',
+    colorblind: '0',
+  })) {
+    await expect(display(name)).toHaveAttribute('data-state', state);
+  }
+
+  await expect(page.locator('[data-overlay-glyph="mark"]').first()).toBeVisible();
+  for (const state of ['2', '1', '0', '3']) {
+    await display('marks').click();
+    await expect(display('marks')).toHaveAttribute('data-state', state);
+    if (state === '0') {
+      await expect(page.locator('[data-overlay-glyph="mark"]')).toHaveCount(0);
+    }
+  }
+  await expect(page.locator('[data-overlay-glyph="mark"]').first()).toBeVisible();
+
+  const arcs = page.locator('[data-overlay-glyph="arc"]');
+  await expect(arcs.first()).toHaveAttribute('stroke-width', '2');
+  for (const state of ['1', '0', '2']) {
+    await display('arcs').click();
+    await expect(display('arcs')).toHaveAttribute('data-state', state);
+    if (state === '1') {
+      await expect(arcs.first()).toHaveAttribute('stroke-width', '3');
+    } else if (state === '0') {
+      await expect(arcs).toHaveCount(0);
+    }
+  }
+  await expect(arcs.first()).toHaveAttribute('stroke-width', '2');
+  for (const state of ['3', '2', '1', '0']) {
+    await display('ipc').click();
+    await expect(display('ipc')).toHaveAttribute('data-state', state);
+  }
+
+  await display('samples').click();
+  await expect(display('samples')).toHaveAttribute('data-state', '2');
+  await display('samples').click();
+  await expect(display('samples')).toHaveAttribute('data-state', '0');
+  for (const state of ['2', '1', '0']) {
+    await display('samples').click({modifiers: ['Shift']});
+    await expect(display('samples')).toHaveAttribute('data-state', state);
+  }
+
+  await display('annotate_user').click();
+  await expect(display('annotate_user')).toHaveAttribute('aria-pressed', 'true');
+  await expect(display('annotate_all')).toHaveAttribute('aria-pressed', 'false');
+  const userAnnotations = await page.locator('.trace-event[data-annotated="true"]').count();
+  expect(userAnnotations).toBeGreaterThan(0);
+
+  await display('annotate_all').click();
+  await expect(display('annotate_user')).toHaveAttribute('aria-pressed', 'false');
+  await expect(display('annotate_all')).toHaveAttribute('aria-pressed', 'true');
+  const allAnnotations = await page.locator('.trace-event[data-annotated="true"]').count();
+  expect(allAnnotations).toBeGreaterThanOrEqual(userAnnotations);
+
+  await page.locator('#trace-search').fill('agent.tool');
+  await expect(display('annotate_user')).toHaveAttribute('aria-pressed', 'false');
+  await expect(display('annotate_all')).toHaveAttribute('aria-pressed', 'false');
+  await expect(page.locator('.trace-event[data-annotated="true"]')).toHaveCount(0);
 });
 
 test('uses a real bounded density summary and preserves CPU/PID rows', async ({page}) => {
@@ -487,11 +554,21 @@ test('keeps SQL, schema inspection, saved views, and portable workspace state', 
   const exported = await download;
   const workspace = JSON.parse(await readFile(await exported.path(), 'utf8'));
   expect(workspace.kind).toBe('kutrace-workspace');
-  expect(workspace.version).toBe(5);
+  expect(workspace.version).toBe(6);
   expect(workspace.trackGroups).toEqual({cpu: 'highlighted', pid: 'full', rpc: 'full', resource: 'full'});
   expect(workspace.highlightedTracks).toEqual(['cpu:0']);
   expect(workspace.rowHeight).toBe(52);
   expect(workspace.verticalScroll).toBe(0);
+  expect(workspace.overlays).toEqual({
+    marks: 3,
+    arcs: 2,
+    locks: 2,
+    frequency: 2,
+    ipc: 0,
+    samples: 0,
+    annotations: 0,
+    colorblind: false,
+  });
   expect(workspace.views).toEqual([{name: 'Agent spans', sql: 'SELECT COUNT(*) AS agent_count FROM agent_spans'}]);
 
   workspace.sql = 'SELECT name FROM profile_callchains LIMIT 3';

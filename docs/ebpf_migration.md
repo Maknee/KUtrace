@@ -388,7 +388,11 @@ original full, highlighted-only, and hidden states in exact and density modes.
 Shift-clicking a line label toggles that row and propagates event emphasis
 across corresponding lane copies. A range-bounded track catalog and virtual
 Y viewport remove the former 64-row family cap, preserve first-occurrence RPC
-ordering, and constrain density work to visible rows. `/legacy` remains the
+ordering, and constrain density work to visible rows. The modern display
+controls now reproduce the original multi-state Mark, Arc, Lock, Frequency,
+IPC, and Sample cycles; user/all annotation modes are mutually exclusive and
+draw bounded labels on the vector canvas. Workspace version 6 persists those
+numeric modes and migrates legacy boolean settings. `/legacy` remains the
 byte-identical comparison surface
 while every applicable behavior is reimplemented; it does not close modern
 parity by itself. See [`ui_architecture.md`](ui_architecture.md) and the

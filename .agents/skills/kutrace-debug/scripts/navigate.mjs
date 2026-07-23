@@ -74,6 +74,18 @@ try {
       await page.locator(`[data-agent-span="${span}"]`).click();
     } else if (action.startsWith('search:')) {
       await page.locator('#trace-search').fill(action.slice('search:'.length));
+    } else if (action.startsWith('display-shift:') || action.startsWith('display:')) {
+      const shifted = action.startsWith('display-shift:');
+      const display = action.slice((shifted ? 'display-shift:' : 'display:').length);
+      if (![
+        'marks', 'arcs', 'locks', 'frequency', 'ipc', 'samples',
+        'annotate_user', 'annotate_all', 'colorblind',
+      ].includes(display)) {
+        throw new Error(`unknown display control: ${display}`);
+      }
+      await page.locator(`[data-overlay="${display}"]`).click({
+        modifiers: shifted ? ['Shift'] : [],
+      });
     } else if (action.startsWith('group:')) {
       const group = action.slice('group:'.length);
       if (!['cpu', 'pid', 'rpc', 'resource'].includes(group)) {
@@ -131,6 +143,13 @@ try {
       Number(await timeline.getAttribute('data-y-end')),
     ],
     trackCatalogTruncated: await timeline.getAttribute('data-track-catalog-truncated') === 'true',
+    displayStates: Object.fromEntries(
+      await page.locator('[data-overlay]').evaluateAll(buttons => buttons.map(button => [
+        button.getAttribute('data-overlay'),
+        Number(button.getAttribute('data-state')),
+      ])),
+    ),
+    annotatedEvents: await page.locator('.trace-event[data-annotated="true"]').count(),
     selection: (await page.locator('#selection-summary').textContent())?.trim() ?? '',
     agentContext: (await page.locator('#agent-context-title').textContent())?.trim() ?? '',
     searchMatches: (await page.locator('#search-count').textContent())?.trim() ?? '',

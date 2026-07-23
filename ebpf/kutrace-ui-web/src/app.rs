@@ -11,7 +11,7 @@ use wasm_bindgen::{JsCast, JsValue};
 use wasm_bindgen_futures::{JsFuture, spawn_local};
 use web_sys::{
     Blob, BlobPropertyBag, HtmlAnchorElement, HtmlElement, HtmlInputElement, HtmlSelectElement,
-    HtmlTextAreaElement, KeyboardEvent, SvgElement, Url,
+    HtmlTextAreaElement, KeyboardEvent, MouseEvent, SvgElement, Url,
 };
 use yew::prelude::*;
 
@@ -21,9 +21,7 @@ use crate::{
         Filter, Metadata, Overlays, Range, TraceEvent, TrackGroupMode, TrackGroups, TrackMode,
         filter_sql, where_sql,
     },
-    timeline::{
-        DEFAULT_ROW_HEIGHT, MAX_ROW_HEIGHT, MIN_ROW_HEIGHT, Overview, Selection, Timeline,
-    },
+    timeline::{DEFAULT_ROW_HEIGHT, MAX_ROW_HEIGHT, MIN_ROW_HEIGHT, Overview, Selection, Timeline},
 };
 
 const DEFAULT_SQL: &str = "SELECT category, name, COUNT(*) AS count, ROUND(SUM(dur) * 1000, 3) AS total_ms\nFROM events\nGROUP BY category, name\nORDER BY total_ms DESC\nLIMIT 50";
@@ -77,10 +75,7 @@ fn highlighted_track_values(
 }
 
 fn track_catalog_sql(filters: &[Filter], range: Range) -> String {
-    let scope = format!(
-        "ts < {} AND ts_end > {} AND dur>0",
-        range.end, range.start
-    );
+    let scope = format!("ts < {} AND ts_end > {} AND dur>0", range.end, range.start);
     format!(
         r#"WITH scoped AS (
              SELECT ts,cpu,pid,rpc,category,arg0
@@ -107,11 +102,7 @@ fn track_catalog_sql(filters: &[Filter], range: Range) -> String {
     )
 }
 
-fn track_is_visible(
-    track: &str,
-    groups: TrackGroups,
-    highlighted: &HashSet<String>,
-) -> bool {
+fn track_is_visible(track: &str, groups: TrackGroups, highlighted: &HashSet<String>) -> bool {
     let group = track.split_once(':').map_or("", |(group, _)| group);
     match groups.mode(group) {
         TrackGroupMode::Hidden => false,
@@ -355,11 +346,7 @@ fn overlay_sql(filters: &[Filter], coverage: Range) -> String {
     )
 }
 
-fn long_cpu_event_sql(
-    filters: &[Filter],
-    coverage: Range,
-    highlighted_cpus: &[i64],
-) -> String {
+fn long_cpu_event_sql(filters: &[Filter], coverage: Range, highlighted_cpus: &[i64]) -> String {
     let mut scope = format!(
         "ts < {} AND ts_end > {} AND cpu>=0 AND (dur=0 OR dur>{})",
         coverage.end,
@@ -484,29 +471,11 @@ fn range_action(range: Range, full: Range, action: &str) -> Range {
 }
 
 fn overlay_value(overlays: Overlays, name: &str) -> bool {
-    match name {
-        "marks" => overlays.marks,
-        "arcs" => overlays.arcs,
-        "locks" => overlays.locks,
-        "frequency" => overlays.frequency,
-        "ipc" => overlays.ipc,
-        "samples" => overlays.samples,
-        "colorblind" => overlays.colorblind,
-        _ => false,
-    }
+    overlays.enabled(name)
 }
 
-fn toggle_overlay(mut overlays: Overlays, name: &str) -> Overlays {
-    match name {
-        "marks" => overlays.marks = !overlays.marks,
-        "arcs" => overlays.arcs = !overlays.arcs,
-        "locks" => overlays.locks = !overlays.locks,
-        "frequency" => overlays.frequency = !overlays.frequency,
-        "ipc" => overlays.ipc = !overlays.ipc,
-        "samples" => overlays.samples = !overlays.samples,
-        "colorblind" => overlays.colorblind = !overlays.colorblind,
-        _ => {}
-    }
+fn toggle_overlay(mut overlays: Overlays, name: &str, shifted: bool) -> Overlays {
+    overlays.cycle(name, shifted);
     overlays
 }
 
@@ -734,7 +703,7 @@ pub fn app() -> Html {
                     match serde_json::from_str::<WorkspaceFile>(&stored) {
                         Ok(workspace)
                             if workspace.kind == "kutrace-workspace"
-                                && matches!(workspace.version, 1..=5) =>
+                                && matches!(workspace.version, 1..=6) =>
                         {
                             filters.set(workspace.filters.into_iter().take(64).collect());
                             if !workspace.sql.is_empty() {
@@ -750,13 +719,9 @@ pub fn app() -> Html {
                                     .track_groups
                                     .unwrap_or_else(|| TrackGroups::for_mode(workspace.track_mode)),
                             );
-                            highlighted
-                                .set(valid_track_highlights(workspace.highlighted_tracks));
-                            row_height.set(
-                                workspace
-                                    .row_height
-                                    .clamp(MIN_ROW_HEIGHT, MAX_ROW_HEIGHT),
-                            );
+                            highlighted.set(valid_track_highlights(workspace.highlighted_tracks));
+                            row_height
+                                .set(workspace.row_height.clamp(MIN_ROW_HEIGHT, MAX_ROW_HEIGHT));
                             let saved_scroll = workspace.vertical_scroll.max(0.0);
                             vertical_scroll.set(saved_scroll);
                             if let Some(element) = timeline_scroll_node.cast::<HtmlElement>() {
@@ -957,15 +922,12 @@ pub fn app() -> Html {
     {
         let timeline_scroll_node = timeline_scroll_node.clone();
         let desired_scroll = *vertical_scroll;
-        use_effect_with(
-            (track_catalog.len(), *row_height),
-            move |_| {
-                if let Some(element) = timeline_scroll_node.cast::<HtmlElement>() {
-                    element.set_scroll_top(desired_scroll.round() as i32);
-                }
-                || ()
-            },
-        );
+        use_effect_with((track_catalog.len(), *row_height), move |_| {
+            if let Some(element) = timeline_scroll_node.cast::<HtmlElement>() {
+                element.set_scroll_top(desired_scroll.round() as i32);
+            }
+            || ()
+        });
     }
 
     {
@@ -1497,7 +1459,7 @@ pub fn app() -> Html {
     highlighted_tracks.sort();
     let workspace = WorkspaceFile {
         kind: "kutrace-workspace".to_owned(),
-        version: 5,
+        version: 6,
         filters: (*filters).clone(),
         sql: (*sql).clone(),
         range: Some(*range),
@@ -1611,7 +1573,7 @@ pub fn app() -> Html {
                         .ok_or_else(|| "Workspace file is not text".to_owned())?;
                     let workspace = serde_json::from_str::<WorkspaceFile>(&text)
                         .map_err(|error| format!("Invalid workspace: {error}"))?;
-                    if workspace.kind != "kutrace-workspace" || !matches!(workspace.version, 1..=5)
+                    if workspace.kind != "kutrace-workspace" || !matches!(workspace.version, 1..=6)
                     {
                         return Err("Unsupported workspace file".to_owned());
                     }
@@ -1638,11 +1600,7 @@ pub fn app() -> Html {
                             .unwrap_or_else(|| TrackGroups::for_mode(workspace.track_mode)),
                     );
                     highlighted.set(valid_track_highlights(workspace.highlighted_tracks));
-                    row_height.set(
-                        workspace
-                            .row_height
-                            .clamp(MIN_ROW_HEIGHT, MAX_ROW_HEIGHT),
-                    );
+                    row_height.set(workspace.row_height.clamp(MIN_ROW_HEIGHT, MAX_ROW_HEIGHT));
                     let saved_scroll = workspace.vertical_scroll.max(0.0);
                     vertical_scroll.set(saved_scroll);
                     if let Some(element) = timeline_scroll_node.cast::<HtmlElement>() {
@@ -2013,8 +1971,7 @@ pub fn app() -> Html {
         let vertical_scroll = vertical_scroll.clone();
         let timeline_scroll_node = timeline_scroll_node.clone();
         Callback::from(move |_| {
-            let next_height =
-                (*row_height * factor).clamp(MIN_ROW_HEIGHT, MAX_ROW_HEIGHT);
+            let next_height = (*row_height * factor).clamp(MIN_ROW_HEIGHT, MAX_ROW_HEIGHT);
             let next_scroll = *vertical_scroll * next_height / *row_height;
             row_height.set(next_height);
             vertical_scroll.set(next_scroll);
@@ -2078,11 +2035,11 @@ pub fn app() -> Html {
         <header class="app-header"><div class="brand"><span class="mark">{"KU"}</span><strong>{"trace"}</strong><span id="trace-title">{metadata.title.clone()}</span></div><nav><span id="live-status" class="live-status">{format!("{} events · {}", metadata.count,if *follow_tail{"following live"}else{"static"})}</span><button id="follow-live" aria-pressed={follow_tail.to_string()} onclick={toggle_follow}>{"Follow tail"}</button><button id="save-workspace" onclick={save_workspace}>{"Save"}</button><button id="export-workspace" onclick={export_workspace}>{"Export"}</button><button id="import-workspace" onclick={import_workspace}>{"Import"}</button><input id="workspace-file" type="file" accept="application/json,.json" onchange={on_workspace_file} hidden=true/><a href="/legacy" target="_blank">{"Exact KUtrace view ↗"}</a></nav></header>
         <div class="view-toolbar"><div class="view-tabs" role="tablist">
           {for ["timeline", "legacy"].map(|view| { let active=*active_view==view; let active_view=active_view.clone(); let legacy_loaded=legacy_loaded.clone(); html!{<button class={classes!("view-tab", active.then_some("active"))} data-view={view} role="tab" aria-selected={active.to_string()} onclick={Callback::from(move |_| {active_view.set(view.to_owned()); if view=="legacy" {legacy_loaded.set(true)}})}>{if view=="timeline" {"Timeline"} else {"Exact KUtrace"}}</button>} })}
-        </div><div class="search-tools"><label>{"Find "}<input id="trace-search" type="search" value={(*search).clone()} oninput={{let search=search.clone(); Callback::from(move |event: InputEvent| search.set(event.target_unchecked_into::<HtmlInputElement>().value()))}}/></label><button id="search-invert" aria-pressed={search_invert.to_string()} onclick={{let value=search_invert.clone(); Callback::from(move |_| value.set(!*value))}}>{"Not"}</button><span id="search-count" class="muted">{if search.is_empty() {String::new()} else {format!("{search_matches} matches")}}</span></div>
+        </div><div class="search-tools"><label>{"Find "}<input id="trace-search" type="search" value={(*search).clone()} oninput={{let search=search.clone();let overlays=overlays.clone(); Callback::from(move |event: InputEvent| {search.set(event.target_unchecked_into::<HtmlInputElement>().value());let mut next=*overlays;next.annotations=0;overlays.set(next)})}}/></label><button id="search-invert" aria-pressed={search_invert.to_string()} onclick={{let value=search_invert.clone();let overlays=overlays.clone(); Callback::from(move |_| {value.set(!*value);let mut next=*overlays;next.annotations=0;overlays.set(next)})}}>{"Not"}</button><span id="search-count" class="muted">{if search.is_empty() {String::new()} else {format!("{search_matches} matches")}}</span></div>
         <div class="range-controls"><button id="pan-left" onclick={navigate("pan-left")}>{"←"}</button><button id="zoom-out" onclick={navigate("zoom-out")}>{"−"}</button><button id="reset-range" onclick={navigate("reset")}>{"Fit"}</button><button id="zoom-in" onclick={navigate("zoom-in")}>{"+"}</button><button id="pan-right" onclick={navigate("pan-right")}>{"→"}</button></div></div>
         <main>
           <aside class="track-sidebar"><section><h2>{"Tracks"}</h2><label class="field-label">{"Group by"}<select id="track-mode" value={track_mode.value()} onchange={{let track_mode=track_mode.clone(); let track_groups=track_groups.clone(); let highlighted=highlighted.clone(); Callback::from(move |event: Event| {let value=event.target_unchecked_into::<HtmlSelectElement>().value(); let next_mode=match value.as_str(){"cpu"=>TrackMode::Cpu,"pid"=>TrackMode::Pid,_=>TrackMode::CpuPid}; track_mode.set(next_mode); track_groups.set(TrackGroups::for_mode(next_mode)); highlighted.set(HashSet::new());})}}><option value="cpu_pid" selected={*track_mode==TrackMode::CpuPid}>{"KUtrace groups"}</option><option value="cpu" selected={*track_mode==TrackMode::Cpu}>{"CPU cores"}</option><option value="pid" selected={*track_mode==TrackMode::Pid}>{"Process / thread"}</option></select></label><div class="track-groups">{for group_buttons}</div></section>
-          <section><h2>{"Display"}</h2><div class="display-toggles">{for [("marks","Mark"),("arcs","Arc"),("locks","Lock"),("frequency","Freq"),("ipc","IPC"),("samples","Samp"),("colorblind","CB")].map(|(key,label)| {let overlays_handle=overlays.clone(); let pressed=overlay_value(*overlays,key); html!{<button data-overlay={key} aria-pressed={pressed.to_string()} onclick={Callback::from(move |_| overlays_handle.set(toggle_overlay(*overlays_handle,key)))}>{label}</button>}})}</div></section>
+          <section><h2>{"Display"}</h2><div class="display-toggles">{for [("marks","Mark"),("arcs","Arc"),("locks","Lock"),("frequency","Freq"),("ipc","IPC"),("samples","Samp"),("annotate_user","User"),("annotate_all","Annot"),("colorblind","CB")].map(|(key,label)| {let overlays_handle=overlays.clone(); let pressed=overlay_value(*overlays,key); let level=overlays.level(key); html!{<button data-overlay={key} data-state={level.to_string()} aria-pressed={pressed.to_string()} title={format!("{label} display state {level}")} onclick={Callback::from(move |event:MouseEvent| overlays_handle.set(toggle_overlay(*overlays_handle,key,event.shift_key())))}>{label}</button>}})}</div></section>
           <section><h2>{"Composable filters"}</h2><div class="filter-form"><select id="filter-field" value={(*filter_field).clone()} onchange={{let value=filter_field.clone();Callback::from(move |event:Event|value.set(event.target_unchecked_into::<HtmlSelectElement>().value()))}}>{for ["category","cpu","pid","event","rpc","name"].map(|field|html!{<option value={field} selected={*filter_field==field}>{field}</option>})}</select><select id="filter-op" value={(*filter_op).clone()} onchange={{let value=filter_op.clone();Callback::from(move |event:Event|value.set(event.target_unchecked_into::<HtmlSelectElement>().value()))}}><option value="=" selected={*filter_op=="="}>{"is"}</option><option value="!=" selected={*filter_op=="!="}>{"is not"}</option><option value="contains" selected={*filter_op=="contains"}>{"contains"}</option><option value=">=" selected={*filter_op==">="}>{"≥"}</option><option value="<=" selected={*filter_op=="<="}>{"≤"}</option></select><input id="filter-value" value={(*filter_value).clone()} oninput={{let value=filter_value.clone();Callback::from(move |event:InputEvent|value.set(event.target_unchecked_into::<HtmlInputElement>().value()))}}/><button id="add-filter" onclick={add_filter}>{"Add filter"}</button></div><div id="filter-chips" class="chips">{for filters.iter().enumerate().map(|(index,filter)|{let filters=filters.clone();html!{<span class="chip">{format!("{} {} {}",filter.field,filter.op,filter.value)}<button data-remove={index.to_string()} onclick={Callback::from(move |_|{let mut next=(*filters).clone();next.remove(index);filters.set(next)})}>{"×"}</button></span>}})}</div></section>
           <section><h2>{"Saved SQL views"}</h2><div class="saved-view-form"><input id="view-name" maxlength="80" placeholder="Slow syscalls" value={(*view_name).clone()} oninput={{let view_name=view_name.clone();Callback::from(move |event:InputEvent|view_name.set(event.target_unchecked_into::<HtmlInputElement>().value()))}}/><button id="save-view" onclick={save_view}>{"Save current query"}</button></div><div id="saved-views" class={classes!("saved-views",saved_views.is_empty().then_some("muted"))}>{saved_view_rows}</div></section><section><button id="show-schema" onclick={show_schema}>{"Inspect SQL schema"}</button></section></aside>
           <div class="workspace">

@@ -43,7 +43,7 @@ same bounded read-only contract.
   RPC, and resource lanes through full, highlighted-only, and hidden. As in the
   original, a group without highlighted rows skips highlighted-only. The choice
   applies to exact and density rendering, is keyboard accessible, and survives
-  version-5 workspace save/export/import; version-1 through version-4 state is
+  version-6 workspace save/export/import; version-1 through version-5 state is
   migrated while loading.
 - The Y axis has its own continuous viewport. Native scrolling pans it;
   scrolling over the blue label region or using the `Y−`/`Y+` controls changes
@@ -57,6 +57,11 @@ same bounded read-only contract.
   completeness.
 - Marks, samples, wakeups, lock rails, CPU frequency, IPC, idle/wait lines, and
   KUtrace user-mode inner stripes are vector overlays on the same time domain.
+  Marks, arcs, locks, frequency, IPC, and samples retain the original numeric
+  display-state cycles, including Samples' distinct Shift-click behavior.
+  Mutually exclusive user/all annotation modes draw bounded labels directly on
+  the same vector canvas. Legacy boolean overlay settings migrate to the
+  equivalent maximum numeric mode.
 - The overview, timeline, selection, details, flamegraph, and SQL notebook share
   the same visible range. Follow-tail polls the trace extent and advances only
   when explicitly enabled.

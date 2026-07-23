@@ -18,8 +18,8 @@ comparison surface, not a substitute for reimplementation.
 | Three-state group display: hidden, highlight-only, full | implemented | Original skip-highlight-only rule without selected rows is preserved in exact and density modes |
 | Vertical-axis pan and zoom for very large row sets | implemented | Catalog-backed virtual viewport, native Y scrolling, label-wheel zoom, explicit controls, and 128-core/128-PID browser gate |
 | Original CPU/PID/RPC/resource Y sorting rules | implemented | CPU/PID/resource IDs are numeric; RPC IDs retain first-occurrence order as in `show_cpu.html` |
-| Mark, arc, lock, frequency, IPC, sample, and color-blind controls | partial | Boolean controls and vector overlays exist; original multi-state cycles remain |
-| User/all annotation modes and callout placement | missing | Details dock does not reproduce on-canvas annotation modes |
+| Mark, arc, lock, frequency, IPC, sample, and color-blind controls | implemented | Original click and Shift-click multi-state cycles have Rust and Chromium/Firefox regressions |
+| User/all annotation modes and callout placement | partial | Mutually exclusive user/all modes and bounded on-canvas labels exist; original draggable/notched callout placement remains |
 | Text search and inverse search | implemented | Browser search/inversion regression |
 | Duration min/max search and `CPUI`/`CPUU`/`CPUK`/`RPC`/`PID`/`RES` syntax | missing | Needs the original line-oriented semantics |
 | Search respects visible X and Y ranges | implemented | Toolbar and timeline counts are restricted to the current time and virtualized row viewport |

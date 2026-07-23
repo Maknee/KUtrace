@@ -8,9 +8,7 @@ use wasm_bindgen::JsCast;
 use web_sys::{Element, KeyboardEvent, MouseEvent, PointerEvent, WheelEvent};
 use yew::prelude::*;
 
-use crate::model::{
-    Overlays, Range, TraceEvent, TrackGroupMode, TrackGroups, TrackMode,
-};
+use crate::model::{Overlays, Range, TraceEvent, TrackGroupMode, TrackGroups, TrackMode};
 
 const VIEW_WIDTH: f64 = 1_400.0;
 const LABEL_WIDTH: f64 = 116.0;
@@ -53,11 +51,20 @@ pub struct TimelineProps {
 
 fn event_visible(event: &TraceEvent, overlays: Overlays) -> bool {
     match event.category.as_str() {
-        "mark" | "annotation" => overlays.marks,
-        "rpc" | "wakeup" => overlays.arcs,
-        "lock" => overlays.locks,
-        "sample" => overlays.samples,
-        _ if event.event == 521 || event.event == 540 => overlays.frequency,
+        "mark" | "annotation" => {
+            overlays.marks > 0
+                && match event.event {
+                    0x20a | 0x20c => overlays.marks & 2 != 0,
+                    0x20b | 0x20d => overlays.marks & 1 != 0,
+                    _ => true,
+                }
+        }
+        "rpc" | "wakeup" => overlays.arcs > 0,
+        "lock" => overlays.locks > 0,
+        "sample" => {
+            (overlays.samples == 1 && event.pid == 0) || (overlays.samples == 2 && event.pid != 0)
+        }
+        _ if event.event == 521 || event.event == 540 => overlays.frequency > 0,
         _ => true,
     }
 }
@@ -128,9 +135,7 @@ fn track_group(track: &str) -> &str {
 }
 
 fn group_has_highlight(group: &str, highlighted: &HashSet<String>) -> bool {
-    highlighted
-        .iter()
-        .any(|track| track_group(track) == group)
+    highlighted.iter().any(|track| track_group(track) == group)
 }
 
 fn track_visible(track: &str, groups: TrackGroups, highlighted: &HashSet<String>) -> bool {
@@ -199,8 +204,7 @@ fn track_keys(
                 .strip_prefix("rpc:")
                 .and_then(|value| value.parse().ok())
             {
-                rpcs
-                    .entry(rpc)
+                rpcs.entry(rpc)
                     .and_modify(|first| *first = first.min(event.start))
                     .or_insert(event.start);
             }
@@ -215,8 +219,7 @@ fn track_keys(
             pids.insert(event.pid);
         }
         if event.rpc > 0 {
-            rpcs
-                .entry(event.rpc)
+            rpcs.entry(event.rpc)
                 .and_modify(|first| *first = first.min(event.start))
                 .or_insert(event.start);
         }
@@ -273,11 +276,7 @@ fn x_at(time: f64, range: Range) -> f64 {
     LABEL_WIDTH + (time - range.start) * (VIEW_WIDTH - LABEL_WIDTH) / range.span()
 }
 
-fn pointer_time(
-    event: &PointerEvent,
-    range: Range,
-    timeline: &NodeRef,
-) -> Option<f64> {
+fn pointer_time(event: &PointerEvent, range: Range, timeline: &NodeRef) -> Option<f64> {
     let element = timeline.cast::<Element>()?;
     let rect = element.get_bounding_client_rect();
     if !rect.width().is_finite() || rect.width() <= f64::EPSILON {
@@ -314,17 +313,14 @@ pub fn timeline(props: &TimelineProps) -> Html {
         &props.highlighted,
         props.range,
     );
-    let row_height = props
-        .row_height
-        .clamp(MIN_ROW_HEIGHT, MAX_ROW_HEIGHT);
+    let row_height = props.row_height.clamp(MIN_ROW_HEIGHT, MAX_ROW_HEIGHT);
     let viewport_height = props.viewport_height.max(240.0);
     let first_visible_row = ((props.vertical_scroll / row_height).floor().max(0.0) as usize)
         .saturating_sub(ROW_OVERSCAN)
         .min(tracks.len());
-    let last_visible_row = (((props.vertical_scroll + viewport_height) / row_height).ceil()
-        as usize
-        + ROW_OVERSCAN)
-        .min(tracks.len());
+    let last_visible_row =
+        (((props.vertical_scroll + viewport_height) / row_height).ceil() as usize + ROW_OVERSCAN)
+            .min(tracks.len());
     let row_index: HashMap<&str, usize> = tracks
         .iter()
         .enumerate()
@@ -382,6 +378,27 @@ pub fn timeline(props: &TimelineProps) -> Html {
         })
         .collect::<HashSet<_>>()
         .len();
+    let mut annotation_tracks = HashMap::<i64, String>::new();
+    if props.overlays.annotations > 0 {
+        let mut seen_user_events = HashSet::new();
+        for (track, _, event) in &rendered_events {
+            if annotation_tracks.len() >= 64
+                || event.name.is_empty()
+                || !event_is_highlighted(event, &props.highlighted)
+            {
+                continue;
+            }
+            if props.overlays.annotations == 1
+                && (!matches!(event.category.as_str(), "user" | "agent")
+                    || !seen_user_events.insert(event.event))
+            {
+                continue;
+            }
+            annotation_tracks
+                .entry(event.id)
+                .or_insert_with(|| track.clone());
+        }
+    }
 
     let onpointerdown = {
         let drag_start = drag_start.clone();
@@ -664,18 +681,23 @@ pub fn timeline(props: &TimelineProps) -> Html {
                   let annotation_height = (row_height - 4.0).clamp(10.0, 40.0);
                   let h = if is_mark || is_sample { annotation_height } else { event_height };
                   let y = center - h / 2.0;
-                  html! {<g class="trace-event" opacity={opacity.to_string()} {onclick}>
+                  let annotated = row_height >= 32.0
+                      && annotation_tracks.get(&event.id).is_some_and(|annotated_track| annotated_track == &track);
+                  let ipc_visible = event.ipc != 0
+                      && ((matches!(event.category.as_str(),"user"|"agent") && props.overlays.ipc&1 != 0)
+                          || (!matches!(event.category.as_str(),"user"|"agent") && props.overlays.ipc&2 != 0));
+                  html! {<g class="trace-event" opacity={opacity.to_string()} data-annotated={annotated.to_string()} {onclick}>
                     <title>{format!("{} · {} · {} · {:.9}s · {:.2}us", if event.name.is_empty() {"(unnamed)"} else {&event.name}, event.category, track_label(&track), event.start, event.duration.max(0.0)*1e6)}</title>
                     if is_mark {
-                      <path d={format!("M {x} {y} l -5 10 h 10 z")} fill={dark}/>
+                      <path data-overlay-glyph="mark" d={format!("M {x} {y} l -5 10 h 10 z")} fill={dark}/>
                     } else if is_sample {
-                      <line x1={x.to_string()} y1={y.to_string()} x2={x.to_string()} y2={(y+h).to_string()} stroke={dark} stroke-width="1.5"/>
+                      <line data-overlay-glyph="sample" x1={x.to_string()} y1={y.to_string()} x2={x.to_string()} y2={(y+h).to_string()} stroke={dark} stroke-width="1.5"/>
                     } else if let Some(target) = wake_target {
-                      <path d={format!("M {x} {center} Q {} {} {} {target}",x+18.0,(center+target)/2.0-18.0,x+30.0)} fill="none" stroke="#be0000" stroke-width="1.5" marker-end="url(#arrowhead)"/>
+                      <path data-overlay-glyph="arc" d={format!("M {x} {center} Q {} {} {} {target}",x+18.0,(center+target)/2.0-18.0,x+30.0)} fill="none" stroke={if props.overlays.arcs==1{"#0055aa"}else{"#0080ff"}} stroke-width={if props.overlays.arcs==1{"3"}else{"2"}} stroke-dasharray={if props.overlays.arcs==1{"4 4"}else{"3 3"}} marker-end="url(#arrowhead)"/>
                     } else if is_lock {
-                      <line x1={x.to_string()} y1={(center-15.0).to_string()} x2={(x+width).to_string()} y2={(center-15.0).to_string()} stroke={dark} stroke-width="3" stroke-dasharray={if event.event&1==0{"none"}else{"5 3"}}/>
+                      <line data-overlay-glyph="lock" x1={x.to_string()} y1={(center-15.0).to_string()} x2={(x+width).to_string()} y2={(center-15.0).to_string()} stroke={dark} stroke-width={if props.overlays.locks==1{"4"}else{"2"}} stroke-dasharray={if event.event&1==0{"none"}else{"5 3"}}/>
                     } else if is_frequency {
-                      <rect x={x.to_string()} y={(center-18.0).to_string()} width={width.to_string()} height="7" fill="#50b45a" opacity=".45"/>
+                      <rect data-overlay-glyph="frequency" x={x.to_string()} y={(center-18.0).to_string()} width={width.to_string()} height={if props.overlays.frequency==1{"11"}else{"7"}} fill="#50b45a" opacity={if props.overlays.frequency==1{".8"}else{".45"}}/>
                       if width > 34.0 {<text x={(x+3.0).to_string()} y={(center-12.0).to_string()} class="event-label">{format!("{}MHz",event.arg0)}</text>}
                     } else if is_idle || is_wait {
                       <line x1={x.to_string()} y1={center.to_string()} x2={(x+width).to_string()} y2={center.to_string()} stroke="#111" stroke-width={if is_idle{"2"}else{"1.5"}} stroke-dasharray={if is_wait{"5 3"}else{"none"}}/>
@@ -688,9 +710,13 @@ pub fn timeline(props: &TimelineProps) -> Html {
                       if width > 34.0 {
                         <text x={(x+3.0).to_string()} y={(center+3.5).to_string()} class="event-label">{event.name.clone()}</text>
                       }
-                      if props.overlays.ipc && event.ipc != 0 {
-                        <line x1={x.to_string()} y1={y.to_string()} x2={(x+width).to_string()} y2={y.to_string()} stroke="#fff" stroke-width="2"/>
+                      if ipc_visible {
+                        <line data-overlay-glyph="ipc" x1={x.to_string()} y1={y.to_string()} x2={(x+width).to_string()} y2={y.to_string()} stroke="#fff" stroke-width="2"/>
                       }
+                    }
+                    if annotated {
+                      <line class="canvas-annotation" x1={x.to_string()} y1={(center-h/2.0).to_string()} x2={x.to_string()} y2={(index as f64*row_height+2.0).to_string()}/>
+                      <text class="canvas-annotation-text" x={(x+3.0).to_string()} y={(index as f64*row_height+11.0).to_string()} transform={format!("rotate(-24 {} {})",x+3.0,index as f64*row_height+11.0)}>{format!("{} · {:.2}µs",event.name,event.duration.max(0.0)*1e6)}</text>
                     }
                   </g>}
           })}
