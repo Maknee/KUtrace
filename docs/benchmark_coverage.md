@@ -14,6 +14,13 @@ The current x86-64 sweep is recorded in
 It is the authoritative result for commit `4885a8d`. Earlier artifacts remain
 useful for feature-specific engineering regressions.
 
+CPU and memory accounting is recorded separately in
+[`benchmarks/2026-07-23-epyc9354p-resource-usage.json`](benchmarks/2026-07-23-epyc9354p-resource-usage.json).
+All measured configurations stayed below 0.101% of host RAM. Idle, 250 Hz
+sampling, and 250 Hz stack sampling stayed below an aggregate 1% of one logical
+core. High-rate event tracing did not: its 1%-of-one-core limits are
+rate-dependent and explicitly tabulated in the resource artifact.
+
 | Path | Built | Live | Pipeline | Overhead | Current evidence |
 |---|---:|---:|---:|---:|---|
 | PID-filtered syscall entry/exit | yes | yes | yes | yes | 387.6 ns median added for `getpid`, zero loss |

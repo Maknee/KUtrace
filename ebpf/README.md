@@ -347,6 +347,24 @@ The real transformer sustained a 1.964 million-record/s median on the
 5.26-million-record whole-host capture; timing and peak RSS are published in
 [`../docs/benchmarks/2026-07-20-epyc9354p-transform-throughput.json`](../docs/benchmarks/2026-07-20-epyc9354p-transform-throughput.json).
 
+`bench_resource_usage.sh` separately measures collector CPU, collector peak
+RSS, and exact kernel BPF-map `memlock` for idle capture, the six core workload
+modes, IPC, 250 Hz sampling with and without stacks, uprobes, and USDT. CPU is
+reported both as a percentage of one logical core and of total host CPU
+capacity; memory uses host `MemTotal` as its denominator:
+
+```sh
+make -C ebpf bench-resources
+```
+
+On the EPYC 9354P resource sweep, every configuration used at most 0.101% of
+host RAM. Idle capture used 0.621% of one logical core. Application plus
+collector cost remained below 1% of one core at 250 Hz both without stacks
+(worst observed 0.838%) and with stacks (0.898%). Active tracing is
+rate-dependent and exceeded 1% in the high-rate fixtures; the measured
+per-operation limits and all zero-loss evidence are published in
+[`../docs/benchmarks/2026-07-23-epyc9354p-resource-usage.json`](../docs/benchmarks/2026-07-23-epyc9354p-resource-usage.json).
+
 On the EPYC 9354P, the isolated 20 × 100,000 `getpid` run measured 138.35 ns
 baseline, 337.30 ns loaded-but-filtered, and 580.72 ns captured median time.
 The added captured cost was 442.37 ns (bootstrap 95% CI 441.99–442.72 ns), with

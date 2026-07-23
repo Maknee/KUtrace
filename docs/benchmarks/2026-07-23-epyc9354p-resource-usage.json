@@ -1,0 +1,185 @@
+{
+  "date_utc": "2026-07-23T05:51:07Z",
+  "tracer_commit": "cdd59bc",
+  "host": {
+    "cpu": "AMD EPYC 9354P 32-Core Processor",
+    "logical_cpus": 64,
+    "memory_kib": 197612916,
+    "kernel": "6.6.36",
+    "architecture": "x86_64"
+  },
+  "methodology": {
+    "repetitions": 2,
+    "benchmark_cpu": 63,
+    "collector_cpu": 62,
+    "cpu_denominator": "one logical core; host-capacity percentages divide by 64",
+    "memory_denominator": "MemTotal",
+    "memory_numerator": "sampled collector peak RSS plus exact memlock from every open BPF map fdinfo",
+    "collector_cpu_source": "nanosecond runtime from /proc/PID/schedstat after attachment",
+    "application_cpu_source": "separate baseline/active workload distributions",
+    "zero_loss_required": true
+  },
+  "collector_and_memory_results": [
+    {
+      "mode": "idle",
+      "collector_cpu_percent_one_core_median": 0.620708,
+      "collector_cpu_percent_one_core_range": [0.614355, 0.627061],
+      "collector_cpu_percent_host_capacity_median": 0.009699,
+      "maximum_combined_memory_percent_host": 0.075246,
+      "maximum_combined_memory_kib": 148696.086
+    },
+    {
+      "mode": "getpid",
+      "collector_cpu_percent_one_core_median": 2.37185,
+      "collector_cpu_percent_one_core_range": [2.337775, 2.405925],
+      "collector_cpu_percent_host_capacity_median": 0.03706,
+      "maximum_combined_memory_percent_host": 0.075244,
+      "normalized_events_per_run": [402038, 402044]
+    },
+    {
+      "mode": "client_span",
+      "collector_cpu_percent_one_core_median": 2.500093,
+      "collector_cpu_percent_one_core_range": [2.470842, 2.529344],
+      "collector_cpu_percent_host_capacity_median": 0.039064,
+      "maximum_combined_memory_percent_host": 0.100635,
+      "maximum_combined_memory_kib": 198868.086,
+      "client_events_received_per_run": 402002
+    },
+    {
+      "mode": "recoverable_x86_trap",
+      "collector_cpu_percent_one_core_median": 9.104618,
+      "collector_cpu_percent_one_core_range": [9.061445, 9.147791],
+      "collector_cpu_percent_host_capacity_median": 0.14226,
+      "maximum_combined_memory_percent_host": 0.075244,
+      "normalized_events_per_run": [809383, 810045]
+    },
+    {
+      "mode": "syscall_free_cpu",
+      "collector_cpu_percent_one_core_median": 0.680182,
+      "collector_cpu_percent_one_core_range": [0.674568, 0.685797],
+      "collector_cpu_percent_host_capacity_median": 0.010628,
+      "maximum_combined_memory_percent_host": 0.075244
+    },
+    {
+      "mode": "scheduler_round_trip",
+      "collector_cpu_percent_one_core_median": 6.58579,
+      "collector_cpu_percent_one_core_range": [6.53421, 6.637371],
+      "collector_cpu_percent_host_capacity_median": 0.102903,
+      "maximum_combined_memory_percent_host": 0.075244,
+      "normalized_events_per_run": [647838, 643430]
+    },
+    {
+      "mode": "mixed_round_trip",
+      "collector_cpu_percent_one_core_median": 7.954595,
+      "collector_cpu_percent_one_core_range": [7.817441, 8.091749],
+      "collector_cpu_percent_host_capacity_median": 0.124291,
+      "maximum_combined_memory_percent_host": 0.085347,
+      "normalized_events_per_run": [856428, 857647]
+    },
+    {
+      "mode": "ipc_getpid",
+      "collector_cpu_percent_one_core_median": 3.406364,
+      "collector_cpu_percent_one_core_range": [3.357645, 3.455084],
+      "collector_cpu_percent_host_capacity_median": 0.053224,
+      "maximum_combined_memory_percent_host": 0.075244
+    },
+    {
+      "mode": "sampling_250hz",
+      "collector_cpu_percent_one_core_median": 0.688526,
+      "collector_cpu_percent_one_core_range": [0.686228, 0.690824],
+      "collector_cpu_percent_host_capacity_median": 0.010758,
+      "maximum_combined_memory_percent_host": 0.075246,
+      "application_slowdown_percent": 0.147,
+      "worst_observed_aggregate_percent_one_core": 0.837824
+    },
+    {
+      "mode": "stack_sampling_250hz",
+      "collector_cpu_percent_one_core_median": 0.692101,
+      "collector_cpu_percent_one_core_range": [0.659354, 0.724848],
+      "collector_cpu_percent_host_capacity_median": 0.010814,
+      "maximum_combined_memory_percent_host": 0.083667,
+      "maximum_combined_memory_kib": 165337.531,
+      "application_slowdown_percent": 0.173449,
+      "worst_observed_aggregate_percent_one_core": 0.898297
+    },
+    {
+      "mode": "uprobe",
+      "collector_cpu_percent_one_core_median": 1.666616,
+      "collector_cpu_percent_one_core_range": [1.654333, 1.678899],
+      "collector_cpu_percent_host_capacity_median": 0.026041,
+      "maximum_combined_memory_percent_host": 0.075248
+    },
+    {
+      "mode": "usdt",
+      "collector_cpu_percent_one_core_median": 1.64801,
+      "collector_cpu_percent_one_core_range": [1.612394, 1.683626],
+      "collector_cpu_percent_host_capacity_median": 0.02575,
+      "maximum_combined_memory_percent_host": 0.075766
+    }
+  ],
+  "one_percent_core_rate_budget": {
+    "definition": "The idle collector consumes 0.621% of one core. The remaining budget combines measured incremental collector CPU with application added time per semantic operation.",
+    "thresholds": [
+      {
+        "mode": "getpid",
+        "maximum_operations_per_second": 4968,
+        "combined_added_ns_per_operation": 763.506
+      },
+      {
+        "mode": "client_span",
+        "maximum_operations_per_second": 3937,
+        "combined_added_ns_per_operation": 963.376
+      },
+      {
+        "mode": "recoverable_x86_trap",
+        "maximum_operations_per_second": 972,
+        "combined_added_ns_per_operation": 3902.724
+      },
+      {
+        "mode": "scheduler_round_trip",
+        "maximum_operations_per_second": 304,
+        "combined_added_ns_per_operation": 12466.258
+      },
+      {
+        "mode": "mixed_round_trip",
+        "maximum_operations_per_second": 249,
+        "combined_added_ns_per_operation": 15262.791
+      },
+      {
+        "mode": "ipc_getpid",
+        "maximum_operations_per_second": 2106,
+        "combined_added_ns_per_operation": 1800.644
+      },
+      {
+        "mode": "uprobe_span",
+        "maximum_operations_per_second": 935,
+        "combined_added_ns_per_operation": 4056.316
+      },
+      {
+        "mode": "usdt_span",
+        "maximum_operations_per_second": 1013,
+        "combined_added_ns_per_operation": 3744.157
+      }
+    ],
+    "interpretation": "These are engineering thresholds for this host, not universal constants. Above them, aggregate tracer CPU exceeds 1% of one logical core even before unrelated system activity."
+  },
+  "assessment": {
+    "all_modes_below_one_percent_host_memory": true,
+    "maximum_memory_percent_host": 0.100635,
+    "idle_collector_below_one_percent_one_core": true,
+    "sampling_250hz_aggregate_below_one_percent_one_core": true,
+    "stack_sampling_250hz_aggregate_below_one_percent_one_core": true,
+    "all_active_tracing_bursts_below_one_percent_one_core": false,
+    "all_collector_userspace_below_one_percent_total_host_cpu_capacity": true,
+    "maximum_collector_percent_total_host_cpu_capacity": 0.142934,
+    "bpf_dropped_events": 0,
+    "probe_dropped_events": 0,
+    "stack_dropped_samples": 0
+  },
+  "limitations": [
+    "CPU thresholds combine separate pinned application and collector measurements; they are engineering capacity estimates rather than simultaneous hardware-counter attribution.",
+    "The memory numerator excludes executable page-cache sharing outside RSS and includes full BPF-map memlock even when a map is sparsely populated.",
+    "Packet-cgroup traffic still lacks an isolated resource-rate sweep.",
+    "Results are specific to this EPYC 9354P, Linux 6.6.36, and the measured tracer build."
+  ]
+}
