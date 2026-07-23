@@ -74,6 +74,23 @@ try {
       await page.locator(`[data-agent-span="${span}"]`).click();
     } else if (action.startsWith('search:')) {
       await page.locator('#trace-search').fill(action.slice('search:'.length));
+    } else if (action.startsWith('search-min:')) {
+      await page.locator('#search-min').fill(action.slice('search-min:'.length));
+    } else if (action.startsWith('search-max:')) {
+      await page.locator('#search-max').fill(action.slice('search-max:'.length));
+    } else if (action.startsWith('search-unit:')) {
+      const requested = action.slice('search-unit:'.length);
+      const target = {nsec: 'nsec', usec: 'µsec', msec: 'msec'}[requested];
+      if (!target) throw new Error(`unknown search duration unit: ${requested}`);
+      for (let attempt = 0; attempt < 3; attempt += 1) {
+        if (await page.locator('#timeline').getAttribute('data-search-units') === target) break;
+        await page.locator('#search-units').click();
+      }
+      if (await page.locator('#timeline').getAttribute('data-search-units') !== target) {
+        throw new Error(`could not select search duration unit: ${requested}`);
+      }
+    } else if (action === 'search-not') {
+      await page.locator('#search-invert').click();
     } else if (action.startsWith('display-shift:') || action.startsWith('display:')) {
       const shifted = action.startsWith('display-shift:');
       const display = action.slice((shifted ? 'display-shift:' : 'display:').length);
@@ -153,6 +170,15 @@ try {
     selection: (await page.locator('#selection-summary').textContent())?.trim() ?? '',
     agentContext: (await page.locator('#agent-context-title').textContent())?.trim() ?? '',
     searchMatches: (await page.locator('#search-count').textContent())?.trim() ?? '',
+    search: {
+      text: await page.locator('#trace-search').inputValue(),
+      minimum: await page.locator('#search-min').inputValue(),
+      maximum: await page.locator('#search-max').inputValue(),
+      units: await timeline.getAttribute('data-search-units'),
+      mode: await timeline.getAttribute('data-search-mode'),
+      invert: await timeline.getAttribute('data-search-invert') === 'true',
+      matches: Number(await timeline.getAttribute('data-search-count')),
+    },
   };
   process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
 } finally {

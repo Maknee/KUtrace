@@ -18,8 +18,8 @@ use yew::prelude::*;
 use crate::{
     api::{QueryResponse, query},
     model::{
-        Filter, Metadata, Overlays, Range, TraceEvent, TrackGroupMode, TrackGroups, TrackMode,
-        filter_sql, where_sql,
+        Filter, Metadata, Overlays, Range, SearchSpec, TraceEvent, TrackGroupMode, TrackGroups,
+        TrackMode, filter_sql, where_sql,
     },
     timeline::{DEFAULT_ROW_HEIGHT, MAX_ROW_HEIGHT, MIN_ROW_HEIGHT, Overview, Selection, Timeline},
 };
@@ -400,6 +400,8 @@ struct WorkspaceFile {
     vertical_scroll: f64,
     #[serde(default)]
     overlays: Overlays,
+    #[serde(default)]
+    search: SearchSpec,
 }
 
 fn default_workspace_row_height() -> f64 {
@@ -594,8 +596,7 @@ pub fn app() -> Html {
     let track_groups = use_state(TrackGroups::default);
     let overlays = use_state(Overlays::default);
     let highlighted = use_state(HashSet::<String>::new);
-    let search = use_state(String::new);
-    let search_invert = use_state(|| false);
+    let search = use_state(SearchSpec::default);
     let selection = use_state(|| None::<Selection>);
     let active_view = use_state(|| "timeline".to_owned());
     let active_dock = use_state(|| "details".to_owned());
@@ -690,6 +691,7 @@ pub fn app() -> Html {
         let vertical_scroll = vertical_scroll.clone();
         let timeline_scroll_node = timeline_scroll_node.clone();
         let overlays = overlays.clone();
+        let search = search.clone();
         let workspace_loaded = workspace_loaded.clone();
         let status = sql_status.clone();
         let full = metadata.full;
@@ -703,7 +705,7 @@ pub fn app() -> Html {
                     match serde_json::from_str::<WorkspaceFile>(&stored) {
                         Ok(workspace)
                             if workspace.kind == "kutrace-workspace"
-                                && matches!(workspace.version, 1..=6) =>
+                                && matches!(workspace.version, 1..=7) =>
                         {
                             filters.set(workspace.filters.into_iter().take(64).collect());
                             if !workspace.sql.is_empty() {
@@ -728,6 +730,7 @@ pub fn app() -> Html {
                                 element.set_scroll_top(saved_scroll.round() as i32);
                             }
                             overlays.set(workspace.overlays);
+                            search.set(workspace.search);
                         }
                         Ok(_) => status.set("Unsupported saved workspace".to_owned()),
                         Err(error) => status.set(format!("Invalid saved workspace: {error}")),
@@ -1459,7 +1462,7 @@ pub fn app() -> Html {
     highlighted_tracks.sort();
     let workspace = WorkspaceFile {
         kind: "kutrace-workspace".to_owned(),
-        version: 6,
+        version: 7,
         filters: (*filters).clone(),
         sql: (*sql).clone(),
         range: Some(*range),
@@ -1470,6 +1473,7 @@ pub fn app() -> Html {
         row_height: *row_height,
         vertical_scroll: *vertical_scroll,
         overlays: *overlays,
+        search: (*search).clone(),
     };
     let save_workspace = {
         let status = sql_status.clone();
@@ -1545,6 +1549,7 @@ pub fn app() -> Html {
         let vertical_scroll = vertical_scroll.clone();
         let timeline_scroll_node = timeline_scroll_node.clone();
         let overlays = overlays.clone();
+        let search = search.clone();
         let status = sql_status.clone();
         let full = metadata.full;
         Callback::from(move |event: Event| {
@@ -1563,6 +1568,7 @@ pub fn app() -> Html {
             let vertical_scroll = vertical_scroll.clone();
             let timeline_scroll_node = timeline_scroll_node.clone();
             let overlays = overlays.clone();
+            let search = search.clone();
             let status = status.clone();
             spawn_local(async move {
                 let outcome = async {
@@ -1573,7 +1579,7 @@ pub fn app() -> Html {
                         .ok_or_else(|| "Workspace file is not text".to_owned())?;
                     let workspace = serde_json::from_str::<WorkspaceFile>(&text)
                         .map_err(|error| format!("Invalid workspace: {error}"))?;
-                    if workspace.kind != "kutrace-workspace" || !matches!(workspace.version, 1..=6)
+                    if workspace.kind != "kutrace-workspace" || !matches!(workspace.version, 1..=7)
                     {
                         return Err("Unsupported workspace file".to_owned());
                     }
@@ -1607,6 +1613,7 @@ pub fn app() -> Html {
                         element.set_scroll_top(saved_scroll.round() as i32);
                     }
                     overlays.set(workspace.overlays);
+                    search.set(workspace.search);
                     Ok::<_, String>(())
                 }
                 .await;
@@ -1889,33 +1896,36 @@ pub fn app() -> Html {
     )
     .into_iter()
     .collect::<HashSet<_>>();
-    let search_matches = if search.is_empty() {
-        0
-    } else {
+    let search_events = if search.active() {
         events
             .iter()
             .filter(|event| {
-                if event.start >= range.end
-                    || event.end <= range.start
-                    || !event_on_visible_track(
+                event.start < range.end
+                    && event.end > range.start
+                    && event_on_visible_track(
                         event,
                         &visible_search_tracks,
                         !track_catalog.is_empty(),
                     )
-                {
-                    return false;
-                }
-                let needle = search.to_lowercase();
-                let matched = event.name.to_lowercase().contains(&needle)
-                    || event.category.to_lowercase().contains(&needle)
-                    || event.pid.to_string().contains(&needle)
-                    || event.cpu.to_string().contains(&needle)
-                    || event.rpc.to_string().contains(&needle)
-                    || event.event.to_string().contains(&needle);
-                if *search_invert { !matched } else { matched }
+                    && search.matches(event)
             })
-            .count()
+            .collect::<Vec<_>>()
+    } else {
+        Vec::new()
     };
+    let search_matches = search_events.len();
+    let search_duration = search_events
+        .iter()
+        .map(|event| event.duration.max(0.0))
+        .sum::<f64>();
+    let search_minimum = search_events
+        .iter()
+        .map(|event| event.duration.max(0.0))
+        .reduce(f64::min);
+    let search_maximum = search_events
+        .iter()
+        .map(|event| event.duration.max(0.0))
+        .reduce(f64::max);
     let saved_view_rows = if saved_views.is_empty() {
         html! {"No saved SQL views."}
     } else {
@@ -2029,13 +2039,90 @@ pub fn app() -> Html {
     })
     .collect::<Vec<_>>();
 
+    let update_search_text = {
+        let search = search.clone();
+        let overlays = overlays.clone();
+        Callback::from(move |event: InputEvent| {
+            let mut next = (*search).clone();
+            next.text = event.target_unchecked_into::<HtmlInputElement>().value();
+            search.set(next);
+            let mut next_overlays = *overlays;
+            next_overlays.annotations = 0;
+            overlays.set(next_overlays);
+        })
+    };
+    let update_search_minimum = {
+        let search = search.clone();
+        let overlays = overlays.clone();
+        Callback::from(move |event: InputEvent| {
+            let mut next = (*search).clone();
+            next.minimum = event.target_unchecked_into::<HtmlInputElement>().value();
+            search.set(next);
+            let mut next_overlays = *overlays;
+            next_overlays.annotations = 0;
+            overlays.set(next_overlays);
+        })
+    };
+    let update_search_maximum = {
+        let search = search.clone();
+        let overlays = overlays.clone();
+        Callback::from(move |event: InputEvent| {
+            let mut next = (*search).clone();
+            next.maximum = event.target_unchecked_into::<HtmlInputElement>().value();
+            search.set(next);
+            let mut next_overlays = *overlays;
+            next_overlays.annotations = 0;
+            overlays.set(next_overlays);
+        })
+    };
+    let toggle_search_invert = {
+        let search = search.clone();
+        let overlays = overlays.clone();
+        Callback::from(move |_| {
+            let mut next = (*search).clone();
+            next.invert = !next.invert;
+            search.set(next);
+            let mut next_overlays = *overlays;
+            next_overlays.annotations = 0;
+            overlays.set(next_overlays);
+        })
+    };
+    let cycle_search_units = {
+        let search = search.clone();
+        Callback::from(move |_| {
+            let mut next = (*search).clone();
+            next.units = next.units.next();
+            search.set(next);
+        })
+    };
+    let search_summary = if !search.active() {
+        String::new()
+    } else if let (Some(minimum), Some(maximum)) = (search_minimum, search_maximum) {
+        format!(
+            "{search_matches} matches · {:.2} µs [{:.2}..{:.2}]",
+            search_duration * 1e6,
+            minimum * 1e6,
+            maximum * 1e6
+        )
+    } else {
+        format!("{search_matches} matches")
+    };
+
     html! {
       <div class={classes!("wasm-app", overlays.colorblind.then_some("colorblind"))}>
         <section class="print-summary print-only" aria-label="Printed trace summary"><h1>{"KUtrace workspace"}</h1><p id="print-trace-title">{metadata.title.clone()}</p><p id="print-range">{format!("Visible range: {}", range_label(*range))}</p><p id="print-filters">{if filters.is_empty() {"Filters: none".to_owned()} else {format!("Filters: {}", filters.iter().map(|filter| format!("{} {} {}", filter.field, filter.op, filter.value)).collect::<Vec<_>>().join(" · "))}}</p></section>
         <header class="app-header"><div class="brand"><span class="mark">{"KU"}</span><strong>{"trace"}</strong><span id="trace-title">{metadata.title.clone()}</span></div><nav><span id="live-status" class="live-status">{format!("{} events · {}", metadata.count,if *follow_tail{"following live"}else{"static"})}</span><button id="follow-live" aria-pressed={follow_tail.to_string()} onclick={toggle_follow}>{"Follow tail"}</button><button id="save-workspace" onclick={save_workspace}>{"Save"}</button><button id="export-workspace" onclick={export_workspace}>{"Export"}</button><button id="import-workspace" onclick={import_workspace}>{"Import"}</button><input id="workspace-file" type="file" accept="application/json,.json" onchange={on_workspace_file} hidden=true/><a href="/legacy" target="_blank">{"Exact KUtrace view ↗"}</a></nav></header>
         <div class="view-toolbar"><div class="view-tabs" role="tablist">
           {for ["timeline", "legacy"].map(|view| { let active=*active_view==view; let active_view=active_view.clone(); let legacy_loaded=legacy_loaded.clone(); html!{<button class={classes!("view-tab", active.then_some("active"))} data-view={view} role="tab" aria-selected={active.to_string()} onclick={Callback::from(move |_| {active_view.set(view.to_owned()); if view=="legacy" {legacy_loaded.set(true)}})}>{if view=="timeline" {"Timeline"} else {"Exact KUtrace"}}</button>} })}
-        </div><div class="search-tools"><label>{"Find "}<input id="trace-search" type="search" value={(*search).clone()} oninput={{let search=search.clone();let overlays=overlays.clone(); Callback::from(move |event: InputEvent| {search.set(event.target_unchecked_into::<HtmlInputElement>().value());let mut next=*overlays;next.annotations=0;overlays.set(next)})}}/></label><button id="search-invert" aria-pressed={search_invert.to_string()} onclick={{let value=search_invert.clone();let overlays=overlays.clone(); Callback::from(move |_| {value.set(!*value);let mut next=*overlays;next.annotations=0;overlays.set(next)})}}>{"Not"}</button><span id="search-count" class="muted">{if search.is_empty() {String::new()} else {format!("{search_matches} matches")}}</span></div>
+        </div><div class="search-tools">
+          <label class="search-name">{"Find "}<input id="trace-search" type="search" maxlength="100" placeholder="name or CPUI · CPUU · CPUK · RPC · PID · RES" value={search.text.clone()} oninput={update_search_text}/></label>
+          <button id="search-invert" aria-pressed={search.invert.to_string()} onclick={toggle_search_invert}>{"Not"}</button>
+          <button id="search-units" title="Cycle duration units" onclick={cycle_search_units}>{format!("{}:",search.units.label())}</button>
+          <label class="duration-bound"><span class="visually-hidden">{"Minimum duration"}</span><input id="search-min" inputmode="decimal" placeholder="min" value={search.minimum.clone()} oninput={update_search_minimum}/></label>
+          <span class="duration-separator">{".."}</span>
+          <label class="duration-bound"><span class="visually-hidden">{"Maximum duration"}</span><input id="search-max" inputmode="decimal" placeholder="max" value={search.maximum.clone()} oninput={update_search_maximum}/></label>
+          <span id="search-count" class="muted">{search_summary}</span>
+        </div>
         <div class="range-controls"><button id="pan-left" onclick={navigate("pan-left")}>{"←"}</button><button id="zoom-out" onclick={navigate("zoom-out")}>{"−"}</button><button id="reset-range" onclick={navigate("reset")}>{"Fit"}</button><button id="zoom-in" onclick={navigate("zoom-in")}>{"+"}</button><button id="pan-right" onclick={navigate("pan-right")}>{"→"}</button></div></div>
         <main>
           <aside class="track-sidebar"><section><h2>{"Tracks"}</h2><label class="field-label">{"Group by"}<select id="track-mode" value={track_mode.value()} onchange={{let track_mode=track_mode.clone(); let track_groups=track_groups.clone(); let highlighted=highlighted.clone(); Callback::from(move |event: Event| {let value=event.target_unchecked_into::<HtmlSelectElement>().value(); let next_mode=match value.as_str(){"cpu"=>TrackMode::Cpu,"pid"=>TrackMode::Pid,_=>TrackMode::CpuPid}; track_mode.set(next_mode); track_groups.set(TrackGroups::for_mode(next_mode)); highlighted.set(HashSet::new());})}}><option value="cpu_pid" selected={*track_mode==TrackMode::CpuPid}>{"KUtrace groups"}</option><option value="cpu" selected={*track_mode==TrackMode::Cpu}>{"CPU cores"}</option><option value="pid" selected={*track_mode==TrackMode::Pid}>{"Process / thread"}</option></select></label><div class="track-groups">{for group_buttons}</div></section>
@@ -2046,7 +2133,7 @@ pub fn app() -> Html {
           <section id="timeline-view" class={classes!("view-pane",(*active_view=="timeline").then_some("active"),(*dock_open).then_some("dock-open"))} hidden={*active_view!="timeline"}>
             <section class="timeline-card"><div class="section-head timeline-title"><div><h2>{"System timeline"}</h2><span id="renderer-label" class="mode-badge">{"Native KUtrace · Rust/WASM"}</span></div><div class="renderer-tabs"><button class="renderer-tab active" data-renderer="kutrace" aria-selected="true">{"Native KUtrace"}</button></div></div>
               <div id="kutrace-renderer" class="timeline-renderer modern-renderer active"><div class="modern-renderer-head"><span id="timeline-mode" class="mode-badge">{if timeline_source.ends_with("-partial") {"Density summary · partial"} else if *timeline_truncated {"Density summary"} else {"Exact vector events"}}</span><span id="range-label">{range_label(*range)}</span><div class="timeline-actions"><span class="y-controls" aria-label="Vertical row navigation"><button id="y-zoom-out" title="Shrink rows" onclick={zoom_rows(0.8)}>{"Y−"}</button><button id="y-fit" title="Reset vertical viewport" onclick={fit_rows}>{"Y fit"}</button><button id="y-zoom-in" title="Grow rows" onclick={zoom_rows(1.25)}>{"Y+"}</button></span><button id="zoom-selection" disabled={selection.is_none()} onclick={{let range=range.clone();let selection=selection.clone();Callback::from(move |_|if let Some(selected)=&*selection{range.set(selected.range)})}}>{"Zoom selection"}</button><button id="clear-selection" disabled={selection.is_none()} onclick={{let selection=selection.clone();Callback::from(move |_|selection.set(None))}}>{"Clear selection"}</button><span class="shortcut-help">{"drag select · Shift+click highlight · label-wheel Y zoom · Ctrl+wheel X zoom · WASD"}</span></div></div>
-              <Overview events={(*events).clone()} range={*range} full={metadata.full} colorblind={overlays.colorblind} on_range={set_range.clone()}/><div class="time-ruler"><span id="ruler-start">{format!("{:.6}s",range.start)}</span><span id="ruler-center">{format!("{:.6}s",(range.start+range.end)/2.0)}</span><span id="ruler-end">{format!("{:.6}s",range.end)}</span></div><div id="timeline-scroll" class="timeline-scroll" ref={timeline_scroll_node} onscroll={on_timeline_scroll}><div class="timeline-shell"><Timeline events={(*events).clone()} track_catalog={(*track_catalog).clone()} catalog_truncated={*track_catalog_truncated} range={*range} full={metadata.full} mode={*track_mode} groups={*track_groups} overlays={*overlays} search={(*search).clone()} search_invert={*search_invert} highlighted={(*highlighted).clone()} loading={*timeline_loading||!navigation_keys.is_empty()} truncated={*timeline_truncated} source={(*timeline_source).clone()} row_height={*row_height} vertical_scroll={*vertical_scroll} viewport_height={*timeline_viewport_height} selection={(*selection).clone()} on_range={set_range} on_select={on_select} on_highlight={on_highlight} on_row_zoom={on_row_zoom}/></div></div>
+              <Overview events={(*events).clone()} range={*range} full={metadata.full} colorblind={overlays.colorblind} on_range={set_range.clone()}/><div class="time-ruler"><span id="ruler-start">{format!("{:.6}s",range.start)}</span><span id="ruler-center">{format!("{:.6}s",(range.start+range.end)/2.0)}</span><span id="ruler-end">{format!("{:.6}s",range.end)}</span></div><div id="timeline-scroll" class="timeline-scroll" ref={timeline_scroll_node} onscroll={on_timeline_scroll}><div class="timeline-shell"><Timeline events={(*events).clone()} track_catalog={(*track_catalog).clone()} catalog_truncated={*track_catalog_truncated} range={*range} full={metadata.full} mode={*track_mode} groups={*track_groups} overlays={*overlays} search={(*search).clone()} highlighted={(*highlighted).clone()} loading={*timeline_loading||!navigation_keys.is_empty()} truncated={*timeline_truncated} source={(*timeline_source).clone()} row_height={*row_height} vertical_scroll={*vertical_scroll} viewport_height={*timeline_viewport_height} selection={(*selection).clone()} on_range={set_range} on_select={on_select} on_highlight={on_highlight} on_row_zoom={on_row_zoom}/></div></div>
               <div class="legend"><i class="agent"></i>{"agent "}<i class="syscall"></i>{"syscall "}<i class="kernel"></i>{"kernel "}<i class="user"></i>{"user "}<i class="scheduler"></i>{"scheduler "}<i class="special"></i>{"other "}<span id="perf-legend">{if metadata.flags&128!=0 {"◆ IPC"} else {""}}</span></div></div></section>
             <section class={classes!("analysis-dock",(!*dock_open).then_some("collapsed"))}><div class="dock-tabs">{for [("details","Details"),("flamegraph","Flamegraph"),("sql","SQL"),("agent","Agent reasoning")].map(|(name,label)|{let active=*active_dock==name;let active_dock=active_dock.clone();let dock_open=dock_open.clone();html!{<button class={classes!("dock-tab",active.then_some("active"))} data-dock={name} aria-selected={active.to_string()} onclick={Callback::from(move |_|{active_dock.set(name.to_owned());dock_open.set(true)})}>{label}</button>}})}<button id="toggle-dock" class="dock-toggle" aria-expanded={dock_open.to_string()} onclick={{let dock_open=dock_open.clone();Callback::from(move |_|dock_open.set(!*dock_open))}}>{if *dock_open{"⌄"}else{"⌃"}}</button></div><div class="dock-body">
               <section class={classes!("dock-panel",(*active_dock=="details").then_some("active"))} data-dock-panel="details"><div id="selection-summary" class="selection-summary">{selection.as_ref().map(|selected|if let Some(event)=&selected.event{format!("{} · {} · {:.6}s · {:.3} ms",event.name,event.category,event.start,event.duration*1000.0)}else{format!("Selected {}",range_label(selected.range))}).unwrap_or_else(||"Select an event or drag across tracks to inspect a region.".to_owned())}</div><div class="section-head"><h2>{"Events"}</h2><span id="event-count">{format!("{}{} rows",events.len(),if *timeline_truncated{"+"}else{""})}</span></div><div class="table-wrap"><table id="event-table"><thead><tr>{for ["ts","dur","cpu","pid","event","name","category","arg0","retval","ipc"].map(|name|html!{<th>{name}</th>})}</tr></thead><tbody>{for events.iter().take(500).map(|event|html!{<tr><td>{event.start}</td><td>{event.duration}</td><td>{event.cpu}</td><td>{event.pid}</td><td>{event.event}</td><td>{event.name.clone()}</td><td>{event.category.clone()}</td><td>{event.arg0}</td><td>{event.retval}</td><td>{event.ipc}</td></tr>})}</tbody></table></div></section>

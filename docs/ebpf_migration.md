@@ -391,8 +391,11 @@ Y viewport remove the former 64-row family cap, preserve first-occurrence RPC
 ordering, and constrain density work to visible rows. The modern display
 controls now reproduce the original multi-state Mark, Arc, Lock, Frequency,
 IPC, and Sample cycles; user/all annotation modes are mutually exclusive and
-draw bounded labels on the vector canvas. Workspace version 6 persists those
-numeric modes and migrates legacy boolean settings. `/legacy` remains the
+draw bounded labels on the vector canvas. Workspace version 7 persists those
+numeric modes and migrates legacy boolean settings. The original duration
+bounds and all-caps CPU/RPC/PID/resource search selectors are now shared by the
+human toolbar and agent navigator; the same workspace version persists that
+parsed search state while importing versions 1 through 6. `/legacy` remains the
 byte-identical comparison surface
 while every applicable behavior is reimplemented; it does not close modern
 parity by itself. See [`ui_architecture.md`](ui_architecture.md) and the

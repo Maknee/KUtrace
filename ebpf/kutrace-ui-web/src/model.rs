@@ -57,6 +57,84 @@ pub struct Filter {
     pub value: String,
 }
 
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum SearchUnits {
+    Nanoseconds,
+    #[default]
+    Microseconds,
+    Milliseconds,
+}
+
+impl SearchUnits {
+    pub const fn label(self) -> &'static str {
+        match self {
+            Self::Nanoseconds => "nsec",
+            Self::Microseconds => "µsec",
+            Self::Milliseconds => "msec",
+        }
+    }
+
+    const fn seconds_per_unit(self) -> f64 {
+        match self {
+            Self::Nanoseconds => 1e-9,
+            Self::Microseconds => 1e-6,
+            Self::Milliseconds => 1e-3,
+        }
+    }
+
+    pub const fn next(self) -> Self {
+        match self {
+            Self::Nanoseconds => Self::Microseconds,
+            Self::Microseconds => Self::Milliseconds,
+            Self::Milliseconds => Self::Nanoseconds,
+        }
+    }
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct SearchSpec {
+    pub text: String,
+    pub minimum: String,
+    pub maximum: String,
+    pub units: SearchUnits,
+    pub invert: bool,
+}
+
+impl SearchSpec {
+    pub fn active(&self) -> bool {
+        !self.text.trim().is_empty()
+            || !self.minimum.trim().is_empty()
+            || !self.maximum.trim().is_empty()
+    }
+
+    pub fn mode(&self) -> &'static str {
+        match self.text.trim() {
+            "CPUI" => "cpui",
+            "CPUU" => "cpuu",
+            "CPUK" => "cpuk",
+            "RPC" => "rpc",
+            "PID" => "pid",
+            "RES" => "resource",
+            _ => "text",
+        }
+    }
+
+    fn bound_seconds(&self, value: &str) -> Result<Option<f64>, ()> {
+        let value = value.trim();
+        if value.is_empty() {
+            return Ok(None);
+        }
+        value
+            .parse::<f64>()
+            .ok()
+            .filter(|value| value.is_finite() && *value >= 0.0)
+            .map(|value| (value > 0.0).then_some(value * self.units.seconds_per_unit()))
+            .ok_or(())
+    }
+}
+
 #[derive(Clone, Copy, Debug, Default, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum TrackMode {
@@ -288,6 +366,46 @@ impl TraceEvent {
     }
 }
 
+impl SearchSpec {
+    pub fn matches(&self, event: &TraceEvent) -> bool {
+        if !self.active() {
+            return true;
+        }
+        let text = self.text.trim();
+        let text_match = match text {
+            "" => true,
+            "CPUI" => event.event == 0x1_0000,
+            "CPUU" => {
+                (event.category == "user" && event.event != 0x1_0000) || event.category == "agent"
+            }
+            "CPUK" => matches!(event.category.as_str(), "kernel" | "syscall"),
+            "RPC" => event.rpc > 0,
+            "PID" => event.pid > 0,
+            "RES" => event.category == "resource",
+            _ => {
+                let needle = text.to_lowercase();
+                event.name.to_lowercase().contains(&needle)
+                    || event.category.to_lowercase().contains(&needle)
+                    || event.pid.to_string().contains(&needle)
+                    || event.cpu.to_string().contains(&needle)
+                    || event.rpc.to_string().contains(&needle)
+                    || event.event.to_string().contains(&needle)
+            }
+        };
+        let duration_match = self
+            .bound_seconds(&self.minimum)
+            .and_then(|minimum| {
+                self.bound_seconds(&self.maximum)
+                    .map(|maximum| (minimum, maximum))
+            })
+            .is_ok_and(|(minimum, maximum)| {
+                minimum.is_none_or(|minimum| event.duration >= minimum)
+                    && maximum.is_none_or(|maximum| event.duration <= maximum)
+            });
+        (text_match && duration_match) != self.invert
+    }
+}
+
 fn deserialize_mode<'de, D, const MAX: u8>(deserializer: D) -> Result<u8, D::Error>
 where
     D: Deserializer<'de>,
@@ -490,7 +608,26 @@ pub fn where_sql(filters: &[Filter], extra: &str) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::Overlays;
+    use super::{Overlays, SearchSpec, SearchUnits, TraceEvent};
+
+    fn event(category: &str, event: i64, duration: f64) -> TraceEvent {
+        TraceEvent {
+            id: 1,
+            start: 1.0,
+            duration,
+            end: 1.0 + duration,
+            cpu: 2,
+            pid: 42,
+            rpc: 0,
+            event,
+            name: "read".to_owned(),
+            category: category.to_owned(),
+            arg0: 0,
+            retval: 0,
+            ipc: 0,
+            render_track: None,
+        }
+    }
 
     #[test]
     fn display_modes_follow_original_cycles() {
@@ -560,5 +697,54 @@ mod tests {
             ),
             (3, 0, 2, 0, 3, 2, 0, true)
         );
+    }
+
+    #[test]
+    fn search_selectors_and_duration_bounds_share_one_match() {
+        let user = event("user", 0x1_0064, 4e-6);
+        let kernel = event("kernel", 0x400, 8e-6);
+        let idle = event("user", 0x1_0000, 12e-6);
+
+        let mut search = SearchSpec {
+            text: "CPUU".to_owned(),
+            minimum: "3".to_owned(),
+            maximum: "5".to_owned(),
+            units: SearchUnits::Microseconds,
+            invert: false,
+        };
+        assert!(search.matches(&user));
+        assert!(!search.matches(&kernel));
+        assert!(!search.matches(&idle));
+
+        search.text = "CPUK".to_owned();
+        search.minimum.clear();
+        search.maximum = "8".to_owned();
+        assert!(search.matches(&kernel));
+        search.invert = true;
+        assert!(!search.matches(&kernel));
+
+        search.text = "CPUI".to_owned();
+        search.maximum.clear();
+        search.invert = false;
+        assert!(search.matches(&idle));
+        assert!(!search.matches(&user));
+
+        search.text = "PID".to_owned();
+        assert!(search.matches(&user));
+        let mut rpc = event("rpc", 0x201, 2e-6);
+        rpc.rpc = 77;
+        search.text = "RPC".to_owned();
+        assert!(search.matches(&rpc));
+        search.text = "RES".to_owned();
+        assert!(search.matches(&event("resource", 0x219, 2e-6)));
+    }
+
+    #[test]
+    fn invalid_search_bound_never_matches() {
+        let search = SearchSpec {
+            minimum: "not-a-number".to_owned(),
+            ..SearchSpec::default()
+        };
+        assert!(!search.matches(&event("user", 0x1_0064, 4e-6)));
     }
 }

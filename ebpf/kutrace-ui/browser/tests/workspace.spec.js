@@ -256,6 +256,56 @@ test('supports persistent selection, Shift track highlighting, search, filters, 
   await expect(timeline).toBeFocused();
 });
 
+test('matches original duration bounds and special search selectors', async ({page}) => {
+  const timeline = page.locator('#timeline');
+  await expect(page.locator('#search-units')).toHaveText('µsec:');
+
+  await page.locator('#trace-search').fill('agent.tool');
+  await page.locator('#search-min').fill('3000');
+  await page.locator('#search-max').fill('5000');
+  await expect(page.locator('#search-count')).toContainText('1 matches');
+  await expect(timeline).toHaveAttribute('data-search-count', '1');
+  await expect(timeline).toHaveAttribute('data-search-mode', 'text');
+  await expect(timeline).toHaveAttribute('data-search-min', '3000');
+  await expect(timeline).toHaveAttribute('data-search-max', '5000');
+  await expect(timeline).toHaveAttribute('data-search-units', 'µsec');
+
+  await page.locator('#search-units').click();
+  await page.locator('#search-min').fill('3');
+  await page.locator('#search-max').fill('5');
+  await expect(page.locator('#search-units')).toHaveText('msec:');
+  await expect(page.locator('#search-count')).toContainText('1 matches');
+
+  await page.locator('#search-min').fill('');
+  await page.locator('#search-max').fill('');
+  await page.locator('#trace-search').fill('CPUK');
+  await expect(timeline).toHaveAttribute('data-search-mode', 'cpuk');
+  await expect(timeline).toHaveAttribute('data-search-count', '2');
+
+  await page.locator('#trace-search').fill('RES');
+  await expect(timeline).toHaveAttribute('data-search-mode', 'resource');
+  await expect(timeline).toHaveAttribute('data-search-count', '3');
+
+  await page.locator('#trace-search').fill('CPUI');
+  await expect(timeline).toHaveAttribute('data-search-mode', 'cpui');
+  await expect(timeline).toHaveAttribute('data-search-count', '0');
+  await page.locator('#search-invert').click();
+  await expect(timeline).toHaveAttribute('data-search-invert', 'true');
+  await expect(page.locator('#search-invert')).toHaveAttribute('aria-pressed', 'true');
+  await expect.poll(async () => Number(await timeline.getAttribute('data-search-count'))).toBeGreaterThan(0);
+
+  await page.locator('#search-invert').click();
+  for (const [selector, mode, matches] of [
+    ['CPUU', 'cpuu', '5'],
+    ['RPC', 'rpc', '6'],
+    ['PID', 'pid', '18'],
+  ]) {
+    await page.locator('#trace-search').fill(selector);
+    await expect(timeline).toHaveAttribute('data-search-mode', mode);
+    await expect(timeline).toHaveAttribute('data-search-count', matches);
+  }
+});
+
 test('matches original multi-state display cycles and annotation modes', async ({page}) => {
   const display = name => page.locator(`[data-overlay="${name}"]`);
   for (const [name, state] of Object.entries({
@@ -537,6 +587,9 @@ test('keeps SQL, schema inspection, saved views, and portable workspace state', 
     'data-group-state',
     'highlighted',
   );
+  await page.locator('#trace-search').fill('agent.tool');
+  await page.locator('#search-min').fill('1000');
+  await page.locator('#search-max').fill('5000');
   await page.locator('#save-workspace').click();
   await page.reload();
   await waitForTimeline(page);
@@ -548,13 +601,16 @@ test('keeps SQL, schema inspection, saved views, and portable workspace state', 
     'data-group-state',
     'highlighted',
   );
+  await expect(page.locator('#trace-search')).toHaveValue('agent.tool');
+  await expect(page.locator('#search-min')).toHaveValue('1000');
+  await expect(page.locator('#search-max')).toHaveValue('5000');
 
   const download = page.waitForEvent('download');
   await page.locator('#export-workspace').click();
   const exported = await download;
   const workspace = JSON.parse(await readFile(await exported.path(), 'utf8'));
   expect(workspace.kind).toBe('kutrace-workspace');
-  expect(workspace.version).toBe(6);
+  expect(workspace.version).toBe(7);
   expect(workspace.trackGroups).toEqual({cpu: 'highlighted', pid: 'full', rpc: 'full', resource: 'full'});
   expect(workspace.highlightedTracks).toEqual(['cpu:0']);
   expect(workspace.rowHeight).toBe(52);
@@ -568,6 +624,13 @@ test('keeps SQL, schema inspection, saved views, and portable workspace state', 
     samples: 0,
     annotations: 0,
     colorblind: false,
+  });
+  expect(workspace.search).toEqual({
+    text: 'agent.tool',
+    minimum: '1000',
+    maximum: '5000',
+    units: 'microseconds',
+    invert: false,
   });
   expect(workspace.views).toEqual([{name: 'Agent spans', sql: 'SELECT COUNT(*) AS agent_count FROM agent_spans'}]);
 

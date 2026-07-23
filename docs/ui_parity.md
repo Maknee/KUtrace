@@ -21,7 +21,7 @@ comparison surface, not a substitute for reimplementation.
 | Mark, arc, lock, frequency, IPC, sample, and color-blind controls | implemented | Original click and Shift-click multi-state cycles have Rust and Chromium/Firefox regressions |
 | User/all annotation modes and callout placement | partial | Mutually exclusive user/all modes and bounded on-canvas labels exist; original draggable/notched callout placement remains |
 | Text search and inverse search | implemented | Browser search/inversion regression |
-| Duration min/max search and `CPUI`/`CPUU`/`CPUK`/`RPC`/`PID`/`RES` syntax | missing | Needs the original line-oriented semantics |
+| Duration min/max search and `CPUI`/`CPUU`/`CPUK`/`RPC`/`PID`/`RES` syntax | implemented | Inclusive nsec/µsec/msec bounds and all six documented selectors share Rust and Chromium/Firefox matching tests |
 | Search respects visible X and Y ranges | implemented | Toolbar and timeline counts are restricted to the current time and virtualized row viewport |
 | Quick saved viewport slots and restore | missing | Portable workspace save/import exists, but not original quick slots |
 | Tiny-span deferral/density refinement | implemented | Exact-to-density budget and mipmap tests |

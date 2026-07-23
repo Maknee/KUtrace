@@ -43,7 +43,7 @@ same bounded read-only contract.
   RPC, and resource lanes through full, highlighted-only, and hidden. As in the
   original, a group without highlighted rows skips highlighted-only. The choice
   applies to exact and density rendering, is keyboard accessible, and survives
-  version-6 workspace save/export/import; version-1 through version-5 state is
+  version-7 workspace save/export/import; version-1 through version-6 state is
   migrated while loading.
 - The Y axis has its own continuous viewport. Native scrolling pans it;
   scrolling over the blue label region or using the `Y−`/`Y+` controls changes
@@ -65,6 +65,11 @@ same bounded read-only contract.
 - The overview, timeline, selection, details, flamegraph, and SQL notebook share
   the same visible range. Follow-tail polls the trace extent and advances only
   when explicitly enabled.
+- Search is one typed state shared by the toolbar, vector renderer, workspace,
+  and agent navigator. It combines case-insensitive text matching or the
+  documented `CPUI`/`CPUU`/`CPUK`/`RPC`/`PID`/`RES` selectors with inclusive
+  duration bounds in cycling nsec, µsec, or msec units. Inversion applies to
+  the combined selector-and-duration result, matching the original viewer.
 
 ## Profiles and symbols
 

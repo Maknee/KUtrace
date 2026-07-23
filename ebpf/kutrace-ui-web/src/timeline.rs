@@ -8,7 +8,9 @@ use wasm_bindgen::JsCast;
 use web_sys::{Element, KeyboardEvent, MouseEvent, PointerEvent, WheelEvent};
 use yew::prelude::*;
 
-use crate::model::{Overlays, Range, TraceEvent, TrackGroupMode, TrackGroups, TrackMode};
+use crate::model::{
+    Overlays, Range, SearchSpec, TraceEvent, TrackGroupMode, TrackGroups, TrackMode,
+};
 
 const VIEW_WIDTH: f64 = 1_400.0;
 const LABEL_WIDTH: f64 = 116.0;
@@ -33,8 +35,7 @@ pub struct TimelineProps {
     pub mode: TrackMode,
     pub groups: TrackGroups,
     pub overlays: Overlays,
-    pub search: String,
-    pub search_invert: bool,
+    pub search: SearchSpec,
     pub highlighted: HashSet<String>,
     pub loading: bool,
     pub truncated: bool,
@@ -75,19 +76,6 @@ fn event_overlaps(event: &TraceEvent, range: Range) -> bool {
     } else {
         event.start < range.end && event.end > range.start
     }
-}
-
-fn event_matches(event: &TraceEvent, search: &str, invert: bool) -> bool {
-    if search.is_empty() {
-        return true;
-    }
-    let needle = search.to_lowercase();
-    let matched = event.name.to_lowercase().contains(&needle)
-        || event.category.to_lowercase().contains(&needle)
-        || event.pid.to_string().contains(&needle)
-        || event.cpu.to_string().contains(&needle)
-        || event.event.to_string().contains(&needle);
-    if invert { !matched } else { matched }
 }
 
 fn event_colors(event: i64, colorblind: bool) -> (&'static str, &'static str) {
@@ -373,9 +361,7 @@ pub fn timeline(props: &TimelineProps) -> Html {
     let rendered_event_count = rendered_events.len();
     let search_count = rendered_events
         .iter()
-        .filter_map(|(_, _, event)| {
-            event_matches(event, &props.search, props.search_invert).then_some(event.id)
-        })
+        .filter_map(|(_, _, event)| props.search.matches(event).then_some(event.id))
         .collect::<HashSet<_>>()
         .len();
     let mut annotation_tracks = HashMap::<i64, String>::new();
@@ -594,6 +580,11 @@ pub fn timeline(props: &TimelineProps) -> Html {
           data-y-end={last_visible_row.to_string()}
           data-highlighted-tracks={highlighted_tracks}
           data-search-count={search_count.to_string()}
+          data-search-mode={props.search.mode()}
+          data-search-min={props.search.minimum.clone()}
+          data-search-max={props.search.maximum.clone()}
+          data-search-units={props.search.units.label()}
+          data-search-invert={props.search.invert.to_string()}
           data-rendered-events={rendered_event_count.to_string()}
           {onpointerdown} {onpointermove} {onpointerup} {onpointercancel} {onwheel}>
           <rect x="0" y="0" width={VIEW_WIDTH.to_string()} height={height.to_string()} fill="#fff"/>
@@ -643,11 +634,11 @@ pub fn timeline(props: &TimelineProps) -> Html {
                   let x = x_at(event.start.max(props.range.start), props.range);
                   let end = event.end.max(event.start + props.range.span() / (VIEW_WIDTH - LABEL_WIDTH));
                   let width = (x_at(end.min(props.range.end), props.range) - x).max(0.8);
-                  let matched = event_matches(event, &props.search, props.search_invert);
+                  let matched = props.search.matches(event);
                   let emphasized = event_is_highlighted(event, &props.highlighted);
                   let (light, dark) = event_colors(event.event, props.overlays.colorblind);
                   let fill = if event.duration <= 0.0 { category_fill(&event.category, props.overlays.colorblind) } else { light };
-                  let opacity = if emphasized && (props.search.is_empty() || matched) { 0.96 } else { 0.16 };
+                  let opacity = if emphasized && (!props.search.active() || matched) { 0.96 } else { 0.16 };
                   let event_copy = event.clone();
                   let track_copy = track.clone();
                   let on_select = props.on_select.clone();
