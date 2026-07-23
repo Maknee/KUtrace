@@ -1,0 +1,210 @@
+{
+  "date_utc": "2026-07-23T02:50:26Z",
+  "tracer_commit": "4885a8d8015cd8628c9964b90042fb14c4860ee6",
+  "host": {
+    "cpu": "AMD EPYC 9354P 32-Core Processor",
+    "logical_cpus": 64,
+    "kernel": "6.6.36",
+    "architecture": "x86_64"
+  },
+  "dynamic_attachment_validation": {
+    "symbol_uprobe": {
+      "target": "release kutrace-uprobe-fixture",
+      "attachment": "symbol on an already-running uninstrumented process",
+      "spans": 400,
+      "root_spans": 100,
+      "child_spans": 300,
+      "strict_v3_json": true,
+      "bpf_dropped_events": 0,
+      "probe_dropped_events": 0
+    },
+    "stripped_offset_uprobe": {
+      "target": "fully stripped copy of release kutrace-uprobe-fixture",
+      "attachment": "absolute ELF file offset 0x776d0",
+      "spans": 400,
+      "root_spans": 100,
+      "child_spans": 300,
+      "strict_v3_json": true,
+      "bpf_dropped_events": 0,
+      "probe_dropped_events": 0
+    },
+    "concurrent_usdt": {
+      "target": "release kutrace-usdt-fixture",
+      "attachment": "discovered .note.stapsdt begin/end sites plus an external function uprobe",
+      "collector_one_external_spans": 400,
+      "collector_one_usdt_spans": 400,
+      "collector_two_usdt_spans": 400,
+      "collector_one_root_spans": 100,
+      "collector_one_child_spans": 700,
+      "concurrent_collectors": 2,
+      "semaphores_restored": true,
+      "strict_v3_json": true,
+      "bpf_dropped_events": 0,
+      "probe_dropped_events": 0
+    }
+  },
+  "event_tracing_overhead": {
+    "configuration": {
+      "sample_hz": 0,
+      "capture_scope": "benchmark PID including future threads",
+      "samples_per_mode": 20,
+      "zero_loss_required": true
+    },
+    "results": [
+      {
+        "mode": "getpid",
+        "iterations_per_sample": 10000,
+        "baseline_median_ns": 223.9701,
+        "loaded_filtered_median_ns": 420.689,
+        "traced_median_ns": 611.5399,
+        "filter_added_ns": 196.7189,
+        "traced_added_ns": 387.5698,
+        "traced_p95_ns": 699.2683,
+        "bpf_dropped_events": 0,
+        "probe_dropped_events": 0
+      },
+      {
+        "mode": "client_span",
+        "iterations_per_sample": 10000,
+        "baseline_median_ns": 4.739,
+        "traced_median_ns": 573.5597,
+        "traced_added_ns": 568.8207,
+        "traced_p95_ns": 609.5499,
+        "client_events_received": 402002,
+        "client_events_dropped": 0,
+        "bpf_dropped_events": 0,
+        "probe_dropped_events": 0
+      },
+      {
+        "mode": "recoverable_x86_ud2_trap",
+        "iterations_per_sample": 10000,
+        "baseline_median_ns": 2240.5038,
+        "loaded_filtered_median_ns": 2832.5467,
+        "traced_median_ns": 4372.813,
+        "filter_added_ns": 592.0429,
+        "traced_added_ns": 2132.3092,
+        "traced_p95_ns": 4384.097,
+        "bpf_dropped_events": 0,
+        "probe_dropped_events": 0
+      },
+      {
+        "mode": "syscall_free_cpu_control",
+        "iterations_per_sample": 10000,
+        "baseline_median_ns": 1.317,
+        "loaded_filtered_median_ns": 1.317,
+        "traced_median_ns": 1.317,
+        "traced_added_ns": 0.0,
+        "traced_p95_ns": 1.322,
+        "bpf_dropped_events": 0,
+        "probe_dropped_events": 0
+      },
+      {
+        "mode": "scheduler_round_trip",
+        "iterations_per_sample": 2000,
+        "baseline_median_ns": 9255.0095,
+        "loaded_filtered_median_ns": 11414.1395,
+        "traced_median_ns": 15431.819,
+        "filter_added_ns": 2159.13,
+        "traced_added_ns": 6176.8095,
+        "traced_p95_ns": 16132.708,
+        "bpf_dropped_events": 0,
+        "probe_dropped_events": 0
+      },
+      {
+        "mode": "mixed_scheduler_syscall_client_round_trip",
+        "iterations_per_sample": 2000,
+        "baseline_median_ns": 9236.565,
+        "loaded_filtered_median_ns": 10931.2825,
+        "traced_median_ns": 16845.941,
+        "filter_added_ns": 1694.7175,
+        "traced_added_ns": 7609.376,
+        "traced_p95_ns": 17455.069,
+        "client_events_received": 160804,
+        "client_events_dropped": 0,
+        "bpf_dropped_events": 0,
+        "probe_dropped_events": 0
+      }
+    ]
+  },
+  "dynamic_probe_overhead": {
+    "offset_uprobe": {
+      "semantic_spans": 180000,
+      "samples": 9,
+      "baseline_median_ns_per_span": 1.536,
+      "active_median_ns_per_span": 2936.7411,
+      "median_added_ns_per_span": 2935.2051,
+      "p95_added_ns_per_span": 2979.10285,
+      "strict_v3_json": true,
+      "bpf_dropped_events": 0,
+      "probe_dropped_events": 0
+    },
+    "paired_usdt": {
+      "semantic_spans": 80000,
+      "samples": 20,
+      "disabled_semaphore_median_ns_per_potential_span": 1.91025,
+      "active_median_ns_per_span": 2645.815,
+      "median_added_ns_per_span": 2643.90475,
+      "p95_added_ns_per_span": 2703.023,
+      "semaphore_before_attach": 0,
+      "semaphore_after_detach": 0,
+      "strict_v3_json": true,
+      "bpf_dropped_events": 0,
+      "probe_dropped_events": 0
+    }
+  },
+  "matched_profiler_overhead_250hz": {
+    "benchmark_cpu": 31,
+    "collector_cpu": 30,
+    "baseline_distributions": 3,
+    "baseline_samples_total": 120,
+    "legacy_kutrace": {
+      "timed_operations": 8000000000,
+      "relative_overhead_percent": 0.1157620432,
+      "bootstrap_95_ci_added_ns_per_op": [
+        0.001484455,
+        0.0015653875
+      ],
+      "target_user_pc_samples": 2646,
+      "capture_remained_active_until_stop": true,
+      "wrapping_enabled": false
+    },
+    "aya_ebpf": {
+      "timed_operations": 8000000000,
+      "relative_overhead_percent": 0.1357722869,
+      "bootstrap_95_ci_added_ns_per_op": [
+        0.00176466,
+        0.00181503
+      ],
+      "target_user_pc_samples": 2639,
+      "bpf_dropped_events": 0,
+      "probe_dropped_events": 0
+    },
+    "aya_to_legacy_added_overhead_ratio": 1.1728566908
+  },
+  "saturation_boundary": {
+    "status": "expected benchmark failure retained as capacity evidence",
+    "workload": "scheduler round trip, 10000 iterations per sample, 20 samples",
+    "trials": [
+      {
+        "benchmark_cpu": 0,
+        "collector_cpu": 1,
+        "bpf_dropped_events": 488157,
+        "compact_syscall_records_received": 1342752
+      },
+      {
+        "benchmark_cpu": 31,
+        "collector_cpu": 30,
+        "bpf_dropped_events": 393351,
+        "compact_syscall_records_received": 1317297
+      }
+    ],
+    "interpretation": "The 200000-handoff workload exceeds the current 16 MiB ring/drain capacity and is not a valid overhead sample. The bounded 40000-handoff run above is the zero-loss overhead measurement."
+  },
+  "status": "pass_with_documented_saturation_boundary",
+  "limitations": [
+    "This is current x86-64 runtime evidence; native arm64 still requires a separate arm64 host.",
+    "Packet hooks have live semantic validation but not a current isolated per-packet overhead benchmark.",
+    "IRQ, softirq, power, page-fault, IPC, and default-rate PC-sampling costs retain their earlier published engineering runs and were not independently rerun in this current-head sweep.",
+    "Legacy KUtrace has no explicit drop counter; remaining active with wrapping disabled is the available no-overflow evidence."
+  ]
+}

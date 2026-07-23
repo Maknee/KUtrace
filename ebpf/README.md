@@ -306,7 +306,18 @@ make -C ebpf build build-ebpf
 ebpf/verify_usdt.sh
 ```
 
+Run both dynamic-attachment integration gates against freshly built example
+programs with:
+
+```sh
+make -C ebpf verify-dynamic-probes
+```
+
 ## Overhead benchmark
+
+The coverage matrix separates current live validation, pipeline validation,
+overhead measurements, historical results, and explicit gaps:
+[`../docs/benchmark_coverage.md`](../docs/benchmark_coverage.md).
 
 `bench_overhead.sh` records baseline, loaded-but-filtered, and traced
 distributions for a real `getpid` syscall and for client spans. Benchmark and
@@ -346,7 +357,12 @@ zero loss. This passes the declared 500 ns PID-filtered gate. See
 The paired USDT fixture's disabled and active measurements are published in
 [`../docs/benchmarks/2026-07-20-epyc9354p-usdt.json`](../docs/benchmarks/2026-07-20-epyc9354p-usdt.json).
 Its active measurement includes both USDT sites, eBPF nesting state, two ring
-records, collection, and legacy span pairing.
+records, collection, and legacy span pairing. The same end-to-end gate is now
+reproducible independently:
+
+```sh
+make -C ebpf bench-usdt
+```
 
 ### Legacy versus eBPF profiler overhead
 
