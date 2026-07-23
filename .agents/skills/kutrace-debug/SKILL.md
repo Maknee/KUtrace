@@ -44,7 +44,8 @@ Available actions are `zoom-in`, `zoom-out`, `pan-left`, `pan-right`, `fit`,
 `dock:details`, `dock:flamegraph`, `dock:sql`, `dock:agent`,
 `agent:SPAN_ID`, `search:TEXT`, `search-min:NUMBER`, `search-max:NUMBER`,
 `search-unit:nsec|usec|msec`, `search-not`, `group:cpu|pid|rpc|resource`,
-`display:CONTROL`, and `display-shift:CONTROL`. Display controls are `marks`,
+`view-save:1..4`, `view:1..4`, `view-back`, `display:CONTROL`, and
+`display-shift:CONTROL`. Display controls are `marks`,
 `arcs`, `locks`, `frequency`, `ipc`, `samples`, `annotate_user`,
 `annotate_all`, and `colorblind`; repeated actions reproduce the original
 multi-state cycles, while `display-shift:samples` reproduces its Shift-click
@@ -58,15 +59,15 @@ the row, for example `cpu:0`, `pid:123`, `rpc:77`, or `resource:9`.
 
 ```sh
 node scripts/navigate.mjs http://127.0.0.1:3000 \
-  track:cpu:96 y-zoom-in highlight:cpu:96 group:cpu \
+  track:cpu:96 y-zoom-in view-save:1 highlight:cpu:96 group:cpu \
   zoom-in pan-right search:CPUK search-min:5 search-unit:usec \
-  display:annotate_all dock:agent agent:42
+  view:1 display:annotate_all dock:agent agent:42
 ```
 
 The helper prints JSON containing the current X range, vertical row range and
 scale, visible and highlighted tracks, each group and display state, annotated
 event count, parsed search state and match count, renderer source, selection,
-and agent context. Treat
+quick-view slot availability, and agent context. Treat
 failures to find a requested span or control as failed navigation, not as
 absence of trace data.
 

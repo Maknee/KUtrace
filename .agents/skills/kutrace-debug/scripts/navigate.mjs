@@ -91,6 +91,20 @@ try {
       }
     } else if (action === 'search-not') {
       await page.locator('#search-invert').click();
+    } else if (action.startsWith('view-save:')) {
+      const slot = Number(action.slice('view-save:'.length));
+      if (!Number.isInteger(slot) || slot < 1 || slot > 4) {
+        throw new Error(`quick view save slot must be 1 through 4: ${slot}`);
+      }
+      await page.locator(`[data-view-slot="${slot}"]`).click({modifiers: ['Shift']});
+    } else if (action.startsWith('view:')) {
+      const slot = Number(action.slice('view:'.length));
+      if (!Number.isInteger(slot) || slot < 1 || slot > 4) {
+        throw new Error(`quick view restore slot must be 1 through 4: ${slot}`);
+      }
+      await page.locator(`[data-view-slot="${slot}"]`).click();
+    } else if (action === 'view-back') {
+      await page.locator('[data-view-slot="0"]').click();
     } else if (action.startsWith('display-shift:') || action.startsWith('display:')) {
       const shifted = action.startsWith('display-shift:');
       const display = action.slice((shifted ? 'display-shift:' : 'display:').length);
@@ -179,6 +193,12 @@ try {
       invert: await timeline.getAttribute('data-search-invert') === 'true',
       matches: Number(await timeline.getAttribute('data-search-count')),
     },
+    viewSlots: Object.fromEntries(
+      await page.locator('[data-view-slot]').evaluateAll(buttons => buttons.map(button => [
+        button.getAttribute('data-view-slot'),
+        button.getAttribute('data-saved') === 'true',
+      ])),
+    ),
   };
   process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
 } finally {

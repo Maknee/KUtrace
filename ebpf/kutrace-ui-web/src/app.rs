@@ -376,6 +376,19 @@ struct SavedView {
     sql: String,
 }
 
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ViewSlot {
+    range: Range,
+    track_mode: TrackMode,
+    track_groups: TrackGroups,
+    highlighted_tracks: Vec<String>,
+    row_height: f64,
+    vertical_scroll: f64,
+    overlays: Overlays,
+    search: SearchSpec,
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct WorkspaceFile {
@@ -402,10 +415,18 @@ struct WorkspaceFile {
     overlays: Overlays,
     #[serde(default)]
     search: SearchSpec,
+    #[serde(default)]
+    view_slots: Vec<Option<ViewSlot>>,
 }
 
 fn default_workspace_row_height() -> f64 {
     DEFAULT_ROW_HEIGHT
+}
+
+fn normalize_view_slots(mut slots: Vec<Option<ViewSlot>>) -> Vec<Option<ViewSlot>> {
+    slots.truncate(5);
+    slots.resize_with(5, || None);
+    slots
 }
 
 fn value_string(value: &Value) -> String {
@@ -609,6 +630,7 @@ pub fn app() -> Html {
     let profile_frames = use_state(Vec::<ProfileFrame>::new);
     let profile_status = use_state(String::new);
     let saved_views = use_state(Vec::<SavedView>::new);
+    let view_slots = use_state(|| normalize_view_slots(Vec::new()));
     let view_name = use_state(String::new);
     let workspace_loaded = use_state(|| false);
     let follow_tail = use_state(|| false);
@@ -692,6 +714,7 @@ pub fn app() -> Html {
         let timeline_scroll_node = timeline_scroll_node.clone();
         let overlays = overlays.clone();
         let search = search.clone();
+        let view_slots = view_slots.clone();
         let workspace_loaded = workspace_loaded.clone();
         let status = sql_status.clone();
         let full = metadata.full;
@@ -705,7 +728,7 @@ pub fn app() -> Html {
                     match serde_json::from_str::<WorkspaceFile>(&stored) {
                         Ok(workspace)
                             if workspace.kind == "kutrace-workspace"
-                                && matches!(workspace.version, 1..=7) =>
+                                && matches!(workspace.version, 1..=8) =>
                         {
                             filters.set(workspace.filters.into_iter().take(64).collect());
                             if !workspace.sql.is_empty() {
@@ -731,6 +754,7 @@ pub fn app() -> Html {
                             }
                             overlays.set(workspace.overlays);
                             search.set(workspace.search);
+                            view_slots.set(normalize_view_slots(workspace.view_slots));
                         }
                         Ok(_) => status.set("Unsupported saved workspace".to_owned()),
                         Err(error) => status.set(format!("Invalid saved workspace: {error}")),
@@ -1462,7 +1486,7 @@ pub fn app() -> Html {
     highlighted_tracks.sort();
     let workspace = WorkspaceFile {
         kind: "kutrace-workspace".to_owned(),
-        version: 7,
+        version: 8,
         filters: (*filters).clone(),
         sql: (*sql).clone(),
         range: Some(*range),
@@ -1474,6 +1498,7 @@ pub fn app() -> Html {
         vertical_scroll: *vertical_scroll,
         overlays: *overlays,
         search: (*search).clone(),
+        view_slots: (*view_slots).clone(),
     };
     let save_workspace = {
         let status = sql_status.clone();
@@ -1550,6 +1575,7 @@ pub fn app() -> Html {
         let timeline_scroll_node = timeline_scroll_node.clone();
         let overlays = overlays.clone();
         let search = search.clone();
+        let view_slots = view_slots.clone();
         let status = sql_status.clone();
         let full = metadata.full;
         Callback::from(move |event: Event| {
@@ -1569,6 +1595,7 @@ pub fn app() -> Html {
             let timeline_scroll_node = timeline_scroll_node.clone();
             let overlays = overlays.clone();
             let search = search.clone();
+            let view_slots = view_slots.clone();
             let status = status.clone();
             spawn_local(async move {
                 let outcome = async {
@@ -1579,13 +1606,14 @@ pub fn app() -> Html {
                         .ok_or_else(|| "Workspace file is not text".to_owned())?;
                     let workspace = serde_json::from_str::<WorkspaceFile>(&text)
                         .map_err(|error| format!("Invalid workspace: {error}"))?;
-                    if workspace.kind != "kutrace-workspace" || !matches!(workspace.version, 1..=7)
+                    if workspace.kind != "kutrace-workspace" || !matches!(workspace.version, 1..=8)
                     {
                         return Err("Unsupported workspace file".to_owned());
                     }
                     if workspace.filters.len() > 64
                         || workspace.views.len() > 32
                         || workspace.highlighted_tracks.len() > 256
+                        || workspace.view_slots.len() > 5
                     {
                         return Err(
                             "Workspace exceeds bounded filter/view/highlight limits".to_owned()
@@ -1614,6 +1642,7 @@ pub fn app() -> Html {
                     }
                     overlays.set(workspace.overlays);
                     search.set(workspace.search);
+                    view_slots.set(normalize_view_slots(workspace.view_slots));
                     Ok::<_, String>(())
                 }
                 .await;
@@ -2039,6 +2068,77 @@ pub fn app() -> Html {
     })
     .collect::<Vec<_>>();
 
+    let mut current_slot_highlights = highlighted.iter().cloned().collect::<Vec<_>>();
+    current_slot_highlights.sort();
+    let current_view_slot = ViewSlot {
+        range: *range,
+        track_mode: *track_mode,
+        track_groups: *track_groups,
+        highlighted_tracks: current_slot_highlights,
+        row_height: *row_height,
+        vertical_scroll: *vertical_scroll,
+        overlays: *overlays,
+        search: (*search).clone(),
+    };
+    let full_range = metadata.full;
+    let view_slot_buttons = (0..5)
+        .map(|index| {
+            let saved = view_slots.get(index).is_some_and(Option::is_some);
+            let slots = view_slots.clone();
+            let current = current_view_slot.clone();
+            let range = range.clone();
+            let track_mode = track_mode.clone();
+            let track_groups = track_groups.clone();
+            let highlighted = highlighted.clone();
+            let row_height = row_height.clone();
+            let vertical_scroll = vertical_scroll.clone();
+            let overlays = overlays.clone();
+            let search = search.clone();
+            let timeline_scroll_node = timeline_scroll_node.clone();
+            let status = sql_status.clone();
+            html! {
+              <button class={classes!("view-slot",saved.then_some("saved"))}
+                data-view-slot={index.to_string()}
+                data-saved={saved.to_string()}
+                aria-label={if index==0 {"Restore previous view".to_owned()} else {format!("View slot {index}; Shift-click to save, click to restore")}}
+                title={if index==0 {"Back to the view replaced by the last restore".to_owned()} else {format!("Shift-click to save view {index}; click to restore")}}
+                onclick={Callback::from(move |event: MouseEvent| {
+                    let mut next_slots = (*slots).clone();
+                    if event.shift_key() && index > 0 {
+                        next_slots[index] = Some(current.clone());
+                        slots.set(next_slots);
+                        status.set(format!("Saved quick view {index}"));
+                        return;
+                    }
+                    let Some(saved_view) = next_slots[index].clone() else {
+                        status.set(if index==0 {"No previous view".to_owned()} else {format!("Quick view {index} is empty")});
+                        return;
+                    };
+                    if index > 0 {
+                        next_slots[0] = Some(current.clone());
+                        slots.set(next_slots);
+                    }
+                    range.set(saved_view.range.bounded(full_range));
+                    track_mode.set(saved_view.track_mode);
+                    track_groups.set(saved_view.track_groups);
+                    highlighted.set(valid_track_highlights(saved_view.highlighted_tracks));
+                    let restored_height = saved_view.row_height.clamp(MIN_ROW_HEIGHT, MAX_ROW_HEIGHT);
+                    let restored_scroll = saved_view.vertical_scroll.max(0.0);
+                    row_height.set(restored_height);
+                    vertical_scroll.set(restored_scroll);
+                    if let Some(element) = timeline_scroll_node.cast::<HtmlElement>() {
+                        element.set_scroll_top(restored_scroll.round() as i32);
+                    }
+                    overlays.set(saved_view.overlays);
+                    search.set(saved_view.search);
+                    status.set(if index==0 {"Restored previous view".to_owned()} else {format!("Restored quick view {index}")});
+                })}>
+                {if index==0 {"↔".to_owned()} else {index.to_string()}}
+              </button>
+            }
+        })
+        .collect::<Vec<_>>();
+
     let update_search_text = {
         let search = search.clone();
         let overlays = overlays.clone();
@@ -2132,7 +2232,7 @@ pub fn app() -> Html {
           <div class="workspace">
           <section id="timeline-view" class={classes!("view-pane",(*active_view=="timeline").then_some("active"),(*dock_open).then_some("dock-open"))} hidden={*active_view!="timeline"}>
             <section class="timeline-card"><div class="section-head timeline-title"><div><h2>{"System timeline"}</h2><span id="renderer-label" class="mode-badge">{"Native KUtrace · Rust/WASM"}</span></div><div class="renderer-tabs"><button class="renderer-tab active" data-renderer="kutrace" aria-selected="true">{"Native KUtrace"}</button></div></div>
-              <div id="kutrace-renderer" class="timeline-renderer modern-renderer active"><div class="modern-renderer-head"><span id="timeline-mode" class="mode-badge">{if timeline_source.ends_with("-partial") {"Density summary · partial"} else if *timeline_truncated {"Density summary"} else {"Exact vector events"}}</span><span id="range-label">{range_label(*range)}</span><div class="timeline-actions"><span class="y-controls" aria-label="Vertical row navigation"><button id="y-zoom-out" title="Shrink rows" onclick={zoom_rows(0.8)}>{"Y−"}</button><button id="y-fit" title="Reset vertical viewport" onclick={fit_rows}>{"Y fit"}</button><button id="y-zoom-in" title="Grow rows" onclick={zoom_rows(1.25)}>{"Y+"}</button></span><button id="zoom-selection" disabled={selection.is_none()} onclick={{let range=range.clone();let selection=selection.clone();Callback::from(move |_|if let Some(selected)=&*selection{range.set(selected.range)})}}>{"Zoom selection"}</button><button id="clear-selection" disabled={selection.is_none()} onclick={{let selection=selection.clone();Callback::from(move |_|selection.set(None))}}>{"Clear selection"}</button><span class="shortcut-help">{"drag select · Shift+click highlight · label-wheel Y zoom · Ctrl+wheel X zoom · WASD"}</span></div></div>
+              <div id="kutrace-renderer" class="timeline-renderer modern-renderer active"><div class="modern-renderer-head"><span id="timeline-mode" class="mode-badge">{if timeline_source.ends_with("-partial") {"Density summary · partial"} else if *timeline_truncated {"Density summary"} else {"Exact vector events"}}</span><span id="range-label">{range_label(*range)}</span><div class="timeline-actions"><span class="quick-view-slots" aria-label="Quick view slots">{for view_slot_buttons}</span><span class="y-controls" aria-label="Vertical row navigation"><button id="y-zoom-out" title="Shrink rows" onclick={zoom_rows(0.8)}>{"Y−"}</button><button id="y-fit" title="Reset vertical viewport" onclick={fit_rows}>{"Y fit"}</button><button id="y-zoom-in" title="Grow rows" onclick={zoom_rows(1.25)}>{"Y+"}</button></span><button id="zoom-selection" disabled={selection.is_none()} onclick={{let range=range.clone();let selection=selection.clone();Callback::from(move |_|if let Some(selected)=&*selection{range.set(selected.range)})}}>{"Zoom selection"}</button><button id="clear-selection" disabled={selection.is_none()} onclick={{let selection=selection.clone();Callback::from(move |_|selection.set(None))}}>{"Clear selection"}</button><span class="shortcut-help" title="Drag to select · Shift-click a label to highlight · label-wheel changes row height · Ctrl-wheel zooms time · WASD navigates">{"drag · Shift-click · WASD"}</span></div></div>
               <Overview events={(*events).clone()} range={*range} full={metadata.full} colorblind={overlays.colorblind} on_range={set_range.clone()}/><div class="time-ruler"><span id="ruler-start">{format!("{:.6}s",range.start)}</span><span id="ruler-center">{format!("{:.6}s",(range.start+range.end)/2.0)}</span><span id="ruler-end">{format!("{:.6}s",range.end)}</span></div><div id="timeline-scroll" class="timeline-scroll" ref={timeline_scroll_node} onscroll={on_timeline_scroll}><div class="timeline-shell"><Timeline events={(*events).clone()} track_catalog={(*track_catalog).clone()} catalog_truncated={*track_catalog_truncated} range={*range} full={metadata.full} mode={*track_mode} groups={*track_groups} overlays={*overlays} search={(*search).clone()} highlighted={(*highlighted).clone()} loading={*timeline_loading||!navigation_keys.is_empty()} truncated={*timeline_truncated} source={(*timeline_source).clone()} row_height={*row_height} vertical_scroll={*vertical_scroll} viewport_height={*timeline_viewport_height} selection={(*selection).clone()} on_range={set_range} on_select={on_select} on_highlight={on_highlight} on_row_zoom={on_row_zoom}/></div></div>
               <div class="legend"><i class="agent"></i>{"agent "}<i class="syscall"></i>{"syscall "}<i class="kernel"></i>{"kernel "}<i class="user"></i>{"user "}<i class="scheduler"></i>{"scheduler "}<i class="special"></i>{"other "}<span id="perf-legend">{if metadata.flags&128!=0 {"◆ IPC"} else {""}}</span></div></div></section>
             <section class={classes!("analysis-dock",(!*dock_open).then_some("collapsed"))}><div class="dock-tabs">{for [("details","Details"),("flamegraph","Flamegraph"),("sql","SQL"),("agent","Agent reasoning")].map(|(name,label)|{let active=*active_dock==name;let active_dock=active_dock.clone();let dock_open=dock_open.clone();html!{<button class={classes!("dock-tab",active.then_some("active"))} data-dock={name} aria-selected={active.to_string()} onclick={Callback::from(move |_|{active_dock.set(name.to_owned());dock_open.set(true)})}>{label}</button>}})}<button id="toggle-dock" class="dock-toggle" aria-expanded={dock_open.to_string()} onclick={{let dock_open=dock_open.clone();Callback::from(move |_|dock_open.set(!*dock_open))}}>{if *dock_open{"⌄"}else{"⌃"}}</button></div><div class="dock-body">

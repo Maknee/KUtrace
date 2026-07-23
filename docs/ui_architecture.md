@@ -43,7 +43,7 @@ same bounded read-only contract.
   RPC, and resource lanes through full, highlighted-only, and hidden. As in the
   original, a group without highlighted rows skips highlighted-only. The choice
   applies to exact and density rendering, is keyboard accessible, and survives
-  version-7 workspace save/export/import; version-1 through version-6 state is
+  version-8 workspace save/export/import; version-1 through version-7 state is
   migrated while loading.
 - The Y axis has its own continuous viewport. Native scrolling pans it;
   scrolling over the blue label region or using the `Y−`/`Y+` controls changes
@@ -70,6 +70,10 @@ same bounded read-only contract.
   documented `CPUI`/`CPUU`/`CPUK`/`RPC`/`PID`/`RES` selectors with inclusive
   duration bounds in cycling nsec, µsec, or msec units. Inversion applies to
   the combined selector-and-duration result, matching the original viewer.
+- Back plus four numbered quick-view slots reproduce the original
+  Shift-click-to-save/click-to-restore workflow. A numbered restore first saves
+  the displaced X/Y viewport, groups, highlights, display modes, and search in
+  Back. All five bounded slots travel in workspace version 8.
 
 ## Profiles and symbols
 

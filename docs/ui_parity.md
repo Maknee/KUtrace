@@ -23,7 +23,7 @@ comparison surface, not a substitute for reimplementation.
 | Text search and inverse search | implemented | Browser search/inversion regression |
 | Duration min/max search and `CPUI`/`CPUU`/`CPUK`/`RPC`/`PID`/`RES` syntax | implemented | Inclusive nsec/µsec/msec bounds and all six documented selectors share Rust and Chromium/Firefox matching tests |
 | Search respects visible X and Y ranges | implemented | Toolbar and timeline counts are restricted to the current time and virtualized row viewport |
-| Quick saved viewport slots and restore | missing | Portable workspace save/import exists, but not original quick slots |
+| Quick saved viewport slots and restore | implemented | Back plus four Shift-save/click-restore slots preserve the complete investigative view and have Chromium/Firefox and agent-navigation regressions |
 | Tiny-span deferral/density refinement | implemented | Exact-to-density budget and mipmap tests |
 | Specialized RPC packet/message and wakeup glyphs | partial | RPC lanes and wakeup arcs exist; legacy message geometry/labels remain |
 | Idle, wait, user stripes, lock rails, frequency, and IPC glyph grammar | partial | Core glyphs exist; remaining event-family differential screenshots are needed |

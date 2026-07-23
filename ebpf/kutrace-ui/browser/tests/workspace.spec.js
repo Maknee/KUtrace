@@ -306,6 +306,45 @@ test('matches original duration bounds and special search selectors', async ({pa
   }
 });
 
+test('saves and restores complete quick views with a Back slot', async ({page}) => {
+  const slot = number => page.locator(`[data-view-slot="${number}"]`);
+  await expect(slot(0)).toHaveAttribute('data-saved', 'false');
+  for (const number of [1, 2, 3, 4]) {
+    await expect(slot(number)).toHaveAttribute('data-saved', 'false');
+  }
+
+  await page.locator('#zoom-in').click();
+  await page.locator('#y-zoom-in').click();
+  await page.locator('#trace-search').fill('CPUK');
+  await page.locator('[data-track-group="rpc"]').click();
+  const savedRange = await page.locator('#range-label').textContent();
+  const savedRowHeight = await page.locator('#timeline').getAttribute('data-row-height');
+  await slot(1).click({modifiers: ['Shift']});
+  await expect(slot(1)).toHaveAttribute('data-saved', 'true');
+
+  await page.locator('#pan-right').click();
+  await page.locator('#y-zoom-in').click();
+  await page.locator('#trace-search').fill('RES');
+  await page.locator('[data-track-group="rpc"]').click();
+  const replacedRange = await page.locator('#range-label').textContent();
+  const replacedRowHeight = await page.locator('#timeline').getAttribute('data-row-height');
+  expect(replacedRange).not.toBe(savedRange);
+  expect(replacedRowHeight).not.toBe(savedRowHeight);
+
+  await slot(1).click();
+  await expect(page.locator('#range-label')).toHaveText(savedRange);
+  await expect(page.locator('#timeline')).toHaveAttribute('data-row-height', savedRowHeight);
+  await expect(page.locator('#trace-search')).toHaveValue('CPUK');
+  await expect(page.locator('[data-track-group="rpc"]')).toHaveAttribute('data-group-state', 'hidden');
+  await expect(slot(0)).toHaveAttribute('data-saved', 'true');
+
+  await slot(0).click();
+  await expect(page.locator('#range-label')).toHaveText(replacedRange);
+  await expect(page.locator('#timeline')).toHaveAttribute('data-row-height', replacedRowHeight);
+  await expect(page.locator('#trace-search')).toHaveValue('RES');
+  await expect(page.locator('[data-track-group="rpc"]')).toHaveAttribute('data-group-state', 'full');
+});
+
 test('matches original multi-state display cycles and annotation modes', async ({page}) => {
   const display = name => page.locator(`[data-overlay="${name}"]`);
   for (const [name, state] of Object.entries({
@@ -590,6 +629,7 @@ test('keeps SQL, schema inspection, saved views, and portable workspace state', 
   await page.locator('#trace-search').fill('agent.tool');
   await page.locator('#search-min').fill('1000');
   await page.locator('#search-max').fill('5000');
+  await page.locator('[data-view-slot="2"]').click({modifiers: ['Shift']});
   await page.locator('#save-workspace').click();
   await page.reload();
   await waitForTimeline(page);
@@ -604,13 +644,14 @@ test('keeps SQL, schema inspection, saved views, and portable workspace state', 
   await expect(page.locator('#trace-search')).toHaveValue('agent.tool');
   await expect(page.locator('#search-min')).toHaveValue('1000');
   await expect(page.locator('#search-max')).toHaveValue('5000');
+  await expect(page.locator('[data-view-slot="2"]')).toHaveAttribute('data-saved', 'true');
 
   const download = page.waitForEvent('download');
   await page.locator('#export-workspace').click();
   const exported = await download;
   const workspace = JSON.parse(await readFile(await exported.path(), 'utf8'));
   expect(workspace.kind).toBe('kutrace-workspace');
-  expect(workspace.version).toBe(7);
+  expect(workspace.version).toBe(8);
   expect(workspace.trackGroups).toEqual({cpu: 'highlighted', pid: 'full', rpc: 'full', resource: 'full'});
   expect(workspace.highlightedTracks).toEqual(['cpu:0']);
   expect(workspace.rowHeight).toBe(52);
@@ -632,6 +673,10 @@ test('keeps SQL, schema inspection, saved views, and portable workspace state', 
     units: 'microseconds',
     invert: false,
   });
+  expect(workspace.viewSlots).toHaveLength(5);
+  expect(workspace.viewSlots[0]).toBeNull();
+  expect(workspace.viewSlots[2].search.text).toBe('agent.tool');
+  expect(workspace.viewSlots[2].trackGroups.cpu).toBe('highlighted');
   expect(workspace.views).toEqual([{name: 'Agent spans', sql: 'SELECT COUNT(*) AS agent_count FROM agent_spans'}]);
 
   workspace.sql = 'SELECT name FROM profile_callchains LIMIT 3';
