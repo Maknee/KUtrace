@@ -336,7 +336,7 @@ fn mipmap_density_sql(
 
 fn overlay_sql(filters: &[Filter], coverage: Range) -> String {
     let scope = format!(
-        "ts < {} AND ts_end > {} AND (category IN ('mark','annotation','rpc','wakeup','lock','sample') OR event IN (521,540))",
+        "ts < {} AND ts_end > {} AND (category IN ('mark','annotation','rpc','wakeup','lock','sample') OR event IN (521,540) OR event BETWEEN 532 AND 535)",
         coverage.end, coverage.start
     );
     format!(
@@ -2246,5 +2246,25 @@ pub fn app() -> Html {
           </div>
         </main>
       </div>
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::overlay_sql;
+    use crate::model::Range;
+
+    #[test]
+    fn density_overlay_keeps_exact_rpc_messages_and_packets() {
+        let sql = overlay_sql(
+            &[],
+            Range {
+                start: 1.0,
+                end: 2.0,
+            },
+        );
+        assert!(sql.contains("category IN ('mark','annotation','rpc','wakeup','lock','sample')"));
+        assert!(sql.contains("event BETWEEN 532 AND 535"));
+        assert!(sql.contains("ORDER BY ts LIMIT 2001"));
     }
 }

@@ -25,7 +25,7 @@ comparison surface, not a substitute for reimplementation.
 | Search respects visible X and Y ranges | implemented | Toolbar and timeline counts are restricted to the current time and virtualized row viewport |
 | Quick saved viewport slots and restore | implemented | Back plus four Shift-save/click-restore slots preserve the complete investigative view and have Chromium/Firefox and agent-navigation regressions |
 | Tiny-span deferral/density refinement | implemented | Exact-to-density budget and mipmap tests |
-| Specialized RPC packet/message and wakeup glyphs | partial | RPC lanes and wakeup arcs exist; legacy message geometry/labels remain |
+| Specialized RPC packet/message and wakeup glyphs | implemented | A deterministic wire fixture exercises one shared network band, red RX/cyan TX slopes, packet ticks, packetized dashes, RPC IDs, legacy 10ns size reconstruction, independent arc toggling, color-blind colors, and agent-visible glyph counts in Chromium/Firefox |
 | Idle, wait, user stripes, lock rails, frequency, and IPC glyph grammar | partial | Core glyphs exist; remaining event-family differential screenshots are needed |
 | Exact event inspection | implemented differently | Human details dock and bounded SQL expose exact rows |
 | Sampled-stack flamegraph | modern extension | Normalized symbolized callchain browser fixture |

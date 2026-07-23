@@ -67,7 +67,8 @@ node scripts/navigate.mjs http://127.0.0.1:3000 \
 The helper prints JSON containing the current X range, vertical row range and
 scale, visible and highlighted tracks, each group and display state, annotated
 event count, parsed search state and match count, renderer source, selection,
-quick-view slot availability, and agent context. Treat
+quick-view slot availability, visible RPC-message/network-packet/wakeup glyph
+counts, and agent context. Treat
 failures to find a requested span or control as failed navigation, not as
 absence of trace data.
 

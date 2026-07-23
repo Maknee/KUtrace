@@ -181,6 +181,11 @@ try {
       ])),
     ),
     annotatedEvents: await page.locator('.trace-event[data-annotated="true"]').count(),
+    timelineGlyphs: {
+      rpcMessages: Number(await timeline.getAttribute('data-rpc-messages')),
+      networkPackets: Number(await timeline.getAttribute('data-network-packets')),
+      wakeupArcs: await page.locator('[data-overlay-glyph="arc"]').count(),
+    },
     selection: (await page.locator('#selection-summary').textContent())?.trim() ?? '',
     agentContext: (await page.locator('#agent-context-title').textContent())?.trim() ?? '',
     searchMatches: (await page.locator('#search-count').textContent())?.trim() ?? '',

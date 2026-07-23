@@ -415,6 +415,51 @@ test('matches original multi-state display cycles and annotation modes', async (
   await expect(page.locator('.trace-event[data-annotated="true"]')).toHaveCount(0);
 });
 
+test('draws original directional RPC messages, packets, and independent wakeup arcs', async ({page, browserName}) => {
+  await page.goto('http://127.0.0.1:39130/');
+  await expect(page.locator('#trace-title')).toContainText('RPC wire grammar fixture');
+  await waitForTimeline(page);
+
+  const timeline = page.locator('#timeline');
+  await expect(timeline).toHaveAttribute('data-rpc-messages', '4');
+  await expect(timeline).toHaveAttribute('data-network-packets', '2');
+
+  const receiveMessages = page.locator('[data-overlay-glyph="rpc-message"][data-direction="rx"]');
+  const transmitMessages = page.locator('[data-overlay-glyph="rpc-message"][data-direction="tx"]');
+  const receivePackets = page.locator('[data-overlay-glyph="network-packet"][data-direction="rx"]');
+  const transmitPackets = page.locator('[data-overlay-glyph="network-packet"][data-direction="tx"]');
+  await expect(receiveMessages).toHaveCount(2);
+  await expect(transmitMessages).toHaveCount(2);
+  await expect(receivePackets).toHaveCount(1);
+  await expect(transmitPackets).toHaveCount(1);
+  await expect(receiveMessages.first().locator('[data-wire-segment]')).toHaveAttribute('stroke', '#800000');
+  await expect(transmitMessages.first().locator('[data-wire-segment]')).toHaveAttribute('stroke', '#008080');
+  await expect(receiveMessages.first().locator('[data-wire-segment]')).not.toHaveAttribute('stroke-dasharray', 'none');
+  await expect(page.locator('.rpc-message-label').first()).toContainText('17');
+
+  const arcs = page.locator('[data-overlay-glyph="arc"]');
+  await expect(arcs.first()).toBeVisible();
+  await page.locator('[data-overlay="arcs"]').click();
+  await page.locator('[data-overlay="arcs"]').click();
+  await expect(page.locator('[data-overlay="arcs"]')).toHaveAttribute('data-state', '0');
+  await expect(arcs).toHaveCount(0);
+  await expect(receiveMessages.first()).toBeVisible();
+  await expect(transmitPackets.first()).toBeVisible();
+
+  await page.locator('[data-overlay="arcs"]').click();
+  await page.locator('[data-overlay="colorblind"]').click();
+  await expect(receiveMessages.first().locator('[data-wire-segment]')).toHaveAttribute('stroke', '#d55e00');
+  await expect(transmitMessages.first().locator('[data-wire-segment]')).toHaveAttribute('stroke', '#0072b2');
+
+  if (browserName === 'chromium') {
+    await page.locator('[data-overlay="colorblind"]').click();
+    await expect(page.locator('.timeline-card')).toHaveScreenshot('rpc-wire-glyphs.png', {
+      animations: 'disabled',
+      caret: 'hide',
+    });
+  }
+});
+
 test('uses a real bounded density summary and preserves CPU/PID rows', async ({page}) => {
   let sawMipmap = false;
   let sawPidSummary = false;

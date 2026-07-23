@@ -14,6 +14,7 @@ use crate::model::{
 
 const VIEW_WIDTH: f64 = 1_400.0;
 const LABEL_WIDTH: f64 = 116.0;
+const NETWORK_BAND_HEIGHT: f64 = 42.0;
 pub const DEFAULT_ROW_HEIGHT: f64 = 52.0;
 pub const MIN_ROW_HEIGHT: f64 = 18.0;
 pub const MAX_ROW_HEIGHT: f64 = 96.0;
@@ -60,7 +61,7 @@ fn event_visible(event: &TraceEvent, overlays: Overlays) -> bool {
                     _ => true,
                 }
         }
-        "rpc" | "wakeup" => overlays.arcs > 0,
+        "wakeup" => overlays.arcs > 0,
         "lock" => overlays.locks > 0,
         "sample" => {
             (overlays.samples == 1 && event.pid == 0) || (overlays.samples == 2 && event.pid != 0)
@@ -264,6 +265,114 @@ fn x_at(time: f64, range: Range) -> f64 {
     LABEL_WIDTH + (time - range.start) * (VIEW_WIDTH - LABEL_WIDTH) / range.span()
 }
 
+fn rpc_wire_interval(event: &TraceEvent) -> Option<(f64, f64, bool, bool)> {
+    let receive = matches!(event.event, 0x204 | 0x214);
+    match event.event {
+        0x204 | 0x205 => {
+            if event.duration <= 0.000_000_01 {
+                let seconds = (event.arg0.max(0) as f64 + 88.0) * 8.0 / 1_000_000_000.0;
+                if receive {
+                    Some((event.start - seconds, event.start, true, false))
+                } else {
+                    Some((event.start, event.start + seconds, false, false))
+                }
+            } else {
+                Some((event.start, event.end, receive, false))
+            }
+        }
+        0x214 | 0x215 => Some((event.start, event.start, receive, true)),
+        _ => None,
+    }
+}
+
+fn rpc_wire_glyph(
+    event: &TraceEvent,
+    row_height: f64,
+    range: Range,
+    colorblind: bool,
+) -> Option<Html> {
+    let (start, end, receive, packet) = rpc_wire_interval(event)?;
+    if end < range.start || start > range.end {
+        return None;
+    }
+    let x0 = x_at(start.max(range.start), range);
+    let mut x1 = x_at(end.min(range.end), range);
+    let full_width = (x_at(end, range) - x_at(start, range)).abs();
+    if !packet && full_width < 0.1 {
+        return None;
+    }
+    if packet {
+        x1 = x0 + 1.0;
+    }
+    let width = (x1 - x0).max(1.0);
+    let wire_y = if receive { 18.0 } else { 10.0 };
+    let x_offset = if receive { -3.0 } else { 3.0 };
+    let y_offset = if receive { 2.0 } else { -2.0 };
+    let color = match (receive, colorblind) {
+        (true, false) => "#800000",
+        (false, false) => "#008080",
+        (true, true) => "#d55e00",
+        (false, true) => "#0072b2",
+    };
+    let glyph = if packet {
+        "network-packet"
+    } else {
+        "rpc-message"
+    };
+    let direction = if receive { "rx" } else { "tx" };
+    let tick = |at: f64| {
+        format!(
+            "M {} {} m {} 4 l {} -8",
+            at + x_offset,
+            wire_y,
+            -x_offset,
+            x_offset * 2.0
+        )
+    };
+    if packet || width < 5.0 {
+        let midpoint = x0 + width / 2.0;
+        return Some(html! {
+          <g data-overlay-glyph={glyph} data-direction={direction} data-rpc-id={event.rpc.to_string()}>
+            <path d={tick(midpoint)} fill="none" stroke="#000" stroke-width="1" vector-effect="non-scaling-stroke"/>
+          </g>
+        });
+    }
+
+    let line = format!(
+        "M {} {} L {} {}",
+        x0 - 2.0 + x_offset,
+        wire_y - y_offset,
+        x1 + 2.0 + x_offset,
+        wire_y + y_offset
+    );
+    let ticks = format!("{} {}", tick(x0), tick(x1));
+    let packet_pixels = (12.0e-6 * (VIEW_WIDTH - LABEL_WIDTH) / range.span()).clamp(0.75, width);
+    let dash_array = if width >= 15.0 {
+        format!(
+            "{} {}",
+            (packet_pixels * 14.0 / 15.0).max(0.5),
+            (packet_pixels / 15.0).max(0.5)
+        )
+    } else {
+        "none".to_owned()
+    };
+    let stroke_width = (row_height / 26.0).clamp(1.0, 3.0);
+    let font_size = (row_height * 0.2).clamp(8.0, 12.0);
+    let label_y = wire_y + if receive { 9.0 } else { -2.0 };
+    Some(html! {
+      <g data-overlay-glyph={glyph} data-direction={direction} data-rpc-id={event.rpc.to_string()}>
+        <path data-wire-segment="true" d={line} fill="none" stroke={color}
+          stroke-width={stroke_width.to_string()} stroke-dasharray={dash_array}
+          stroke-dashoffset="-1" vector-effect="non-scaling-stroke"/>
+        <path d={ticks} fill="none" stroke="#000" stroke-width="1" vector-effect="non-scaling-stroke"/>
+        if width >= font_size * 0.5 {
+          <text class="rpc-message-label" x={(x0+x_offset+4.0).to_string()}
+            y={label_y.to_string()} font-size={font_size.to_string()}>{event.rpc}</text>
+        }
+      </g>
+    })
+}
+
 fn pointer_time(event: &PointerEvent, range: Range, timeline: &NodeRef) -> Option<f64> {
     let element = timeline.cast::<Element>()?;
     let rect = element.get_bounding_client_rect();
@@ -303,18 +412,22 @@ pub fn timeline(props: &TimelineProps) -> Html {
     );
     let row_height = props.row_height.clamp(MIN_ROW_HEIGHT, MAX_ROW_HEIGHT);
     let viewport_height = props.viewport_height.max(240.0);
-    let first_visible_row = ((props.vertical_scroll / row_height).floor().max(0.0) as usize)
+    let content_scroll = (props.vertical_scroll - NETWORK_BAND_HEIGHT).max(0.0);
+    let first_visible_row = ((content_scroll / row_height).floor().max(0.0) as usize)
         .saturating_sub(ROW_OVERSCAN)
         .min(tracks.len());
     let last_visible_row =
-        (((props.vertical_scroll + viewport_height) / row_height).ceil() as usize + ROW_OVERSCAN)
+        ((((props.vertical_scroll + viewport_height - NETWORK_BAND_HEIGHT).max(0.0) / row_height)
+            .ceil() as usize)
+            + ROW_OVERSCAN)
             .min(tracks.len());
     let row_index: HashMap<&str, usize> = tracks
         .iter()
         .enumerate()
         .map(|(index, track)| (track.as_str(), index))
         .collect();
-    let height = (tracks.len().max(1) as f64 * row_height + 20.0).max(viewport_height);
+    let height =
+        (NETWORK_BAND_HEIGHT + tracks.len().max(1) as f64 * row_height + 20.0).max(viewport_height);
     let track_groups = props.groups.names();
     let visible_tracks = tracks[first_visible_row..last_visible_row].join(",");
     let highlighted_tracks = {
@@ -332,17 +445,28 @@ pub fn timeline(props: &TimelineProps) -> Html {
         .filter(|event| event_overlaps(event, props.range) && event_visible(event, props.overlays))
     {
         let mut targets = Vec::with_capacity(4);
+        let wire_event = rpc_wire_interval(event).is_some();
         if let Some(track) = &event.render_track {
             targets.push(track.clone());
         } else if event.pid > 0 && event.cpu >= 0 {
-            if props.groups.enabled("cpu") {
-                targets.push(format!("cpu:{}", event.cpu));
-            }
-            if props.groups.enabled("pid") {
-                targets.push(format!("pid:{}", event.pid));
+            if wire_event {
+                if props.groups.enabled("cpu") {
+                    targets.push(format!("cpu:{}", event.cpu));
+                } else if props.groups.enabled("pid") {
+                    targets.push(format!("pid:{}", event.pid));
+                } else if props.groups.enabled("rpc") && event.rpc > 0 {
+                    targets.push(format!("rpc:{}", event.rpc));
+                }
+            } else {
+                if props.groups.enabled("cpu") {
+                    targets.push(format!("cpu:{}", event.cpu));
+                }
+                if props.groups.enabled("pid") {
+                    targets.push(format!("pid:{}", event.pid));
+                }
             }
         }
-        if props.groups.enabled("rpc") && event.rpc > 0 {
+        if !wire_event && props.groups.enabled("rpc") && event.rpc > 0 {
             targets.push(format!("rpc:{}", event.rpc));
         }
         if props.groups.enabled("resource") && event.category == "resource" && event.arg0 >= 0 {
@@ -359,6 +483,16 @@ pub fn timeline(props: &TimelineProps) -> Html {
         }
     }
     let rendered_event_count = rendered_events.len();
+    let rpc_message_count = rendered_events
+        .iter()
+        .filter_map(|(_, _, event)| matches!(event.event, 0x204 | 0x205).then_some(event.id))
+        .collect::<HashSet<_>>()
+        .len();
+    let network_packet_count = rendered_events
+        .iter()
+        .filter_map(|(_, _, event)| matches!(event.event, 0x214 | 0x215).then_some(event.id))
+        .collect::<HashSet<_>>()
+        .len();
     let search_count = rendered_events
         .iter()
         .filter_map(|(_, _, event)| props.search.matches(event).then_some(event.id))
@@ -586,15 +720,22 @@ pub fn timeline(props: &TimelineProps) -> Html {
           data-search-units={props.search.units.label()}
           data-search-invert={props.search.invert.to_string()}
           data-rendered-events={rendered_event_count.to_string()}
+          data-rpc-messages={rpc_message_count.to_string()}
+          data-network-packets={network_packet_count.to_string()}
+          data-network-band={NETWORK_BAND_HEIGHT.to_string()}
           {onpointerdown} {onpointermove} {onpointerup} {onpointercancel} {onwheel}>
           <rect x="0" y="0" width={VIEW_WIDTH.to_string()} height={height.to_string()} fill="#fff"/>
           { for (0..=10).map(|tick| {
               let x = LABEL_WIDTH + (VIEW_WIDTH - LABEL_WIDTH) * tick as f64 / 10.0;
               let time = props.range.start + props.range.span() * tick as f64 / 10.0;
-              html! {<g class="time-grid"><line x1={x.to_string()} y1="0" x2={x.to_string()} y2={height.to_string()}/><text x={x.to_string()} y="12">{format!("{:.3}", time * 1000.0)}</text></g>}
+              let relative_ms = (time - props.full.start) * 1000.0;
+              html! {<g class="time-grid"><line x1={x.to_string()} y1="0" x2={x.to_string()} y2={height.to_string()}/><text x={x.to_string()} y={(NETWORK_BAND_HEIGHT-2.0).to_string()}>{format!("{relative_ms:.3}")}</text></g>}
           })}
+          <line x1={LABEL_WIDTH.to_string()} y1={NETWORK_BAND_HEIGHT.to_string()}
+            x2={VIEW_WIDTH.to_string()} y2={NETWORK_BAND_HEIGHT.to_string()}
+            stroke="#aeb8dc" stroke-width="1" vector-effect="non-scaling-stroke"/>
           { for tracks.iter().enumerate().skip(first_visible_row).take(last_visible_row-first_visible_row).map(|(index, track)| {
-              let row_top = index as f64 * row_height;
+              let row_top = NETWORK_BAND_HEIGHT + index as f64 * row_height;
               let center = row_top + row_height / 2.0;
               let emphasized = props.highlighted.is_empty() || props.highlighted.contains(track);
               let selected = props.highlighted.contains(track);
@@ -630,7 +771,7 @@ pub fn timeline(props: &TimelineProps) -> Html {
               </g>}
           })}
           { for rendered_events.into_iter().map(|(track, index, event)| {
-              let center = index as f64 * row_height + row_height / 2.0;
+              let center = NETWORK_BAND_HEIGHT + index as f64 * row_height + row_height / 2.0;
                   let x = x_at(event.start.max(props.range.start), props.range);
                   let end = event.end.max(event.start + props.range.span() / (VIEW_WIDTH - LABEL_WIDTH));
                   let width = (x_at(end.min(props.range.end), props.range) - x).max(0.8);
@@ -665,8 +806,9 @@ pub fn timeline(props: &TimelineProps) -> Html {
                   let is_frequency = event.event == 521 || event.event == 540;
                   let is_idle = event.event == 65_536;
                   let is_wait = event.event & 0x0f_ffe0 == 768;
+                  let rpc_wire = rpc_wire_glyph(event, row_height, props.range, props.overlays.colorblind);
                   let wake_target = if event.category == "wakeup" && track.starts_with("cpu:") {
-                      row_index.get(format!("pid:{}", event.arg0).as_str()).copied().map(|target| target as f64 * row_height + row_height / 2.0)
+                      row_index.get(format!("pid:{}", event.arg0).as_str()).copied().map(|target| NETWORK_BAND_HEIGHT + target as f64 * row_height + row_height / 2.0)
                   } else { None };
                   let event_height = (row_height - 8.0).clamp(8.0, 24.0);
                   let annotation_height = (row_height - 4.0).clamp(10.0, 40.0);
@@ -677,7 +819,7 @@ pub fn timeline(props: &TimelineProps) -> Html {
                   let ipc_visible = event.ipc != 0
                       && ((matches!(event.category.as_str(),"user"|"agent") && props.overlays.ipc&1 != 0)
                           || (!matches!(event.category.as_str(),"user"|"agent") && props.overlays.ipc&2 != 0));
-                  html! {<g class="trace-event" opacity={opacity.to_string()} data-annotated={annotated.to_string()} {onclick}>
+                  html! {<g class="trace-event" opacity={opacity.to_string()} data-event-id={event.id.to_string()} data-annotated={annotated.to_string()} {onclick}>
                     <title>{format!("{} · {} · {} · {:.9}s · {:.2}us", if event.name.is_empty() {"(unnamed)"} else {&event.name}, event.category, track_label(&track), event.start, event.duration.max(0.0)*1e6)}</title>
                     if is_mark {
                       <path data-overlay-glyph="mark" d={format!("M {x} {y} l -5 10 h 10 z")} fill={dark}/>
@@ -690,6 +832,8 @@ pub fn timeline(props: &TimelineProps) -> Html {
                     } else if is_frequency {
                       <rect data-overlay-glyph="frequency" x={x.to_string()} y={(center-18.0).to_string()} width={width.to_string()} height={if props.overlays.frequency==1{"11"}else{"7"}} fill="#50b45a" opacity={if props.overlays.frequency==1{".8"}else{".45"}}/>
                       if width > 34.0 {<text x={(x+3.0).to_string()} y={(center-12.0).to_string()} class="event-label">{format!("{}MHz",event.arg0)}</text>}
+                    } else if let Some(glyph) = rpc_wire {
+                      {glyph}
                     } else if is_idle || is_wait {
                       <line x1={x.to_string()} y1={center.to_string()} x2={(x+width).to_string()} y2={center.to_string()} stroke="#111" stroke-width={if is_idle{"2"}else{"1.5"}} stroke-dasharray={if is_wait{"5 3"}else{"none"}}/>
                     } else {
@@ -706,8 +850,8 @@ pub fn timeline(props: &TimelineProps) -> Html {
                       }
                     }
                     if annotated {
-                      <line class="canvas-annotation" x1={x.to_string()} y1={(center-h/2.0).to_string()} x2={x.to_string()} y2={(index as f64*row_height+2.0).to_string()}/>
-                      <text class="canvas-annotation-text" x={(x+3.0).to_string()} y={(index as f64*row_height+11.0).to_string()} transform={format!("rotate(-24 {} {})",x+3.0,index as f64*row_height+11.0)}>{format!("{} · {:.2}µs",event.name,event.duration.max(0.0)*1e6)}</text>
+                      <line class="canvas-annotation" x1={x.to_string()} y1={(center-h/2.0).to_string()} x2={x.to_string()} y2={(NETWORK_BAND_HEIGHT+index as f64*row_height+2.0).to_string()}/>
+                      <text class="canvas-annotation-text" x={(x+3.0).to_string()} y={(NETWORK_BAND_HEIGHT+index as f64*row_height+11.0).to_string()} transform={format!("rotate(-24 {} {})",x+3.0,NETWORK_BAND_HEIGHT+index as f64*row_height+11.0)}>{format!("{} · {:.2}µs",event.name,event.duration.max(0.0)*1e6)}</text>
                     }
                   </g>}
           })}
@@ -716,6 +860,68 @@ pub fn timeline(props: &TimelineProps) -> Html {
           <rect ref={drag_overlay} x="0" y="0" width="1" height={height.to_string()} visibility="hidden" class="time-selection-vector dragging"/>
         </svg>
       </div>
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{event_visible, rpc_wire_interval};
+    use crate::model::{Overlays, TraceEvent};
+
+    fn event(code: i64, start: f64, duration: f64, arg0: i64) -> TraceEvent {
+        TraceEvent {
+            id: 1,
+            start,
+            duration,
+            end: start + duration,
+            cpu: 0,
+            pid: 1,
+            rpc: 7,
+            event: code,
+            name: String::new(),
+            category: "rpc".to_owned(),
+            arg0,
+            retval: 0,
+            ipc: 0,
+            render_track: None,
+        }
+    }
+
+    #[test]
+    fn reconstructs_legacy_rpc_wire_direction_and_duration() {
+        let receive = rpc_wire_interval(&event(0x204, 2.0, 1.0e-8, 1412)).unwrap();
+        let transmit = rpc_wire_interval(&event(0x205, 2.0, 1.0e-8, 1412)).unwrap();
+        assert!((receive.0 - 1.999_988).abs() < 1.0e-12);
+        assert_eq!(receive.1, 2.0);
+        assert!(receive.2);
+        assert_eq!(transmit.0, 2.0);
+        assert!((transmit.1 - 2.000_012).abs() < 1.0e-12);
+        assert!(!transmit.2);
+    }
+
+    #[test]
+    fn distinguishes_message_spans_from_packet_ticks() {
+        let message = rpc_wire_interval(&event(0x205, 1.0, 0.002, 0)).unwrap();
+        let packet = rpc_wire_interval(&event(0x214, 1.0, 1.0e-8, 0)).unwrap();
+        assert_eq!((message.0, message.1, message.3), (1.0, 1.002, false));
+        assert_eq!(
+            (packet.0, packet.1, packet.2, packet.3),
+            (1.0, 1.0, true, true)
+        );
+        assert!(rpc_wire_interval(&event(0x206, 1.0, 0.001, 0)).is_none());
+    }
+
+    #[test]
+    fn arc_toggle_does_not_hide_rpc_wire_events() {
+        let mut overlays = Overlays::default();
+        overlays.arcs = 0;
+        let message = event(0x204, 1.0, 0.002, 1412);
+        let packet = event(0x214, 1.0, 1.0e-8, 0);
+        let mut wakeup = event(0x206, 1.0, 0.001, 2);
+        wakeup.category = "wakeup".to_owned();
+        assert!(event_visible(&message, overlays));
+        assert!(event_visible(&packet, overlays));
+        assert!(!event_visible(&wakeup, overlays));
     }
 }
 
