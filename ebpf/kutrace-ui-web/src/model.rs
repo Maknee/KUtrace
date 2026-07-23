@@ -1,4 +1,9 @@
-use serde::{Deserialize, Serialize};
+use std::fmt;
+
+use serde::{
+    Deserialize, Deserializer, Serialize,
+    de::{self, Visitor},
+};
 use serde_json::Value;
 
 #[derive(Clone, Debug, Default, PartialEq)]
@@ -71,66 +76,153 @@ impl TrackMode {
     }
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum TrackGroupMode {
+    Hidden,
+    Highlighted,
+    Full,
+}
+
+impl TrackGroupMode {
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Hidden => "hidden",
+            Self::Highlighted => "highlighted",
+            Self::Full => "full",
+        }
+    }
+}
+
+impl<'de> Deserialize<'de> for TrackGroupMode {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        struct ModeVisitor;
+
+        impl Visitor<'_> for ModeVisitor {
+            type Value = TrackGroupMode;
+
+            fn expecting(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+                formatter.write_str("a group mode or a legacy boolean")
+            }
+
+            fn visit_bool<E>(self, value: bool) -> Result<Self::Value, E>
+            where
+                E: de::Error,
+            {
+                Ok(if value {
+                    TrackGroupMode::Full
+                } else {
+                    TrackGroupMode::Hidden
+                })
+            }
+
+            fn visit_str<E>(self, value: &str) -> Result<Self::Value, E>
+            where
+                E: de::Error,
+            {
+                match value {
+                    "hidden" => Ok(TrackGroupMode::Hidden),
+                    "highlighted" => Ok(TrackGroupMode::Highlighted),
+                    "full" => Ok(TrackGroupMode::Full),
+                    _ => Err(E::unknown_variant(
+                        value,
+                        &["hidden", "highlighted", "full"],
+                    )),
+                }
+            }
+        }
+
+        deserializer.deserialize_any(ModeVisitor)
+    }
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct TrackGroups {
-    pub cpu: bool,
-    pub pid: bool,
-    pub rpc: bool,
-    pub resource: bool,
+    pub cpu: TrackGroupMode,
+    pub pid: TrackGroupMode,
+    pub rpc: TrackGroupMode,
+    pub resource: TrackGroupMode,
 }
 
 impl TrackGroups {
     pub const fn for_mode(mode: TrackMode) -> Self {
         match mode {
             TrackMode::CpuPid => Self {
-                cpu: true,
-                pid: true,
-                rpc: true,
-                resource: true,
+                cpu: TrackGroupMode::Full,
+                pid: TrackGroupMode::Full,
+                rpc: TrackGroupMode::Full,
+                resource: TrackGroupMode::Full,
             },
             TrackMode::Cpu => Self {
-                cpu: true,
-                pid: false,
-                rpc: false,
-                resource: false,
+                cpu: TrackGroupMode::Full,
+                pid: TrackGroupMode::Hidden,
+                rpc: TrackGroupMode::Hidden,
+                resource: TrackGroupMode::Hidden,
             },
             TrackMode::Pid => Self {
-                cpu: false,
-                pid: true,
-                rpc: false,
-                resource: false,
+                cpu: TrackGroupMode::Hidden,
+                pid: TrackGroupMode::Full,
+                rpc: TrackGroupMode::Hidden,
+                resource: TrackGroupMode::Hidden,
             },
         }
     }
 
-    pub fn enabled(self, name: &str) -> bool {
+    pub fn mode(self, name: &str) -> TrackGroupMode {
         match name {
             "cpu" => self.cpu,
             "pid" => self.pid,
             "rpc" => self.rpc,
             "resource" => self.resource,
-            _ => false,
+            _ => TrackGroupMode::Hidden,
         }
     }
 
-    pub fn toggle(&mut self, name: &str) {
+    pub fn enabled(self, name: &str) -> bool {
+        self.mode(name) != TrackGroupMode::Hidden
+    }
+
+    pub fn cycle(&mut self, name: &str, has_highlight: bool) {
+        let mode = self.mode(name);
+        let next = match (mode, has_highlight) {
+            (TrackGroupMode::Full, true) => TrackGroupMode::Highlighted,
+            (TrackGroupMode::Highlighted, true) => TrackGroupMode::Hidden,
+            (TrackGroupMode::Hidden, _) => TrackGroupMode::Full,
+            (TrackGroupMode::Full | TrackGroupMode::Highlighted, false) => {
+                TrackGroupMode::Hidden
+            }
+        };
         match name {
-            "cpu" => self.cpu = !self.cpu,
-            "pid" => self.pid = !self.pid,
-            "rpc" => self.rpc = !self.rpc,
-            "resource" => self.resource = !self.resource,
+            "cpu" => self.cpu = next,
+            "pid" => self.pid = next,
+            "rpc" => self.rpc = next,
+            "resource" => self.resource = next,
             _ => {}
         }
     }
 
-    pub const fn count(self) -> usize {
-        self.cpu as usize + self.pid as usize + self.rpc as usize + self.resource as usize
+    pub fn count(self) -> usize {
+        [self.cpu, self.pid, self.rpc, self.resource]
+            .into_iter()
+            .filter(|mode| *mode != TrackGroupMode::Hidden)
+            .count()
     }
 
     pub fn names(self) -> String {
         ["cpu", "pid", "rpc", "resource"]
             .into_iter()
             .filter(|name| self.enabled(name))
+            .collect::<Vec<_>>()
+            .join(",")
+    }
+
+    pub fn states(self) -> String {
+        ["cpu", "pid", "rpc", "resource"]
+            .into_iter()
+            .map(|name| format!("{name}:{}", self.mode(name).as_str()))
             .collect::<Vec<_>>()
             .join(",")
     }

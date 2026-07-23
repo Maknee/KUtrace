@@ -34,13 +34,17 @@ same bounded read-only contract.
   and pointer capture keeps a drag attached to the timeline even when it crosses
   event glyphs. The drag overlay is updated directly, without reconciling the
   event tree for every mouse move.
-- Shift-click toggles the clicked CPU, PID, RPC, or resource row in the
-  highlight set. Rows are derived only from visible positive-duration spans,
-  so empty cores and inactive identities are not fabricated.
-- The four original KUtrace group headers independently expand or collapse CPU,
-  process, RPC, and resource lanes. The choice applies to exact and density
-  rendering, is keyboard accessible, and survives version-3 workspace
-  save/export/import.
+- Shift-click on a span or its line label toggles that CPU, PID, RPC, or
+  resource row in the highlight set. The same event stays emphasized on its
+  corresponding copies in other lane families. Rows are derived only from
+  visible positive-duration spans, so empty cores and inactive identities are
+  not fabricated.
+- The four original KUtrace group headers independently cycle CPU, process,
+  RPC, and resource lanes through full, highlighted-only, and hidden. As in the
+  original, a group without highlighted rows skips highlighted-only. The choice
+  applies to exact and density rendering, is keyboard accessible, and survives
+  version-4 workspace save/export/import; version-1 through version-3 state is
+  migrated while loading.
 - Marks, samples, wakeups, lock rails, CPU frequency, IPC, idle/wait lines, and
   KUtrace user-mode inner stripes are vector overlays on the same time domain.
 - The overview, timeline, selection, details, flamegraph, and SQL notebook share
@@ -147,7 +151,8 @@ absence of the retired `/app.js`, SVG rendering, repeated held-key updates,
 wheel zoom, Alt-drag pan, selection, Shift highlighting, Escape, filters,
 search, SQL/schema inspection, saved and portable workspace state, honest
 flamegraph fallback, normalized callchains, agent-span navigation and context,
-independent track-group expansion, and the separate legacy route. Chromium also owns a deterministic screenshot
+three-state track groups, line-label highlighting, and the separate legacy
+route. Chromium also owns a deterministic screenshot
 baseline for the original KUtrace light visual grammar, blue labels, black
 execution rails, and aligned CPU/PID/RPC/resource lanes.
 

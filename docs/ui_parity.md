@@ -12,10 +12,10 @@ comparison surface, not a substitute for reimplementation.
 | One continuous horizontal time domain | implemented | WASD, wheel, Alt-drag, selection, overview browser tests |
 | Vector detail remains sharp while zooming | implemented | Geometry changes are asserted after held-key and wheel navigation |
 | CPU, PID, RPC, and resource group ordering | implemented | Fixture asserts aligned labels and lane order |
-| Independently expand/collapse the four groups | implemented | Chromium and Firefox keyboard/click regression |
+| Independently cycle the four groups | implemented | Full/hidden without highlights and full/highlight-only/hidden with highlights have Chromium/Firefox regressions |
 | Auto-prune rows without positive spans in the visible range | implemented | Track derivation and visible-core tests |
-| Shift-toggle highlights with dim surrounding context | partial | Event Shift-click works; original line-label interaction still needs porting |
-| Three-state group display: hidden, highlight-only, full | missing | Current group controls are two-state |
+| Shift-toggle line/event highlights with dim surrounding context | implemented | Shift-click and keyboard line-label toggles propagate event emphasis across CPU/PID/RPC/resource copies |
+| Three-state group display: hidden, highlight-only, full | implemented | Original skip-highlight-only rule without selected rows is preserved in exact and density modes |
 | Vertical-axis pan and zoom for very large row sets | missing | Current view scrolls and caps each family at 64 rows |
 | Original CPU/PID/RPC/resource Y sorting rules | partial | Numeric order is implemented; RPC start-time and resource type ordering remain |
 | Mark, arc, lock, frequency, IPC, sample, and color-blind controls | partial | Boolean controls and vector overlays exist; original multi-state cycles remain |

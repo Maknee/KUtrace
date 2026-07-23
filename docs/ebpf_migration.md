@@ -383,8 +383,10 @@ route. Chromium and Firefox now share the functional regression suite while
 Chromium owns the deterministic visual baseline. The byte-identity gate now
 also runs Mark/color-blind toggles, mutually exclusive annotation modes,
 search/inversion, wheel zoom, and red-dot reset. The modern renderer now
-independently expands/collapses its CPU, PID, RPC, and resource groups in exact
-and density modes. `/legacy` remains the byte-identical comparison surface
+independently cycles its CPU, PID, RPC, and resource groups through the
+original full, highlighted-only, and hidden states in exact and density modes.
+Shift-clicking a line label toggles that row and propagates event emphasis
+across corresponding lane copies. `/legacy` remains the byte-identical comparison surface
 while every applicable behavior is reimplemented; it does not close modern
 parity by itself. See [`ui_architecture.md`](ui_architecture.md) and the
 [`UI parity checklist`](ui_parity.md).

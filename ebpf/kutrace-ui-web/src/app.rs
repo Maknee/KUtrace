@@ -18,8 +18,8 @@ use yew::prelude::*;
 use crate::{
     api::{QueryResponse, query},
     model::{
-        Filter, Metadata, Overlays, Range, TraceEvent, TrackGroups, TrackMode, filter_sql,
-        where_sql,
+        Filter, Metadata, Overlays, Range, TraceEvent, TrackGroupMode, TrackGroups, TrackMode,
+        filter_sql, where_sql,
     },
     timeline::{Overview, Selection, Timeline},
 };
@@ -36,6 +36,7 @@ struct TimelineCache {
     detail: bool,
     mode: TrackMode,
     groups: TrackGroups,
+    highlighted: HashSet<String>,
 }
 
 fn prefetched_range(range: Range, full: Range) -> Range {
@@ -51,13 +52,50 @@ fn range_contains(outer: Range, inner: Range) -> bool {
     outer.start <= inner.start && outer.end >= inner.end
 }
 
-fn density_sql(filters: &[Filter], coverage: Range, track: &str) -> String {
+fn highlighted_track_values(
+    groups: TrackGroups,
+    highlighted: &HashSet<String>,
+    group: &str,
+) -> Vec<i64> {
+    if groups.mode(group) != TrackGroupMode::Highlighted {
+        return Vec::new();
+    }
+    let prefix = format!("{group}:");
+    let mut values = highlighted
+        .iter()
+        .filter_map(|track| track.strip_prefix(&prefix)?.parse::<i64>().ok())
+        .collect::<Vec<_>>();
+    values.sort_unstable();
+    values.dedup();
+    values
+}
+
+fn valid_track_highlights(values: Vec<String>) -> HashSet<String> {
+    values
+        .into_iter()
+        .take(256)
+        .filter(|track| {
+            let Some((group, value)) = track.split_once(':') else {
+                return false;
+            };
+            matches!(group, "cpu" | "pid" | "rpc" | "resource")
+                && value.parse::<i64>().is_ok_and(|value| value >= 0)
+        })
+        .collect()
+}
+
+fn density_sql(
+    filters: &[Filter],
+    coverage: Range,
+    track_name: &str,
+    highlighted_tracks: &[i64],
+) -> String {
     let bucket = coverage.span() / TIMELINE_BINS as f64;
     let common = format!(
         "ts < {} AND ts_end > {} AND dur>0",
         coverage.end, coverage.start
     );
-    let (track, scope, cpu, pid, rpc, label) = match track {
+    let (track, mut scope, cpu, pid, rpc, label) = match track_name {
         "cpu" => (
             "cpu",
             format!("{common} AND pid>0 AND cpu>=0"),
@@ -92,6 +130,16 @@ fn density_sql(filters: &[Filter], coverage: Range, track: &str) -> String {
         ),
         _ => unreachable!("unsupported density track"),
     };
+    if !highlighted_tracks.is_empty() {
+        scope.push_str(&format!(
+            " AND {track} IN ({})",
+            highlighted_tracks
+                .iter()
+                .map(i64::to_string)
+                .collect::<Vec<_>>()
+                .join(",")
+        ));
+    }
     format!(
         r#"WITH RECURSIVE scoped(first_bin,last_bin,track,event,name,category,ipc,ts,ts_end) AS (
            SELECT MIN({bins}-1,MAX(0,CAST((ts-{start})/{bucket} AS INTEGER))),
@@ -128,7 +176,11 @@ fn density_sql(filters: &[Filter], coverage: Range, track: &str) -> String {
     )
 }
 
-fn mipmap_density_sql(filters: &[Filter], coverage: Range) -> String {
+fn mipmap_density_sql(
+    filters: &[Filter],
+    coverage: Range,
+    highlighted_cpus: &[i64],
+) -> String {
     let bucket = coverage.span() / TIMELINE_BINS as f64;
     let table = if bucket < 0.016 {
         "timeline_mipmap"
@@ -136,11 +188,21 @@ fn mipmap_density_sql(filters: &[Filter], coverage: Range) -> String {
         "timeline_mipmap_coarse"
     };
     let filter = filter_sql(filters);
-    let filter = if filter.is_empty() {
+    let mut filter = if filter.is_empty() {
         String::new()
     } else {
         format!(" AND {filter}")
     };
+    if !highlighted_cpus.is_empty() {
+        filter.push_str(&format!(
+            " AND cpu IN ({})",
+            highlighted_cpus
+                .iter()
+                .map(i64::to_string)
+                .collect::<Vec<_>>()
+                .join(",")
+        ));
+    }
     format!(
         r#"WITH RECURSIVE scoped(first_bin,last_bin,track,event,name,category,ipc,bucket_start,bucket_end,weight) AS (
            SELECT MIN({bins}-1,MAX(0,CAST((bucket_start-{start})/{bucket} AS INTEGER))),
@@ -186,13 +248,27 @@ fn overlay_sql(filters: &[Filter], coverage: Range) -> String {
     )
 }
 
-fn long_cpu_event_sql(filters: &[Filter], coverage: Range) -> String {
-    let scope = format!(
+fn long_cpu_event_sql(
+    filters: &[Filter],
+    coverage: Range,
+    highlighted_cpus: &[i64],
+) -> String {
+    let mut scope = format!(
         "ts < {} AND ts_end > {} AND cpu>=0 AND (dur=0 OR dur>{})",
         coverage.end,
         coverage.start,
         0.001 * 256.0
     );
+    if !highlighted_cpus.is_empty() {
+        scope.push_str(&format!(
+            " AND cpu IN ({})",
+            highlighted_cpus
+                .iter()
+                .map(i64::to_string)
+                .collect::<Vec<_>>()
+                .join(",")
+        ));
+    }
     format!(
         "SELECT id,ts,dur,ts_end,cpu,pid,rpc,event,name,category,arg0,retval,ipc,'cpu:' || cpu \
            FROM events {} ORDER BY ts LIMIT 4001",
@@ -222,6 +298,8 @@ struct WorkspaceFile {
     track_mode: TrackMode,
     #[serde(default)]
     track_groups: Option<TrackGroups>,
+    #[serde(default)]
+    highlighted_tracks: Vec<String>,
     #[serde(default)]
     overlays: Overlays,
 }
@@ -516,6 +594,7 @@ pub fn app() -> Html {
         let saved_views = saved_views.clone();
         let track_mode = track_mode.clone();
         let track_groups = track_groups.clone();
+        let highlighted = highlighted.clone();
         let overlays = overlays.clone();
         let workspace_loaded = workspace_loaded.clone();
         let status = sql_status.clone();
@@ -530,7 +609,7 @@ pub fn app() -> Html {
                     match serde_json::from_str::<WorkspaceFile>(&stored) {
                         Ok(workspace)
                             if workspace.kind == "kutrace-workspace"
-                                && matches!(workspace.version, 1..=3) =>
+                                && matches!(workspace.version, 1..=4) =>
                         {
                             filters.set(workspace.filters.into_iter().take(64).collect());
                             if !workspace.sql.is_empty() {
@@ -546,6 +625,8 @@ pub fn app() -> Html {
                                     .track_groups
                                     .unwrap_or_else(|| TrackGroups::for_mode(workspace.track_mode)),
                             );
+                            highlighted
+                                .set(valid_track_highlights(workspace.highlighted_tracks));
                             overlays.set(workspace.overlays);
                         }
                         Ok(_) => status.set("Unsupported saved workspace".to_owned()),
@@ -700,6 +781,7 @@ pub fn app() -> Html {
         let current_cache = (*timeline_cache).clone();
         let current_mode = *track_mode;
         let current_groups = *track_groups;
+        let current_highlighted = (*highlighted).clone();
         let full = metadata.full;
         use_effect_with(
             (
@@ -708,6 +790,7 @@ pub fn app() -> Html {
                 current_cache,
                 current_mode,
                 current_groups,
+                current_highlighted,
                 full,
             ),
             move |(
@@ -716,6 +799,7 @@ pub fn app() -> Html {
                 current_cache,
                 current_mode,
                 current_groups,
+                current_highlighted,
                 full,
             )| {
                 *generation.borrow_mut() += 1;
@@ -724,6 +808,7 @@ pub fn app() -> Html {
                     cached.filters == *current_filters
                         && cached.mode == *current_mode
                         && cached.groups == *current_groups
+                        && cached.highlighted == *current_highlighted
                         && range_contains(cached.coverage, *current_range)
                         && (cached.detail || current_range.span() >= cached.coverage.span() / 5.0)
                 });
@@ -742,6 +827,7 @@ pub fn app() -> Html {
                     let current_filters = current_filters.clone();
                     let current_mode = *current_mode;
                     let current_groups = *current_groups;
+                    let current_highlighted = current_highlighted.clone();
                     let coverage = prefetched_range(current_range, *full);
                     Some(Timeout::new(70, move || {
                         loading.set(true);
@@ -775,12 +861,26 @@ pub fn app() -> Html {
                                 let mut rows = Vec::new();
                                 let mut used_mipmap = false;
                                 let mut partial = false;
-                                if current_groups.cpu {
+                                if current_groups.enabled("cpu") {
+                                    let highlighted_cpus = highlighted_track_values(
+                                        current_groups,
+                                        &current_highlighted,
+                                        "cpu",
+                                    );
                                     let sql = if mmap_compatible {
                                         used_mipmap = true;
-                                        mipmap_density_sql(&current_filters, coverage)
+                                        mipmap_density_sql(
+                                            &current_filters,
+                                            coverage,
+                                            &highlighted_cpus,
+                                        )
                                     } else {
-                                        density_sql(&current_filters, coverage, "cpu")
+                                        density_sql(
+                                            &current_filters,
+                                            coverage,
+                                            "cpu",
+                                            &highlighted_cpus,
+                                        )
                                     };
                                     let response = query(&sql, 10_000).await?;
                                     rows.extend(
@@ -789,7 +889,11 @@ pub fn app() -> Html {
                                     partial |= response.truncated;
                                     if used_mipmap {
                                         let long_events = query(
-                                            &long_cpu_event_sql(&current_filters, coverage),
+                                            &long_cpu_event_sql(
+                                                &current_filters,
+                                                coverage,
+                                                &highlighted_cpus,
+                                            ),
                                             4_000,
                                         )
                                         .await?;
@@ -803,9 +907,19 @@ pub fn app() -> Html {
                                         );
                                     }
                                 }
-                                if current_groups.pid {
+                                if current_groups.enabled("pid") {
+                                    let highlighted_pids = highlighted_track_values(
+                                        current_groups,
+                                        &current_highlighted,
+                                        "pid",
+                                    );
                                     let response = query(
-                                        &density_sql(&current_filters, coverage, "pid"),
+                                        &density_sql(
+                                            &current_filters,
+                                            coverage,
+                                            "pid",
+                                            &highlighted_pids,
+                                        ),
                                         10_000,
                                     )
                                     .await?;
@@ -818,8 +932,18 @@ pub fn app() -> Html {
                                     .into_iter()
                                     .filter(|track| current_groups.enabled(track))
                                 {
+                                    let highlighted_tracks = highlighted_track_values(
+                                        current_groups,
+                                        &current_highlighted,
+                                        semantic_track,
+                                    );
                                     let response = query(
-                                        &density_sql(&current_filters, coverage, semantic_track),
+                                        &density_sql(
+                                            &current_filters,
+                                            coverage,
+                                            semantic_track,
+                                            &highlighted_tracks,
+                                        ),
                                         10_000,
                                     )
                                     .await?;
@@ -834,7 +958,7 @@ pub fn app() -> Html {
                                     overlays.rows.iter().map(|row| TraceEvent::from_row(row)),
                                 );
                                 let mut source = if used_mipmap
-                                    && current_groups.cpu
+                                    && current_groups.enabled("cpu")
                                     && current_groups.count() == 1
                                 {
                                     "mipmap".to_owned()
@@ -862,6 +986,7 @@ pub fn app() -> Html {
                                         detail: !is_truncated,
                                         mode: current_mode,
                                         groups: current_groups,
+                                        highlighted: current_highlighted,
                                     }));
                                     error.set(String::new());
                                 }
@@ -1110,15 +1235,18 @@ pub fn app() -> Html {
             });
         })
     };
+    let mut highlighted_tracks = highlighted.iter().cloned().collect::<Vec<_>>();
+    highlighted_tracks.sort();
     let workspace = WorkspaceFile {
         kind: "kutrace-workspace".to_owned(),
-        version: 3,
+        version: 4,
         filters: (*filters).clone(),
         sql: (*sql).clone(),
         range: Some(*range),
         views: (*saved_views).clone(),
         track_mode: *track_mode,
         track_groups: Some(*track_groups),
+        highlighted_tracks,
         overlays: *overlays,
     };
     let save_workspace = {
@@ -1190,6 +1318,7 @@ pub fn app() -> Html {
         let saved_views = saved_views.clone();
         let track_mode = track_mode.clone();
         let track_groups = track_groups.clone();
+        let highlighted = highlighted.clone();
         let overlays = overlays.clone();
         let status = sql_status.clone();
         let full = metadata.full;
@@ -1204,6 +1333,7 @@ pub fn app() -> Html {
             let saved_views = saved_views.clone();
             let track_mode = track_mode.clone();
             let track_groups = track_groups.clone();
+            let highlighted = highlighted.clone();
             let overlays = overlays.clone();
             let status = status.clone();
             spawn_local(async move {
@@ -1215,12 +1345,17 @@ pub fn app() -> Html {
                         .ok_or_else(|| "Workspace file is not text".to_owned())?;
                     let workspace = serde_json::from_str::<WorkspaceFile>(&text)
                         .map_err(|error| format!("Invalid workspace: {error}"))?;
-                    if workspace.kind != "kutrace-workspace" || !matches!(workspace.version, 1..=3)
+                    if workspace.kind != "kutrace-workspace" || !matches!(workspace.version, 1..=4)
                     {
                         return Err("Unsupported workspace file".to_owned());
                     }
-                    if workspace.filters.len() > 64 || workspace.views.len() > 32 {
-                        return Err("Workspace exceeds bounded filter/view limits".to_owned());
+                    if workspace.filters.len() > 64
+                        || workspace.views.len() > 32
+                        || workspace.highlighted_tracks.len() > 256
+                    {
+                        return Err(
+                            "Workspace exceeds bounded filter/view/highlight limits".to_owned()
+                        );
                     }
                     filters.set(workspace.filters);
                     if !workspace.sql.is_empty() {
@@ -1236,6 +1371,7 @@ pub fn app() -> Html {
                             .track_groups
                             .unwrap_or_else(|| TrackGroups::for_mode(workspace.track_mode)),
                     );
+                    highlighted.set(valid_track_highlights(workspace.highlighted_tracks));
                     overlays.set(workspace.overlays);
                     Ok::<_, String>(())
                 }
@@ -1559,16 +1695,26 @@ pub fn app() -> Html {
     ]
     .into_iter()
     .map(|(name, label)| {
-        let expanded = track_groups.enabled(name);
+        let mode = track_groups.mode(name);
+        let expanded = mode != TrackGroupMode::Hidden;
+        let has_highlight = highlighted
+            .iter()
+            .any(|track| track.starts_with(&format!("{name}:")));
         let track_groups = track_groups.clone();
         let track_mode = track_mode.clone();
         html! {
-          <button class={classes!("track-group",expanded.then_some("active"))}
+          <button class={classes!("track-group",expanded.then_some("active"),(mode==TrackGroupMode::Highlighted).then_some("highlighted-only"))}
             data-track-group={name}
+            data-group-state={mode.as_str()}
             aria-expanded={expanded.to_string()}
+            aria-label={format!("{label}: {}",match mode {
+                TrackGroupMode::Full => "all rows",
+                TrackGroupMode::Highlighted => "highlighted rows only",
+                TrackGroupMode::Hidden => "hidden",
+            })}
             onclick={Callback::from(move |_| {
                 let mut next = *track_groups;
-                next.toggle(name);
+                next.cycle(name, has_highlight);
                 track_groups.set(next);
                 track_mode.set(TrackMode::CpuPid);
             })}>

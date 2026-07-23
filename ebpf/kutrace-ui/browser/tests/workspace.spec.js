@@ -25,6 +25,10 @@ test('serves a Yew/WASM vector workspace without application JavaScript', async 
   await expect(page.locator('#timeline')).toHaveAttribute('data-detail', 'true');
   await expect(page.locator('#timeline')).toHaveAttribute('data-track-mode', 'cpu_pid');
   await expect(page.locator('#timeline')).toHaveAttribute('data-track-groups', 'cpu,pid,rpc,resource');
+  await expect(page.locator('#timeline')).toHaveAttribute(
+    'data-track-group-states',
+    'cpu:full,pid:full,rpc:full,resource:full',
+  );
   await expect(page.locator('#timeline')).toHaveAttribute('data-visible-tracks', /cpu:.+,pid:.+,rpc:77,resource:12,resource:900/);
   await expect(page.locator('#track-mode')).toHaveValue('cpu_pid');
   await expect(page.locator('#renderer-label')).toContainText('Rust/WASM');
@@ -65,6 +69,7 @@ test('independently expands and collapses original KUtrace track groups', async 
   await page.keyboard.press('Enter');
   await waitForTimeline(page);
   await expect(pidGroup).toHaveAttribute('aria-expanded', 'false');
+  await expect(pidGroup).toHaveAttribute('data-group-state', 'hidden');
   await expect(timeline).toHaveAttribute('data-track-groups', 'cpu,rpc,resource');
   await expect(timeline).toHaveAttribute('data-visible-tracks', /cpu:.+,rpc:77,resource:12/);
   expect((await timeline.getAttribute('data-visible-tracks')).split(',').some(track => track.startsWith('pid:'))).toBe(false);
@@ -85,6 +90,41 @@ test('independently expands and collapses original KUtrace track groups', async 
   await page.locator('#track-mode').selectOption('cpu_pid');
   await waitForTimeline(page);
   await expect(timeline).toHaveAttribute('data-track-groups', 'cpu,pid,rpc,resource');
+});
+
+test('matches original three-state groups and line-label highlighting', async ({page}) => {
+  const timeline = page.locator('#timeline');
+  const cpuGroup = page.locator('[data-track-group="cpu"]');
+  const cpu0 = timeline.locator('.track-label[data-track="cpu:0"]');
+
+  await cpu0.click({modifiers: ['Shift']});
+  await waitForTimeline(page);
+  await expect(cpu0).toHaveAttribute('aria-pressed', 'true');
+  await expect(timeline).toHaveAttribute('data-highlighted-tracks', 'cpu:0');
+
+  await cpuGroup.click();
+  await waitForTimeline(page);
+  await expect(cpuGroup).toHaveAttribute('data-group-state', 'highlighted');
+  await expect(timeline).toHaveAttribute(
+    'data-track-group-states',
+    'cpu:highlighted,pid:full,rpc:full,resource:full',
+  );
+  const highlightedOnlyTracks = (await timeline.getAttribute('data-visible-tracks')).split(',');
+  expect(highlightedOnlyTracks.filter(track => track.startsWith('cpu:'))).toEqual(['cpu:0']);
+
+  await cpuGroup.click();
+  await waitForTimeline(page);
+  await expect(cpuGroup).toHaveAttribute('data-group-state', 'hidden');
+  expect((await timeline.getAttribute('data-visible-tracks')).split(',').some(track => track.startsWith('cpu:'))).toBe(false);
+
+  await cpuGroup.click();
+  await waitForTimeline(page);
+  await expect(cpuGroup).toHaveAttribute('data-group-state', 'full');
+  await expect(timeline).toHaveAttribute('data-visible-tracks', /cpu:0,cpu:1/);
+
+  await timeline.locator('.track-label[data-track="cpu:0"]').press('Enter');
+  await waitForTimeline(page);
+  await expect(timeline).toHaveAttribute('data-highlighted-tracks', '');
 });
 
 test('keeps vector geometry sharp through smooth WASD, wheel, and Alt-drag navigation', async ({page}) => {
@@ -367,20 +407,33 @@ test('keeps SQL, schema inspection, saved views, and portable workspace state', 
   await page.locator('#view-name').fill('Agent spans');
   await page.locator('#save-view').click();
   await expect(page.locator('#saved-views')).toContainText('Agent spans');
+  await page.locator('.track-label[data-track="cpu:0"]').click({modifiers: ['Shift']});
+  await page.locator('[data-track-group="cpu"]').click();
+  await waitForTimeline(page);
+  await expect(page.locator('[data-track-group="cpu"]')).toHaveAttribute(
+    'data-group-state',
+    'highlighted',
+  );
   await page.locator('#save-workspace').click();
   await page.reload();
   await waitForTimeline(page);
   await expect(page.locator('#filter-chips')).toContainText('category = agent');
   await expect(page.locator('#saved-views')).toContainText('Agent spans');
   await expect(page.locator('#sql')).toHaveValue('SELECT COUNT(*) AS agent_count FROM agent_spans');
+  await expect(page.locator('#timeline')).toHaveAttribute('data-highlighted-tracks', 'cpu:0');
+  await expect(page.locator('[data-track-group="cpu"]')).toHaveAttribute(
+    'data-group-state',
+    'highlighted',
+  );
 
   const download = page.waitForEvent('download');
   await page.locator('#export-workspace').click();
   const exported = await download;
   const workspace = JSON.parse(await readFile(await exported.path(), 'utf8'));
   expect(workspace.kind).toBe('kutrace-workspace');
-  expect(workspace.version).toBe(3);
-  expect(workspace.trackGroups).toEqual({cpu: true, pid: true, rpc: true, resource: true});
+  expect(workspace.version).toBe(4);
+  expect(workspace.trackGroups).toEqual({cpu: 'highlighted', pid: 'full', rpc: 'full', resource: 'full'});
+  expect(workspace.highlightedTracks).toEqual(['cpu:0']);
   expect(workspace.views).toEqual([{name: 'Agent spans', sql: 'SELECT COUNT(*) AS agent_count FROM agent_spans'}]);
 
   workspace.sql = 'SELECT name FROM profile_callchains LIMIT 3';

@@ -42,16 +42,20 @@ row and time limits.
 Available actions are `zoom-in`, `zoom-out`, `pan-left`, `pan-right`, `fit`,
 `dock:details`, `dock:flamegraph`, `dock:sql`, `dock:agent`,
 `agent:SPAN_ID`, `search:TEXT`, and `group:cpu|pid|rpc|resource`. Group actions
-expand or collapse the same human-visible KUtrace lane families.
+cycle the same human-visible KUtrace lane families through full,
+highlighted-only, and hidden when that family has highlighted rows; without a
+highlight they toggle full/hidden. `highlight:TRACK` toggles a visible row such
+as `cpu:0`, `pid:123`, `rpc:77`, or `resource:9`.
 
 ```sh
 node scripts/navigate.mjs http://127.0.0.1:3000 \
-  group:resource zoom-in pan-right dock:agent agent:42
+  highlight:cpu:0 group:cpu zoom-in pan-right dock:agent agent:42
 ```
 
 The helper prints JSON containing the current range, visible and highlighted
-tracks, renderer source, selection, and agent context. Treat failures to find a
-requested span or control as failed navigation, not as absence of trace data.
+tracks, each group state, renderer source, selection, and agent context. Treat
+failures to find a requested span or control as failed navigation, not as
+absence of trace data.
 
 ## Capture guidance
 
@@ -63,4 +67,6 @@ requested span or control as failed navigation, not as absence of trace data.
   mapped by the target, including `libc.so.6:pthread_mutex_lock`.
 - Add `--wait-for-modules` when the target may load that module later with
   `dlopen`; require `module_probes_unresolved=0` in the collector summary.
+- Use `--kprobe FUNCTION=LABEL` for one arbitrary traceable kernel function;
+  check `/sys/kernel/tracing/available_filter_functions` first.
 - Check collector loss counters before trusting a trace.

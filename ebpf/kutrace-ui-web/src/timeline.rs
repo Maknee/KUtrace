@@ -5,10 +5,12 @@ use std::{
 
 use gloo_timers::callback::Timeout;
 use wasm_bindgen::JsCast;
-use web_sys::{Element, MouseEvent, PointerEvent, WheelEvent};
+use web_sys::{Element, KeyboardEvent, MouseEvent, PointerEvent, WheelEvent};
 use yew::prelude::*;
 
-use crate::model::{Overlays, Range, TraceEvent, TrackGroups, TrackMode};
+use crate::model::{
+    Overlays, Range, TraceEvent, TrackGroupMode, TrackGroups, TrackMode,
+};
 
 const VIEW_WIDTH: f64 = 1_400.0;
 const LABEL_WIDTH: f64 = 116.0;
@@ -112,7 +114,49 @@ fn category_fill(category: &str, colorblind: bool) -> &'static str {
     }
 }
 
-fn track_keys(events: &[TraceEvent], groups: TrackGroups, range: Range) -> Vec<String> {
+fn track_group(track: &str) -> &str {
+    track.split_once(':').map_or("", |(group, _)| group)
+}
+
+fn group_has_highlight(group: &str, highlighted: &HashSet<String>) -> bool {
+    highlighted
+        .iter()
+        .any(|track| track_group(track) == group)
+}
+
+fn track_visible(track: &str, groups: TrackGroups, highlighted: &HashSet<String>) -> bool {
+    let group = track_group(track);
+    match groups.mode(group) {
+        TrackGroupMode::Hidden => false,
+        TrackGroupMode::Full => true,
+        TrackGroupMode::Highlighted => {
+            !group_has_highlight(group, highlighted) || highlighted.contains(track)
+        }
+    }
+}
+
+fn event_is_highlighted(event: &TraceEvent, highlighted: &HashSet<String>) -> bool {
+    if highlighted.is_empty() {
+        return true;
+    }
+    event
+        .render_track
+        .as_ref()
+        .is_some_and(|track| highlighted.contains(track))
+        || (event.cpu >= 0 && highlighted.contains(&format!("cpu:{}", event.cpu)))
+        || (event.pid > 0 && highlighted.contains(&format!("pid:{}", event.pid)))
+        || (event.rpc > 0 && highlighted.contains(&format!("rpc:{}", event.rpc)))
+        || (event.category == "resource"
+            && event.arg0 >= 0
+            && highlighted.contains(&format!("resource:{}", event.arg0)))
+}
+
+fn track_keys(
+    events: &[TraceEvent],
+    groups: TrackGroups,
+    highlighted: &HashSet<String>,
+    range: Range,
+) -> Vec<String> {
     let mut cpus = BTreeSet::new();
     let mut pids = BTreeSet::new();
     let mut rpcs = BTreeSet::new();
@@ -158,16 +202,16 @@ fn track_keys(events: &[TraceEvent], groups: TrackGroups, range: Range) -> Vec<S
         }
     }
     let mut tracks = Vec::new();
-    if groups.cpu {
+    if groups.enabled("cpu") {
         tracks.extend(cpus.into_iter().take(64).map(|cpu| format!("cpu:{cpu}")));
     }
-    if groups.pid {
+    if groups.enabled("pid") {
         tracks.extend(pids.into_iter().take(64).map(|pid| format!("pid:{pid}")));
     }
-    if groups.rpc {
+    if groups.enabled("rpc") {
         tracks.extend(rpcs.into_iter().take(64).map(|rpc| format!("rpc:{rpc}")));
     }
-    if groups.resource {
+    if groups.enabled("resource") {
         tracks.extend(
             resources
                 .into_iter()
@@ -175,6 +219,7 @@ fn track_keys(events: &[TraceEvent], groups: TrackGroups, range: Range) -> Vec<S
                 .map(|resource| format!("resource:{resource}")),
         );
     }
+    tracks.retain(|track| track_visible(track, groups, highlighted));
     tracks
 }
 
@@ -226,7 +271,12 @@ pub fn timeline(props: &TimelineProps) -> Html {
     let suppress_click = use_mut_ref(|| false);
     let drag_overlay = use_node_ref();
     let timeline_node = use_node_ref();
-    let tracks = track_keys(&props.events, props.groups, props.range);
+    let tracks = track_keys(
+        &props.events,
+        props.groups,
+        &props.highlighted,
+        props.range,
+    );
     let row_index: HashMap<&str, usize> = tracks
         .iter()
         .enumerate()
@@ -262,17 +312,17 @@ pub fn timeline(props: &TimelineProps) -> Html {
         if let Some(track) = &event.render_track {
             targets.push(track.clone());
         } else if event.pid > 0 && event.cpu >= 0 {
-            if props.groups.cpu {
+            if props.groups.enabled("cpu") {
                 targets.push(format!("cpu:{}", event.cpu));
             }
-            if props.groups.pid {
+            if props.groups.enabled("pid") {
                 targets.push(format!("pid:{}", event.pid));
             }
         }
-        if props.groups.rpc && event.rpc > 0 {
+        if props.groups.enabled("rpc") && event.rpc > 0 {
             targets.push(format!("rpc:{}", event.rpc));
         }
-        if props.groups.resource && event.category == "resource" && event.arg0 >= 0 {
+        if props.groups.enabled("resource") && event.category == "resource" && event.arg0 >= 0 {
             targets.push(format!("resource:{}", event.arg0));
         }
         targets.sort();
@@ -448,6 +498,7 @@ pub fn timeline(props: &TimelineProps) -> Html {
           data-preview-mode="vector"
           data-track-mode={props.mode.value()}
           data-track-groups={track_groups}
+          data-track-group-states={props.groups.states()}
           data-visible-tracks={visible_tracks}
           data-highlighted-tracks={highlighted_tracks}
           data-search-count={search_count.to_string()}
@@ -462,9 +513,35 @@ pub fn timeline(props: &TimelineProps) -> Html {
           { for tracks.iter().enumerate().map(|(index, track)| {
               let y = index as f64 * ROW_HEIGHT + 18.0;
               let emphasized = props.highlighted.is_empty() || props.highlighted.contains(track);
+              let selected = props.highlighted.contains(track);
+              let track_copy = track.clone();
+              let on_highlight = props.on_highlight.clone();
+              let onclick = Callback::from(move |event: MouseEvent| {
+                  event.stop_propagation();
+                  if event.shift_key() {
+                      on_highlight.emit(track_copy.clone());
+                  }
+              });
+              let track_copy = track.clone();
+              let on_highlight = props.on_highlight.clone();
+              let onkeydown = Callback::from(move |event: KeyboardEvent| {
+                  if matches!(event.key().as_str(),"Enter"|" ") {
+                      event.prevent_default();
+                      event.stop_propagation();
+                      on_highlight.emit(track_copy.clone());
+                  }
+              });
+              let onpointerdown = Callback::from(|event: PointerEvent| {
+                  event.stop_propagation();
+              });
               html! {<g class={classes!("track-row", (!emphasized).then_some("dimmed"))}>
                 <rect x="0" y={(y-16.0).to_string()} width={VIEW_WIDTH.to_string()} height={ROW_HEIGHT.to_string()} class="track-background"/>
-                <text x="8" y={(y+13.0).to_string()} class="track-label">{track_label(track)}</text>
+                <text x="8" y={(y+13.0).to_string()}
+                  class={classes!("track-label",selected.then_some("highlighted"))}
+                  data-track={track.clone()}
+                  tabindex="0" role="button" aria-pressed={selected.to_string()}
+                  aria-label={format!("Highlight {}",track_label(track))}
+                  {onclick} {onkeydown} {onpointerdown}>{track_label(track)}</text>
                 <line x1={LABEL_WIDTH.to_string()} y1={(y+13.0).to_string()} x2={VIEW_WIDTH.to_string()} y2={(y+13.0).to_string()} class="track-center"/>
               </g>}
           })}
@@ -474,7 +551,7 @@ pub fn timeline(props: &TimelineProps) -> Html {
                   let end = event.end.max(event.start + props.range.span() / (VIEW_WIDTH - LABEL_WIDTH));
                   let width = (x_at(end.min(props.range.end), props.range) - x).max(0.8);
                   let matched = event_matches(event, &props.search, props.search_invert);
-                  let emphasized = props.highlighted.is_empty() || props.highlighted.contains(&track);
+                  let emphasized = event_is_highlighted(event, &props.highlighted);
                   let (light, dark) = event_colors(event.event, props.overlays.colorblind);
                   let fill = if event.duration <= 0.0 { category_fill(&event.category, props.overlays.colorblind) } else { light };
                   let opacity = if emphasized && (props.search.is_empty() || matched) { 0.96 } else { 0.16 };

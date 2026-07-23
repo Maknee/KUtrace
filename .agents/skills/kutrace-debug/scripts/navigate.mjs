@@ -41,12 +41,19 @@ try {
       if (!['cpu', 'pid', 'rpc', 'resource'].includes(group)) {
         throw new Error(`unknown track group: ${group}`);
       }
-      const before = await page.locator('#timeline').getAttribute('data-track-groups');
+      const before = await page.locator('#timeline').getAttribute('data-track-group-states');
       await page.locator(`[data-track-group="${group}"]`).click();
       await page.waitForFunction(
-        previous => document.querySelector('#timeline')?.getAttribute('data-track-groups') !== previous,
+        previous => document.querySelector('#timeline')?.getAttribute('data-track-group-states') !== previous,
         before,
       );
+    } else if (action.startsWith('highlight:')) {
+      const track = action.slice('highlight:'.length);
+      const label = page.locator(`.track-label[data-track="${track}"]`);
+      if (await label.count() !== 1) {
+        throw new Error(`visible track not found: ${track}`);
+      }
+      await label.press('Enter');
     } else {
       throw new Error(`unknown action: ${action}`);
     }
@@ -65,6 +72,12 @@ try {
     trackGroups: (await timeline.getAttribute('data-track-groups') ?? '')
       .split(',')
       .filter(Boolean),
+    trackGroupStates: Object.fromEntries(
+      (await timeline.getAttribute('data-track-group-states') ?? '')
+        .split(',')
+        .filter(Boolean)
+        .map(value => value.split(':', 2)),
+    ),
     highlightedTracks: (await timeline.getAttribute('data-highlighted-tracks') ?? '')
       .split(',')
       .filter(Boolean),
