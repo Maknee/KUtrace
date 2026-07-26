@@ -91,16 +91,6 @@
 .advanced-span-highlight-lane { fill:#f59e0b; fill-opacity:.20; stroke:#9a3412; stroke-width:2.5px; }
 .advanced-span-highlight-label-bg { fill:#fff7ed; fill-opacity:.96; stroke:#c2410c; stroke-width:1px; }
 .advanced-span-highlight-label { fill:#7c2d12; font-family:sans-serif; font-weight:700; }
-.span-layout-select { max-width:190px; border:1px solid #aeb7c4; border-radius:5px; background:#fff; }
-.span-layout-status { display:inline-block; max-width:310px; overflow:hidden; color:#5f6b7a;
-  font-family:sans-serif; font-size:11px; text-overflow:ellipsis; vertical-align:middle; white-space:nowrap; }
-.span-layout-layer { pointer-events:none; }
-.span-layout-background { fill:#f8fafc; fill-opacity:.94; stroke:#64748b; stroke-width:1px; }
-.span-layout-header { fill:#334155; font-family:sans-serif; font-size:11px; font-weight:700; }
-.span-layout-row-guide { stroke:#cbd5e1; stroke-width:1px; }
-.span-layout-bar { fill-opacity:.84; stroke:#334155; stroke-width:.75px; }
-.span-layout-bar-selected { fill:#fb923c; fill-opacity:.96; stroke:#9a3412; stroke-width:2px; }
-.span-layout-label { fill:#0f172a; font-family:sans-serif; font-size:10px; font-weight:600; }
 .time-history-panel { left:50%; right:auto; width:min(520px, calc(100vw - 24px)); transform:translateX(-50%); }
 .time-history-panel.drag-positioned { transform:none; }
 .time-history-list { max-height:390px; overflow:auto; border:1px solid #e4e8ee; border-radius:5px; }
@@ -468,7 +458,7 @@
 //----------------------------------------------------------------------------//
 
 // Version control for this HTML file
-var script_edit_date = "(ver2026-07-26 span-layout-experiment)";  // Shown in secondary menu for identification
+var script_edit_date = "(ver2026-07-21)";  // Shown in secondary menu for identification
 
 var book = false;		// Set true to get defaults for creating book diagrams
 
@@ -971,8 +961,6 @@ var spanSearchSelectedIndex = -1;
 var spanSearchSelectionVisible = false;
 var spanSearchError = "";
 const spanSearchRenderLimit = 120;
-const spanLayoutRenderLimit = 4000;
-var spanLayoutRenderInfo = {visible:0, drawn:0, lanes:0, hidden:0, capped:0};
 const advancedSearchUiStorageKey = "kutrace.advancedSpanSearch.ui.v1";
 var advancedSearchLastFocusId = "spanRegexSearch";
 var spanSearchTimerHandle = null;
@@ -1331,7 +1319,6 @@ var state2 = {
   span_search_text: "",
   span_filter_enabled: 0,
   span_label_scale: 1.0,
-  span_layout_value: 0,
 
   dummy: 0			// No comma here
 };
@@ -1587,7 +1574,6 @@ console.log("initializeState");
   state2.span_search_text = "";
   state2.span_filter_enabled = 0;
   state2.span_label_scale = 1.0;
-  state2.span_layout_value = 0;
   syncFilterSetsFromState();
   ////state.textmultiplier_value = 0;
   state2.basetime0_value = 0;
@@ -1966,7 +1952,6 @@ function resetlines() {
   d3.selectAll(".rubberbackground").remove() ;
   d3.selectAll(".rubbertext").remove() ;
   d3.selectAll(".advanced-span-highlight").remove() ;
-  d3.selectAll(".span-layout-layer").remove() ;
 
   dont_annotate = [];
   dont_annotate[0x10000] = true;	// Never label -idle- event
@@ -4528,8 +4513,6 @@ function padLaneFilterState(st) {
   if (st.span_filter_enabled !== 1) {st.span_filter_enabled = 0;}
   if (!isFinite(st.span_label_scale)) {st.span_label_scale = 1.0;}
   st.span_label_scale = Math.max(0.5, Math.min(3.0, +st.span_label_scale));
-  if (![0, 1, 2, 3].includes(+st.span_layout_value)) {st.span_layout_value = 0;}
-  st.span_layout_value = +st.span_layout_value;
   return st;
 }
 
@@ -4724,40 +4707,6 @@ function adjustSpanLabelScale(delta) {
 
 function resetSpanLabelScale() {
   setSpanLabelScale(1.0);
-}
-
-const spanLayoutNames = [
-  "Native rows",
-  "Packed (fewest rows)",
-  "Packed by PID",
-  "Waterfall (one per row)"
-];
-
-function updateSpanLayoutControls() {
-  var control = document.getElementById("spanLayoutSelect");
-  if (control != null) {control.value = state2.span_layout_value || 0;}
-  var status = document.getElementById("spanLayoutStatus");
-  if (status == null) {return;}
-  if ((state2.span_layout_value || 0) == 0) {
-    status.textContent = "Native timeline";
-    status.title = "Native CPU, PID, RPC, and resource rows";
-    return;
-  }
-  var info = spanLayoutRenderInfo;
-  var text = info.drawn.toLocaleString() + " spans in " +
-      info.lanes.toLocaleString() + " non-overlapping rows";
-  if (info.hidden) {text += " · " + info.hidden.toLocaleString() + " withheld";}
-  if (info.capped) {text += " · " + info.capped.toLocaleString() + " beyond render limit";}
-  status.textContent = text;
-  status.title = spanLayoutNames[state2.span_layout_value] + ": " + text;
-}
-
-function setSpanLayout(value) {
-  value = +value;
-  state2.span_layout_value = [0, 1, 2, 3].includes(value) ? value : 0;
-  spanLayoutRenderInfo = {visible:0, drawn:0, lanes:0, hidden:0, capped:0};
-  redrawEventsEtc();
-  updateSpanLayoutControls();
 }
 
 function verticalResetShortcut(e) {
@@ -6719,208 +6668,6 @@ function annotateFilteredSymbols() {
   }
 }
 
-// Build pixel-space span intervals for the experimental layouts. Packing in
-// pixels (rather than timestamps) accounts for the minimum three-pixel bar
-// width, so two tiny spans assigned to one row still never touch.
-function visibleSpanLayoutItems() {
-  var source = spanSearchRecords;
-  if ((state2.span_search_text || "").length || state2.span_filter_enabled == 1) {
-    source = spanSearchMatches;
-  } else if (selectedSpanSet.size) {
-    source = spanSearchRecords.filter(function(record) {
-      return selectedSpanSet.has(record.name);
-    });
-  }
-  var leftPx = axesmargin;
-  var rightPx = region3width - axesmargin;
-  var items = [];
-  for (var i = 0; i < source.length; ++i) {
-    var record = source[i];
-    if ((record.end < realxleft) || (realxright < record.start)) {continue;}
-    var d = data.events[record.eventIndex];
-    if ((d == null) || !passesLaneFilters(d)) {continue;}
-    var x0 = Math.max(leftPx, Math.min(rightPx, x_zoomed(record.start)));
-    var x1 = Math.max(leftPx, Math.min(rightPx, x_zoomed(record.end)));
-    if (x1 < x0) {var swap = x0; x0 = x1; x1 = swap;}
-    if (x1 - x0 < 3) {
-      x0 = Math.max(leftPx, Math.min(x0, rightPx - 3));
-      x1 = x0 + 3;
-    }
-    items.push({record:record, x0:x0, x1:x1, sourceIndex:i, lane:-1});
-  }
-  items.sort(function(a, b) {
-    return a.x0 - b.x0 || a.x1 - b.x1 ||
-        a.record.eventIndex - b.record.eventIndex;
-  });
-  return items;
-}
-
-// Interval partitioning with a visual gap. Choosing the eligible lane whose
-// previous end is latest keeps the result compact while retaining stability.
-function assignPackedSpanLanes(items, firstLane, gapPx) {
-  var laneEnds = [];
-  for (var i = 0; i < items.length; ++i) {
-    var bestLane = -1;
-    var bestEnd = -Infinity;
-    for (var lane = 0; lane < laneEnds.length; ++lane) {
-      if ((laneEnds[lane] + gapPx <= items[i].x0) && (bestEnd < laneEnds[lane])) {
-        bestLane = lane;
-        bestEnd = laneEnds[lane];
-      }
-    }
-    if (bestLane < 0) {
-      bestLane = laneEnds.length;
-      laneEnds.push(-Infinity);
-    }
-    items[i].lane = firstLane + bestLane;
-    laneEnds[bestLane] = items[i].x1;
-  }
-  return laneEnds.length;
-}
-
-function assignSpanLayoutLanes(items, layoutValue) {
-  if (layoutValue == 3) {
-    for (var i = 0; i < items.length; ++i) {items[i].lane = i;}
-    return items.length;
-  }
-  if (layoutValue != 2) {return assignPackedSpanLanes(items, 0, 3);}
-
-  var groups = new Map();
-  for (var itemIndex = 0; itemIndex < items.length; ++itemIndex) {
-    var item = items[itemIndex];
-    var key = item.record.pid + "|" + item.record.thread;
-    if (!groups.has(key)) {
-      groups.set(key, {pid:item.record.pid, thread:item.record.thread, items:[]});
-    }
-    groups.get(key).items.push(item);
-  }
-  var sortedGroups = Array.from(groups.values()).sort(function(a, b) {
-    return a.pid - b.pid || a.thread.localeCompare(b.thread);
-  });
-  var laneOffset = 0;
-  for (var groupIndex = 0; groupIndex < sortedGroups.length; ++groupIndex) {
-    laneOffset += assignPackedSpanLanes(sortedGroups[groupIndex].items, laneOffset, 3);
-  }
-  return laneOffset;
-}
-
-function spanLayoutColor(record) {
-  var text = record.name + "|" + record.pid;
-  var hash = 0;
-  for (var i = 0; i < text.length; ++i) {
-    hash = ((hash << 5) - hash + text.charCodeAt(i)) | 0;
-  }
-  return "hsl(" + (Math.abs(hash) % 360) + ",70%,72%)";
-}
-
-function spanLayoutBarLabel(record, layoutValue) {
-  if (layoutValue == 2) {return record.name;}
-  return record.name + " · PID " + record.pid;
-}
-
-function drawSpanLayoutExperiment() {
-  var layoutValue = +(state2.span_layout_value || 0);
-  if (!layoutValue || (data == null)) {
-    spanLayoutRenderInfo = {visible:0, drawn:0, lanes:0, hidden:0, capped:0};
-    updateSpanLayoutControls();
-    return;
-  }
-
-  var allItems = visibleSpanLayoutItems();
-  var cappedCount = Math.max(0, allItems.length - spanLayoutRenderLimit);
-  var items = allItems.slice(0, spanLayoutRenderLimit);
-  var selectedRecord = (spanSearchSelectionVisible && 0 <= spanSearchSelectedIndex &&
-      spanSearchSelectedIndex < spanSearchMatches.length) ?
-      spanSearchMatches[spanSearchSelectedIndex] : null;
-  if (selectedRecord != null && cappedCount &&
-      !items.some(function(item) {return item.record === selectedRecord;})) {
-    for (var allIndex = spanLayoutRenderLimit; allIndex < allItems.length; ++allIndex) {
-      if (allItems[allIndex].record === selectedRecord) {
-        items[items.length - 1] = allItems[allIndex];
-        items.sort(function(a, b) {return a.x0 - b.x0 || a.x1 - b.x1;});
-        break;
-      }
-    }
-  }
-
-  var requiredLanes = assignSpanLayoutLanes(items, layoutValue);
-  var headerHeight = 21;
-  var laneHeight = 18;
-  var top = 29;
-  var availableRailHeight = Math.max(headerHeight + laneHeight + 4, region234height - top - 4);
-  var desiredRailHeight = Math.max(58, Math.min(420, region234height * 0.60));
-  var maxRailHeight = Math.min(availableRailHeight, desiredRailHeight);
-  var maxLanes = Math.max(1, Math.floor((maxRailHeight - headerHeight - 4) / laneHeight));
-  var shownLanes = Math.min(requiredLanes, maxLanes);
-  var shownItems = items.filter(function(item) {return item.lane < shownLanes;});
-  var withheld = items.length - shownItems.length;
-  spanLayoutRenderInfo = {
-    visible:allItems.length, drawn:shownItems.length, lanes:shownLanes,
-    hidden:withheld, capped:cappedCount
-  };
-  updateSpanLayoutControls();
-  if (!shownItems.length) {return;}
-
-  var leftPx = axesmargin;
-  var rightPx = region3width - axesmargin;
-  var railHeight = headerHeight + shownLanes * laneHeight + 4;
-  var layer = innersvgdotg.append("g")
-      .attr("class", "span-layout-layer")
-      .attr("data-layout", layoutValue);
-  layer.append("rect")
-      .attr("class", "span-layout-background")
-      .attr("x", leftPx).attr("y", top)
-      .attr("width", Math.max(1, rightPx - leftPx)).attr("height", railHeight)
-      .attr("rx", 5);
-  var header = spanLayoutNames[layoutValue] + " · " +
-      shownItems.length.toLocaleString() + " visible spans · " +
-      shownLanes.toLocaleString() + " rows";
-  if (withheld || cappedCount) {
-    header += " · " + (withheld + cappedCount).toLocaleString() + " not drawn";
-  }
-  layer.append("text")
-      .attr("class", "span-layout-header")
-      .attr("x", leftPx + 6).attr("y", top + 14)
-      .text(header);
-
-  for (var lane = 1; lane < shownLanes; ++lane) {
-    var guideY = top + headerHeight + lane * laneHeight;
-    layer.append("line")
-        .attr("class", "span-layout-row-guide")
-        .attr("x1", leftPx + 1).attr("x2", rightPx - 1)
-        .attr("y1", guideY).attr("y2", guideY);
-  }
-
-  for (var itemIndex = 0; itemIndex < shownItems.length; ++itemIndex) {
-    var item = shownItems[itemIndex];
-    var y0 = top + headerHeight + item.lane * laneHeight + 2;
-    var width = Math.max(3, item.x1 - item.x0);
-    var selected = item.record === selectedRecord;
-    layer.append("rect")
-        .attr("class", selected ? "span-layout-bar span-layout-bar-selected" : "span-layout-bar")
-        .attr("data-lane", item.lane)
-        .attr("data-event-index", item.record.eventIndex)
-        .attr("x", item.x0).attr("y", y0)
-        .attr("width", width).attr("height", laneHeight - 4)
-        .attr("rx", 2)
-        .attr("fill", selected ? null : spanLayoutColor(item.record));
-
-    var maxChars = Math.floor((width - 6) / 5.6);
-    if (maxChars < 3) {continue;}
-    var label = spanLayoutBarLabel(item.record, layoutValue);
-    if (label.length > maxChars) {
-      label = maxChars < 5 ? "" : label.substr(0, maxChars - 1) + "\u2026";
-    }
-    if (!label.length) {continue;}
-    layer.append("text")
-        .attr("class", "span-layout-label")
-        .attr("x", item.x0 + 3).attr("y", y0 + laneHeight - 7)
-        .attr("textLength", Math.min(width - 6, label.length * 5.6))
-        .attr("lengthAdjust", "spacingAndGlyphs")
-        .text(label);
-  }
-}
-
 function drawSelectedSpanSearchHighlight() {
   if (!spanSearchSelectionVisible || spanSearchSelectedIndex < 0 ||
       spanSearchMatches.length <= spanSearchSelectedIndex) {return;}
@@ -7008,7 +6755,6 @@ function redrawEventsEtc() {
 
   // Draw all events onscreen, plus marks, plus IPC
   redrawEvents();
-  drawSpanLayoutExperiment();
   drawSelectedSpanSearchHighlight();
   annotateFilteredSymbols();
 
@@ -7463,7 +7209,6 @@ function redrawUI() {
   updateAdvancedSearchButton();
   updateTimeHistoryControls();
   updateSpanLabelControls();
-  updateSpanLayoutControls();
   var templateControl = document.getElementById("viewTemplateSelect");
   if (templateControl != null) {templateControl.value = state2.view_template_value || 0;}
 
@@ -10969,9 +10714,6 @@ function initAll() {
   document.getElementById("spanLabelDecrease").onclick = function() {adjustSpanLabelScale(-0.25);};
   document.getElementById("spanLabelReset").onclick = resetSpanLabelScale;
   document.getElementById("spanLabelIncrease").onclick = function() {adjustSpanLabelScale(0.25);};
-  document.getElementById("spanLayoutSelect").onchange = function(e) {
-    setSpanLayout(e.target.value);
-  };
   document.getElementById("viewTemplateSelect").onchange = applyViewTemplate;
   installLaneFilterDrag();
   installAdvancedSearchDrag();
@@ -11038,10 +10780,9 @@ function initAll() {
   window.addEventListener("hashchange", restoreSharedViewFromHash);
   // Load initial data, if any
   if (typeof(myString) !== 'undefined') {
-    // Older makeself versions embed a comma-separated byte string; the
-    // streaming packager embeds the same bytes directly as a Uint8Array.
-    const compressedData = (myString instanceof Uint8Array) ? myString :
-        Uint8Array.from(myString.split(',').filter(Boolean), value => Number(value));
+    // const compressedData = Uint8Array.from(myString, c => c.charCodeAt(0));
+    const compressedData = Uint8Array.from(
+        myString.split(',').filter(Boolean), value => Number(value));
     decompress(compressedData).then(decompressed => {
       var data2 = JSON.parse(decompressed);
       newdata2(data2);
@@ -11298,17 +11039,6 @@ function unloadSaveState() {
 <button id="spanLabelIncrease" type="button" style="border-radius:6px"
         title="Increase span-label size">+</button>
 
-&nbsp;&nbsp;Span layout:
-<select id="spanLayoutSelect" class="span-layout-select"
-        title="Experimental layouts for preventing visible span overlap">
-  <option value="0">Native rows</option>
-  <option value="1">Packed (fewest rows)</option>
-  <option value="2">Packed by PID</option>
-  <option value="3">Waterfall (one per row)</option>
-</select>
-<span id="spanLayoutStatus" class="span-layout-status" role="status"
-      aria-live="polite">Native timeline</span>
-
 &nbsp;&nbsp;View:
 <select id="viewTemplateSelect" class="view-template-select" title="Choose a lane-layout template">
   <option value="0">Default</option>
@@ -11422,10 +11152,6 @@ function unloadSaveState() {
      Share view			 copy a trace-specific link to this exact saved state
      O / Reset Y		 reset vertical shift and zoom only
      Span labels - / % / +	 decrease, reset, or increase span-name text
-     Span layout Native		 draw the original CPU/PID/RPC/resource rows
-     Span layout Packed		 overlay matching spans in the fewest collision-free rows
-     Span layout Packed by PID	 preserve PID grouping and pack overlaps within each PID
-     Span layout Waterfall	 put each visible span on its own chronological row
      Filter/Search/History	 drag by title; resize from the lower-right corner
 
      Search:    regex string match 
