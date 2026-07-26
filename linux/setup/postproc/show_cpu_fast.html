@@ -4351,6 +4351,147 @@ function packupState() {
   return CompressStringify(state2);
 }
 
+const sharedViewHashPrefix = "#view=";
+const sharedViewVersion = 1;
+const sharedViewMaxEncodedLength = 500000;
+
+function shareTraceIdentity() {
+  if ((data != null) && (typeof data.randomid !== "undefined")) {return "id:" + data.randomid;}
+  if ((data != null) && data.tracebase) {return "time:" + data.tracebase;}
+  return "title:" + ((data != null) ? data.title : "");
+}
+
+function bytesToUrlBase64(bytes) {
+  var binary = "";
+  const chunkSize = 0x8000;
+  for (var i = 0; i < bytes.length; i += chunkSize) {
+    binary += String.fromCharCode.apply(null, bytes.subarray(i, i + chunkSize));
+  }
+  return btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+}
+
+function urlBase64ToBytes(value) {
+  var base64 = value.replace(/-/g, "+").replace(/_/g, "/");
+  base64 += "===".slice((base64.length + 3) % 4);
+  var binary = atob(base64);
+  var bytes = new Uint8Array(binary.length);
+  for (var i = 0; i < binary.length; ++i) {bytes[i] = binary.charCodeAt(i);}
+  return bytes;
+}
+
+function encodeSharedView() {
+  var payload = {
+    version: sharedViewVersion,
+    trace: shareTraceIdentity(),
+    state: JSON.parse(packupState()),
+    frame: {
+      ytop: y_zoomed.invert(0),
+      ybottom: y_zoomed.invert(region234height)
+    }
+  };
+  return bytesToUrlBase64(new TextEncoder().encode(JSON.stringify(payload)));
+}
+
+function decodeSharedViewHash() {
+  if (window.location.hash.indexOf(sharedViewHashPrefix) !== 0) {return null;}
+  var encoded = window.location.hash.slice(sharedViewHashPrefix.length);
+  if (!encoded.length || encoded.length > sharedViewMaxEncodedLength) {
+    throw new Error("Shared view is empty or too large");
+  }
+  var payload = JSON.parse(new TextDecoder().decode(urlBase64ToBytes(encoded)));
+  if ((payload == null) || (payload.version !== sharedViewVersion) ||
+      (payload.trace !== shareTraceIdentity()) || (payload.state == null) ||
+      !Array.isArray(payload.state.rowToHilite)) {
+    throw new Error("Shared view does not match this trace");
+  }
+  return payload;
+}
+
+function setShareViewStatus(message, isError) {
+  var status = document.getElementById("shareViewStatus");
+  if (status == null) {return;}
+  status.textContent = message;
+  status.style.color = isError ? "#a00000" : "#166534";
+}
+
+async function shareCurrentView() {
+  var encoded = encodeSharedView();
+  if (encoded.length > sharedViewMaxEncodedLength) {
+    setShareViewStatus("View is too large to share", true);
+    return null;
+  }
+  var link = window.location.href.split("#")[0] + sharedViewHashPrefix + encoded;
+  try {
+    if ((navigator.clipboard == null) || (navigator.clipboard.writeText == null)) {
+      throw new Error("Clipboard API unavailable");
+    }
+    await navigator.clipboard.writeText(link);
+    setShareViewStatus("Link copied", false);
+  } catch (error) {
+    window.prompt("Copy this shared-view link:", link);
+    setShareViewStatus("Link ready to copy", false);
+  }
+  return link;
+}
+
+function restoreSharedVerticalWindow(ytop, ybottom) {
+  var sy0 = y(ytop), sy1 = y(ybottom);
+  if (!isFinite(sy0) || !isFinite(sy1) || Math.abs(sy1 - sy0) < 0.000001) {return;}
+  var scale = region234height / (sy1 - sy0);
+  var translate = -scale * sy0;
+  var transform = d3.zoomIdentity.translate(0, translate).scale(scale);
+  panzoomrect_y.call(myZoom_y.transform, transform);
+  panzoomrect_y.call(myZoom_y);
+}
+
+function restoreSharedViewFromHash() {
+  if ((data == null) || (window.location.hash.indexOf(sharedViewHashPrefix) !== 0)) {return false;}
+  try {
+    var sharedPayload = decodeSharedViewHash();
+    if (sharedPayload == null) {return false;}
+    var requestedState = sharedPayload.state;
+    var sharedState = JSON.stringify(requestedState);
+    var initialState = packupState();
+    var hadSavedViews = data.savedview.length > 0;
+    var tempIndex = data.savedview.length;
+    data.savedview.push(["shared-link", sharedState]);
+    DoRestore(tempIndex);
+    data.savedview.pop();
+
+    // Raw transforms are viewport-dependent. Restore the semantic windows after
+    // the selected filters/template have rebuilt the X and Y scales.
+    ZoomToLeftWidth(requestedState.xleft_ts,
+        requestedState.xright_ts - requestedState.xleft_ts);
+    var ytop = (sharedPayload.frame && isFinite(sharedPayload.frame.ytop)) ?
+        sharedPayload.frame.ytop : requestedState.ytop_track;
+    var ybottom = (sharedPayload.frame && isFinite(sharedPayload.frame.ybottom)) ?
+        sharedPayload.frame.ybottom : requestedState.ybot_track;
+    restoreSharedVerticalWindow(ytop, ybottom);
+
+    // Programmatic zoom callbacks normally clear bulk annotations. A shared
+    // view is a restore, not a user pan, so put those saved choices back.
+    state2.annotateuser_value = requestedState.annotateuser_value;
+    state2.annotateall_value = requestedState.annotateall_value;
+    state2.annotated_one_d = requestedState.annotated_one_d;
+    redrawUI();
+    redrawEventsEtc();
+
+    if (hadSavedViews) {
+      data.savedview[0][1] = initialState;
+      var backButton = document.getElementById("view0");
+      if (backButton != null) {decorateSave(backButton, true);}
+    }
+    resetTimeViewHistory();
+    recordTimeViewHistory();
+    setShareViewStatus("Shared view loaded", false);
+    return true;
+  } catch (error) {
+    console.warn("Could not restore shared view:", error);
+    setShareViewStatus("Invalid shared view", true);
+    return false;
+  }
+}
+
 function padLaneFilterState(st) {
   if (!Array.isArray(st.filter_pid_values)) {st.filter_pid_values = [];}
   if (!Array.isArray(st.filter_cpu_values)) {st.filter_cpu_values = [];}
@@ -10473,6 +10614,7 @@ function initAll() {
   document.getElementById("showfilters").onclick = doToggleLaneFilterPanel;
   document.getElementById("showAdvancedSearch").onclick = doToggleAdvancedSearchPanel;
   document.getElementById("showTimeHistory").onclick = doToggleTimeHistoryPanel;
+  document.getElementById("shareCurrentView").onclick = shareCurrentView;
   document.getElementById("resetVerticalView").onclick = resetVerticalPanZoom;
   document.getElementById("spanLabelDecrease").onclick = function() {adjustSpanLabelScale(-0.25);};
   document.getElementById("spanLabelReset").onclick = resetSpanLabelScale;
@@ -10540,6 +10682,7 @@ function initAll() {
   window.addEventListener("resize", clampLaneFilterPanel);
   window.addEventListener("resize", clampAdvancedSearchPanel);
   window.addEventListener("resize", clampTimeHistoryPanel);
+  window.addEventListener("hashchange", restoreSharedViewFromHash);
   // Load initial data, if any
   if (typeof(myString) !== 'undefined') {
     // const compressedData = Uint8Array.from(myString, c => c.charCodeAt(0));
@@ -10552,13 +10695,17 @@ function initAll() {
       // Use the initial window size to calculate svg size
       resizeWindowEtc();
 
+      // A URL fragment is explicit and takes precedence over the optional
+      // same-browser localStorage back-link.
+      var restoredSharedView = restoreSharedViewFromHash();
+
       // Import from localStorage
       // If there is an Item saved for this document, use it to initialize savedview[0],
       // so the user can then use the back arrow to go it. 
       // We do not automatically go to it it because it might be old and bogus, or 
       // the user might not want that view.
       var tempstr = localStorage.getItem(localStorageKey);
-      if (tempstr) {
+      if (tempstr && !restoredSharedView) {
         data.savedview[0][1] = tempstr;
         decorateSave(document.getElementById("view0"),true);
         redrawUI();
@@ -10781,6 +10928,11 @@ function unloadSaveState() {
   </div>
 </span>
 
+<button id="shareCurrentView" type="button" style="border-radius:6px"
+        title="Copy a link that restores this exact view">Share view</button>
+<span id="shareViewStatus" role="status" aria-live="polite"
+      style="font-family:sans-serif; font-size:11px"></span>
+
 <button id="resetVerticalView" type="button" style="border-radius:6px"
         title="Reset vertical shift and zoom (O)">Reset Y (O)</button>
 
@@ -10902,6 +11054,7 @@ function unloadSaveState() {
      Esc			 close Advanced span search without clearing it
      H				 open time-view history
      J / K			 previous / forward time view
+     Share view			 copy a trace-specific link to this exact saved state
      O / Reset Y		 reset vertical shift and zoom only
      Span labels - / % / +	 decrease, reset, or increase span-name text
      Filter/Search/History	 drag by title; resize from the lower-right corner
