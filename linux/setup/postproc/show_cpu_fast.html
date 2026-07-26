@@ -86,6 +86,11 @@
 .advanced-search-name { min-width:0; flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .advanced-search-context { color:#5f6b7a; font-size:12px; white-space:nowrap; }
 .advanced-search-status { min-height:18px; margin:6px 0; color:#5f6b7a; font-size:12px; }
+.advanced-span-highlight { pointer-events:none; }
+.advanced-span-highlight-band { fill:#f59e0b; fill-opacity:.09; stroke:#c2410c; stroke-width:2px; }
+.advanced-span-highlight-lane { fill:#f59e0b; fill-opacity:.20; stroke:#9a3412; stroke-width:2.5px; }
+.advanced-span-highlight-label-bg { fill:#fff7ed; fill-opacity:.96; stroke:#c2410c; stroke-width:1px; }
+.advanced-span-highlight-label { fill:#7c2d12; font-family:sans-serif; font-weight:700; }
 .time-history-panel { left:50%; right:auto; width:min(520px, calc(100vw - 24px)); transform:translateX(-50%); }
 .time-history-panel.drag-positioned { transform:none; }
 .time-history-list { max-height:390px; overflow:auto; border:1px solid #e4e8ee; border-radius:5px; }
@@ -953,6 +958,7 @@ var spanSearchRecords = [];
 var spanSearchMatches = [];
 var spanSearchEventSet = new Set();
 var spanSearchSelectedIndex = -1;
+var spanSearchSelectionVisible = false;
 var spanSearchError = "";
 const spanSearchRenderLimit = 120;
 const advancedSearchUiStorageKey = "kutrace.advancedSpanSearch.ui.v1";
@@ -1945,6 +1951,7 @@ function resetlines() {
   d3.selectAll(".rubberline").remove() ;
   d3.selectAll(".rubberbackground").remove() ;
   d3.selectAll(".rubbertext").remove() ;
+  d3.selectAll(".advanced-span-highlight").remove() ;
 
   dont_annotate = [];
   dont_annotate[0x10000] = true;	// Never label -idle- event
@@ -6661,6 +6668,55 @@ function annotateFilteredSymbols() {
   }
 }
 
+function drawSelectedSpanSearchHighlight() {
+  if (!spanSearchSelectionVisible || spanSearchSelectedIndex < 0 ||
+      spanSearchMatches.length <= spanSearchSelectedIndex) {return;}
+  var record = spanSearchMatches[spanSearchSelectedIndex];
+  var rawX0 = x_zoomed(record.start), rawX1 = x_zoomed(record.end);
+  if ((rawX1 < axesmargin) || (region3width - axesmargin < rawX0)) {return;}
+  var x0 = Math.max(axesmargin, Math.min(region3width - axesmargin, rawX0));
+  var x1 = Math.max(axesmargin, Math.min(region3width - axesmargin, rawX1));
+  if (x1 < x0) {var swap = x0; x0 = x1; x1 = swap;}
+  var spanWidth = Math.max(3, x1 - x0);
+  var spanX = Math.min(x0, region3width - axesmargin - spanWidth);
+
+  innersvgdotg.append("rect")
+    .attr("class", "advanced-span-highlight advanced-span-highlight-band")
+    .attr("x", spanX).attr("y", 0)
+    .attr("width", spanWidth).attr("height", region234height);
+
+  var d = data.events[record.eventIndex];
+  var row = getfirstrow(d);
+  if (0 <= row) {
+    var rowheight = rowToHeight[row];
+    var laneY = y_zoomed(rowToTrack[row]) + perTracksize[rowheight].eventoffset;
+    var laneHeight = Math.max(9, perTracksize[rowheight].eventheight + 6);
+    innersvgdotg.append("rect")
+      .attr("class", "advanced-span-highlight advanced-span-highlight-lane")
+      .attr("x", spanX).attr("y", laneY - laneHeight / 2)
+      .attr("width", spanWidth).attr("height", laneHeight);
+  }
+
+  var fontSize = Math.min(22, Math.max(12, textsize.smalltick * getSpanLabelScale()));
+  var label = "SPAN " + (spanSearchSelectedIndex + 1) + "/" + spanSearchMatches.length +
+      " · " + record.name + " · " + formatSpanSearchTime(record.duration);
+  var maxChars = Math.max(16, Math.floor((region3width - 16) / (fontSize * 0.56)));
+  if (maxChars < label.length) {label = label.substr(0, maxChars - 1) + "\u2026";}
+  var labelWidth = Math.min(region3width - 12, (label.length + 1) * fontSize * 0.56 + 10);
+  var labelX = Math.max(axesmargin + 2,
+      Math.min(region3width - axesmargin - labelWidth - 2, spanX + 4));
+  innersvgdotg.append("rect")
+    .attr("class", "advanced-span-highlight advanced-span-highlight-label-bg")
+    .attr("x", labelX).attr("y", 3)
+    .attr("width", labelWidth).attr("height", fontSize + 7)
+    .attr("rx", 4);
+  innersvgdotg.append("text")
+    .attr("class", "advanced-span-highlight advanced-span-highlight-label")
+    .attr("x", labelX + 5).attr("y", fontSize + 4)
+    .attr("font-size", fontSize + "px")
+    .text(label);
+}
+
 
 //// Called when starting all over with new window size
 // Outer and inner SVGs exist but are empty
@@ -6699,6 +6755,7 @@ function redrawEventsEtc() {
 
   // Draw all events onscreen, plus marks, plus IPC
   redrawEvents();
+  drawSelectedSpanSearchHighlight();
   annotateFilteredSymbols();
 
   // If there is a previous single annotation and it is onscreen, draw it
@@ -7605,6 +7662,7 @@ function rebuildSpanSearchMatches(redraw) {
   var previousEventIndex = (0 <= spanSearchSelectedIndex &&
       spanSearchSelectedIndex < spanSearchMatches.length) ?
       spanSearchMatches[spanSearchSelectedIndex].eventIndex : -1;
+  var previousSelectionVisible = spanSearchSelectionVisible;
   var expression = null;
   var error = "";
   try {
@@ -7629,20 +7687,26 @@ function rebuildSpanSearchMatches(redraw) {
     }
   }
   spanSearchSelectedIndex = -1;
+  var restoredPreviousSelection = false;
   if (spanSearchMatches.length) {
     spanSearchSelectedIndex = 0;
     if (0 <= previousEventIndex) {
       for (var j = 0; j < spanSearchMatches.length; ++j) {
         if (spanSearchMatches[j].eventIndex == previousEventIndex) {
           spanSearchSelectedIndex = j;
+          restoredPreviousSelection = true;
           break;
         }
       }
     }
   }
+  spanSearchSelectionVisible = previousSelectionVisible && restoredPreviousSelection;
   renderAdvancedSearchPanel(error);
   if (redraw && state2.span_filter_enabled == 1) {applyLaneFilters();}
-  else if (redraw) {updateAdvancedSearchButton();}
+  else if (redraw) {
+    updateAdvancedSearchButton();
+    redrawEventsEtc();
+  }
 }
 
 function updateAdvancedSearchButton() {
@@ -7672,6 +7736,11 @@ function renderAdvancedSearchPanel(error) {
   } else {
     status.textContent = spanSearchMatches.length.toLocaleString() + " matching spans across " +
         spanSearchRecords.length.toLocaleString() + " captured spans";
+    if (spanSearchSelectionVisible && 0 <= spanSearchSelectedIndex &&
+        spanSearchSelectedIndex < spanSearchMatches.length) {
+      status.textContent += " · selected " + (spanSearchSelectedIndex + 1).toLocaleString() +
+          ": " + spanSearchMatches[spanSearchSelectedIndex].name;
+    }
     status.style.color = "";
   }
 
@@ -7728,15 +7797,38 @@ function spanSearchWindow(record) {
   return {left:left, width:width};
 }
 
+function revealSpanSearchRecordRow(record) {
+  if ((record == null) || (data == null) || (panzoomrect_y == null) || (myZoom_y == null)) {return;}
+  var d = data.events[record.eventIndex];
+  var candidates = [getrow(d, prefixCpu), getrow(d, prefixPid), getrow(d, prefixRpc)];
+  var row = -1;
+  for (var i = 0; i < candidates.length; ++i) {
+    if ((0 <= candidates[i]) && (0 < rowToHeight[candidates[i]])) {row = candidates[i]; break;}
+  }
+  if (row < 0) {return;}
+  var track = rowToTrack[row] + rowToHeight[row] / 2;
+  var pixel = y_zoomed(track);
+  if ((axesmargin <= pixel) && (pixel <= region234height - axesmargin)) {return;}
+  var translate = region234height / 2 - state2.savedtransformY.k * y(track);
+  var transform = d3.zoomIdentity.translate(0, translate).scale(state2.savedtransformY.k);
+  panzoomrect_y.call(myZoom_y.transform, transform);
+  panzoomrect_y.call(myZoom_y);
+}
+
 function selectSpanSearchResult(index, navigate) {
   if (!spanSearchMatches.length) {return;}
   index = Math.max(0, Math.min(spanSearchMatches.length - 1, index));
   spanSearchSelectedIndex = index;
+  spanSearchSelectionVisible = true;
   var record = spanSearchMatches[index];
   if (navigate && (data != null)) {
-    state2.annotated_one_d = record.eventIndex;
     var target = spanSearchWindow(record);
     ZoomToLeftWidth(target.left, target.width);
+    revealSpanSearchRecordRow(record);
+    // Zoom callbacks choose the event nearest the synthetic zoom pointer.
+    // Assign the requested record afterward so this exact span stays labeled.
+    state2.annotated_one_d = record.eventIndex;
+    redrawEventsEtc();
   }
   renderAdvancedSearchPanel();
   var selected = document.querySelector("#spanSearchResults [data-result-index=\"" + index + "\"]");
@@ -7751,6 +7843,7 @@ function moveSpanSearchSelection(delta) {
 
 function overviewSpanSearchMatches() {
   if (!spanSearchMatches.length || (data == null)) {return;}
+  spanSearchSelectionVisible = false;
   var left = Infinity, right = -Infinity;
   for (var i = 0; i < spanSearchMatches.length; ++i) {
     left = Math.min(left, spanSearchMatches[i].start);
@@ -8926,6 +9019,8 @@ function currentViewTemplateWindow() {
 function buildSpanSearchIndex() {
   var pidLabels = new Map(filterPidOptions.map(function(option) {return [option.value, option.name];}));
   spanSearchRecords = [];
+  spanSearchSelectedIndex = -1;
+  spanSearchSelectionVisible = false;
   spanNameByEvent = new WeakMap();
   var openMarks = new Map();
   for (var i = 0; i < data.events.length; ++i) {
