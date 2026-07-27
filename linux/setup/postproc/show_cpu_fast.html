@@ -471,7 +471,7 @@
 //----------------------------------------------------------------------------//
 
 // Version control for this HTML file
-var script_edit_date = "(ver2026-07-26 overlap-stack-export)";  // Shown in secondary menu for identification
+var script_edit_date = "(ver2026-07-26 marker-span-stack-export)";  // Shown in secondary menu for identification
 
 var book = false;		// Set true to get defaults for creating book diagrams
 
@@ -1147,7 +1147,7 @@ var maxTrack = 0;		// Current Number of tracks. Varies with highlights
 // These vary at runtime. See updateTracks
 var rowToHeight = [];		// Per row, N+1 rows
 var rowToTrack = [];		// Per row, N+1 rows
-var spanStackGeometryByEvent = new WeakMap();	// Only events in overlap clusters
+var markerSpanLaneByEvent = new WeakMap();	// Paired hello../hello marks in overlap clusters
 
 
 //----------------------------------------------------------------------------//
@@ -2488,6 +2488,18 @@ function draw_mark(row, d, x0, y0) {
   var y0 = y0; 
   var rel_y0 = perTracksize[t_height].annotoffset - 
     perTracksize[t_height].eventoffset - marktextsize;
+  var markerLane = markerSpanLane(row, d);
+  if (markerLane != null && (1 < markerLane.depth)) {
+    var rowTop = y_zoomed(rowToTrack[row]);
+    var rowBottom = y_zoomed(rowToTrack[row] + rowToHeight[row]);
+    if (rowBottom < rowTop) {var swap = rowTop; rowTop = rowBottom; rowBottom = swap;}
+    var firstBaseline = rowTop + perTracksize[t_height].annotoffset;
+    var markBReserve = is_mark_b(d) ? marktextsize : 0;
+    var availableShift = Math.max(0, rowBottom - firstBaseline - markBReserve - 2);
+    var laneStep = Math.min(marktextsize * 1.25,
+        availableShift / Math.max(1, markerLane.depth - 1));
+    rel_y0 += markerLane.lane * laneStep;
+  }
 
   var marktext;
   if (is_mark_a(d))      {marktext = Base40ToChar(arg0(d));}
@@ -3559,29 +3571,21 @@ function draw_idle(d, x0, y0, x1, gray, e_height) {
 function slowDrawOnRow2(d, x0, x1, y0, y1, e_height, textsize, gray, fade) {
 }
 
-function spanVisualInterval(row, d) {
-  var x0 = x_zoomed(ts(d));
-  var x1 = x_zoomed(tsend(d));
+function markerSpanVisualInterval(row, record) {
+  var x0 = x_zoomed(record.start);
+  var x1 = x_zoomed(record.end);
   if (0 < state2.basetime0_value) {
-    x0 = x_zoomed(ts(d) - rowToMinT[row]) + dataBaseSecond;
-    x1 = x_zoomed(tsend(d) - rowToMinT[row] + dataBaseSecond);
+    x0 = x_zoomed(record.start - rowToMinT[row]) + dataBaseSecond;
+    x1 = x_zoomed(record.end - rowToMinT[row]) + dataBaseSecond;
   }
   if (x1 < x0) {var swap = x0; x0 = x1; x1 = swap;}
   return {start:x0, end:Math.max(x0 + 1, x1)};
 }
 
-// Only thick execution/special bars compete for sub-lanes. Wait reasons,
-// packets, locks, samples, frequency, marks, and arcs intentionally overlay
-// their associated execution span and retain their native position.
-function isStackableDurationSpan(d) {
-  return (dur(d) > NSEC10) && (is_kernel(d) || is_user(d) || is_idle(d) ||
-      (is_special(d) && !is_mark(d) && !is_pstate(d)));
-}
-
-// Return the first visual sub-lane that does not overlap this span. Events are
-// ordered by time within each drawable row, so retaining only each lane's
-// right edge is enough.
-function assignSpanStackLane(laneEnds, interval) {
+// Return the first label lane that does not overlap this paired marker span.
+// Records are already ordered by time, so retaining each lane's right edge is
+// enough. The small visual gap keeps neighboring mark boxes from touching.
+function assignMarkerSpanLane(laneEnds, interval) {
   for (var lane = 0; lane < laneEnds.length; ++lane) {
     if (laneEnds[lane] + 0.75 <= interval.start) {
       laneEnds[lane] = interval.end;
@@ -3592,64 +3596,93 @@ function assignSpanStackLane(laneEnds, interval) {
   return laneEnds.length - 1;
 }
 
-function finishSpanStackCluster(cluster, row) {
+function setMarkerSpanLane(event, row, lane, depth) {
+  var byRow = markerSpanLaneByEvent.get(event);
+  if (byRow == null) {
+    byRow = new Map();
+    markerSpanLaneByEvent.set(event, byRow);
+  }
+  byRow.set(row, {lane:lane, depth:depth});
+}
+
+function finishMarkerSpanCluster(cluster, row) {
   if ((cluster == null) || (cluster.laneEnds.length <= 1)) {return;}
   var depth = cluster.laneEnds.length;
   for (var i = 0; i < cluster.items.length; ++i) {
     var item = cluster.items[i];
-    var byRow = spanStackGeometryByEvent.get(item.event);
-    if (byRow == null) {
-      byRow = new Map();
-      spanStackGeometryByEvent.set(item.event, byRow);
+    var eventIndices = item.record.eventIndices || [item.record.eventIndex];
+    for (var eventPos = 0; eventPos < eventIndices.length; ++eventPos) {
+      setMarkerSpanLane(data.events[eventIndices[eventPos]], row, item.lane, depth);
     }
-    byRow.set(row, {lane:item.lane, depth:depth});
   }
 }
 
-function recordSpanStackDepth(row, d, clustersByRow) {
+function recordMarkerSpanLane(row, record, clustersByRow) {
   if (!Number.isInteger(row) || (row < 0) || (rowToHeight[row] == 0) ||
       !onscreen_ytrack(rowToTrack[row], rowToHeight[row])) {return;}
-  var interval = spanVisualInterval(row, d);
+  var interval = markerSpanVisualInterval(row, record);
   var cluster = clustersByRow[row];
   if ((cluster == null) || (cluster.end + 0.75 <= interval.start)) {
-    finishSpanStackCluster(cluster, row);
+    finishMarkerSpanCluster(cluster, row);
     cluster = {end:interval.end, laneEnds:[], items:[]};
     clustersByRow[row] = cluster;
   }
-  var lane = assignSpanStackLane(cluster.laneEnds, interval);
+  var lane = assignMarkerSpanLane(cluster.laneEnds, interval);
   cluster.end = Math.max(cluster.end, interval.end);
-  cluster.items.push({event:d, lane:lane});
+  cluster.items.push({record:record, lane:lane});
 }
 
-// Retain geometry only for connected clusters that actually overlap. Isolated
-// spans elsewhere in the same row keep their original full height.
-function prepareSpanStacking(candidateCount) {
-  spanStackGeometryByEvent = new WeakMap();
-  var clustersByRow = new Array(sortNumSize);
-  for (var eventPos = 0; eventPos < candidateCount; ++eventPos) {
-    var i = filteredEventIndices == null ? eventPos : filteredEventIndices[eventPos];
-    var d = data.events[i];
-    if (!isStackableDurationSpan(d) || !onscreen_x(d)) {continue;}
+function markerSpanRows(record) {
+  var retval = [];
+  var seen = new Set();
+  var eventIndices = record.eventIndices || [record.eventIndex];
+  function addRow(row) {
+    if (Number.isInteger(row) && (0 <= row) && !seen.has(row)) {
+      seen.add(row);
+      retval.push(row);
+    }
+  }
+  for (var eventPos = 0; eventPos < eventIndices.length; ++eventPos) {
+    var d = data.events[eventIndices[eventPos]];
     if (0 <= cpu(d)) {
-      recordSpanStackDepth(eventToRow[prefixCpu * 65536 + low16of(cpu(d))], d, clustersByRow);
+      addRow(eventToRow[prefixCpu * 65536 + low16of(cpu(d))]);
     }
     if (0 < pid(d)) {
-      recordSpanStackDepth(eventToRow[prefixPid * 65536 + low16of(pid(d))], d, clustersByRow);
+      addRow(eventToRow[prefixPid * 65536 + low16of(pid(d))]);
     }
     if (0 < rpc(d)) {
-      recordSpanStackDepth(eventToRow[prefixRpc * 65536 + low16of(rpc(d))], d, clustersByRow);
+      addRow(eventToRow[prefixRpc * 65536 + low16of(rpc(d))]);
     }
     if (0 <= res(d)) {
-      recordSpanStackDepth(eventToRow[prefixRes * 65536 + low16of(res(d))], d, clustersByRow);
+      addRow(eventToRow[prefixRes * 65536 + low16of(res(d))]);
+    }
+  }
+  return retval;
+}
+
+// MARK_A/MARK_B/MARK_E pairs such as hello../hello share a label lane.
+// Only connected clusters that actually overlap get lane metadata; isolated
+// marker spans retain the original mark position.
+function prepareMarkerSpanStacking() {
+  markerSpanLaneByEvent = new WeakMap();
+  var clustersByRow = new Array(sortNumSize);
+  for (var recordIndex = 0; recordIndex < spanSearchRecords.length; ++recordIndex) {
+    var record = spanSearchRecords[recordIndex];
+    if (!record.markerSpan || (record.end < realxleft) || (realxright < record.start)) {continue;}
+    var opening = data.events[record.eventIndex];
+    if ((opening == null) || !passesLaneFilters(opening)) {continue;}
+    var rows = markerSpanRows(record);
+    for (var rowPos = 0; rowPos < rows.length; ++rowPos) {
+      recordMarkerSpanLane(rows[rowPos], record, clustersByRow);
     }
   }
   for (var row = 0; row < clustersByRow.length; ++row) {
-    finishSpanStackCluster(clustersByRow[row], row);
+    finishMarkerSpanCluster(clustersByRow[row], row);
   }
 }
 
-function spanStackGeometry(row, d) {
-  var byRow = spanStackGeometryByEvent.get(d);
+function markerSpanLane(row, d) {
+  var byRow = markerSpanLaneByEvent.get(d);
   return byRow == null ? null : byRow.get(row);
 }
 
@@ -3657,13 +3690,7 @@ function spanDrawGeometry(row, d) {
   var tHeight = rowToHeight[row];
   var eventHeight = perTracksize[tHeight].eventheight;
   var rowTop = y_zoomed(rowToTrack[row]);
-  var stack = isStackableDurationSpan(d) ? spanStackGeometry(row, d) : null;
-  if (stack == null) {
-    return {y:rowTop + perTracksize[tHeight].eventoffset, height:eventHeight};
-  }
-  var laneHeight = eventHeight / stack.depth;
-  var drawHeight = laneHeight > 1.5 ? laneHeight - 1 : laneHeight * 0.8;
-  return {y:rowTop + stack.lane * laneHeight + laneHeight / 2, height:drawHeight};
+  return {y:rowTop + perTracksize[tHeight].eventoffset, height:eventHeight};
 }
 
 
@@ -3931,12 +3958,6 @@ function draw_on_row(row, d, gray) {
   if (is_dots(d)) {
     can_defer = false;
   }
-  // Keep the same intervals used by the stacking prepass. Combining tiny
-  // overlapping spans would make the drawing replay choose different lanes.
-  if (isStackableDurationSpan(d) && (spanStackGeometry(row, d) != null)) {
-    can_defer = false;
-  }
-
 // Hack: if hack is on and we are drawing local_timer, make it at least 5 pixels wide
   if ((state2.hack_value != 0) && (ev(d) == 1516)) {
     can_defer = false;
@@ -4098,7 +4119,7 @@ function fastdrawevents() {
   var overlay_set = new Set();
   var candidateCount = filteredEventIndices == null ?
       data.events.length : filteredEventIndices.length;
-  prepareSpanStacking(candidateCount);
+  prepareMarkerSpanStacking();
   for (var eventPos = 0; eventPos < candidateCount; ++eventPos) {
     var i = filteredEventIndices == null ? eventPos : filteredEventIndices[eventPos];
     var d = data.events[i];
