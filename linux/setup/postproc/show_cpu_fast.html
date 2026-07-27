@@ -97,6 +97,17 @@
 .time-history-option[aria-current="true"] { background:#dbe7ff; box-shadow:inset 3px 0 #2458a6; }
 .time-history-index { min-width:38px; color:#5f6b7a; font-variant-numeric:tabular-nums; }
 .time-history-window { min-width:0; flex:1; font-family:ui-monospace,SFMono-Regular,Menlo,monospace; font-size:12px; }
+.export-subset-panel { left:50%; right:auto; width:min(570px, calc(100vw - 24px)); transform:translateX(-50%); }
+.export-subset-panel .lane-filter-head { cursor:default; }
+.export-subset-grid { display:grid; grid-template-columns:1fr 1fr; gap:10px; }
+.export-subset-grid label { min-width:0; color:#354052; font-size:12px; }
+.export-subset-grid input[type="number"],.export-subset-grid input[type="text"] {
+  box-sizing:border-box; width:100%; margin-top:4px; padding:6px 8px;
+  border:1px solid #aeb7c4; border-radius:5px;
+}
+.export-subset-options { display:grid; gap:6px; margin:10px 0; font-size:13px; }
+.export-subset-status { min-height:36px; padding:7px 9px; border-radius:5px;
+  background:#f1f4f8; color:#4d5968; font-size:12px; white-space:pre-line; }
 .lane-filter-title { font-weight:700; }
 .lane-filter-hint,.lane-filter-meta,.lane-filter-result-count { color:#5f6b7a; font-size:12px; }
 .lane-filter-grid { display:grid; grid-template-columns:minmax(0,1.35fr) minmax(0,1fr); gap:12px; }
@@ -124,7 +135,9 @@
   .lane-filter-panel { top:52px; left:8px; right:8px; width:auto; max-height:calc(100vh - 60px); }
   .advanced-search-panel { left:8px; right:8px; width:auto; }
   .time-history-panel { left:8px; right:8px; width:auto; transform:none; }
+  .export-subset-panel { left:8px; right:8px; width:auto; transform:none; }
   .lane-filter-grid { grid-template-columns:1fr; }
+  .export-subset-grid { grid-template-columns:1fr; }
   .lane-filter-list { max-height:180px; }
 }
  
@@ -458,7 +471,7 @@
 //----------------------------------------------------------------------------//
 
 // Version control for this HTML file
-var script_edit_date = "(ver2026-07-21)";  // Shown in secondary menu for identification
+var script_edit_date = "(ver2026-07-26 overlap-stack-export)";  // Shown in secondary menu for identification
 
 var book = false;		// Set true to get defaults for creating book diagrams
 
@@ -970,6 +983,7 @@ var timeViewHistoryApplying = false;
 const timeViewHistoryLimit = 200;
 const timeViewHistoryRenderLimit = 100;
 const timeHistoryUiStorageKey = "kutrace.timeHistory.ui.v1";
+var exportSubsetTimerHandle = null;
 
 
 //----------------------------------------------------------------------------//
@@ -1133,6 +1147,7 @@ var maxTrack = 0;		// Current Number of tracks. Varies with highlights
 // These vary at runtime. See updateTracks
 var rowToHeight = [];		// Per row, N+1 rows
 var rowToTrack = [];		// Per row, N+1 rows
+var spanStackGeometryByEvent = new WeakMap();	// Only events in overlap clusters
 
 
 //----------------------------------------------------------------------------//
@@ -3544,10 +3559,117 @@ function draw_idle(d, x0, y0, x1, gray, e_height) {
 function slowDrawOnRow2(d, x0, x1, y0, y1, e_height, textsize, gray, fade) {
 }
 
+function spanVisualInterval(row, d) {
+  var x0 = x_zoomed(ts(d));
+  var x1 = x_zoomed(tsend(d));
+  if (0 < state2.basetime0_value) {
+    x0 = x_zoomed(ts(d) - rowToMinT[row]) + dataBaseSecond;
+    x1 = x_zoomed(tsend(d) - rowToMinT[row] + dataBaseSecond);
+  }
+  if (x1 < x0) {var swap = x0; x0 = x1; x1 = swap;}
+  return {start:x0, end:Math.max(x0 + 1, x1)};
+}
+
+// Only thick execution/special bars compete for sub-lanes. Wait reasons,
+// packets, locks, samples, frequency, marks, and arcs intentionally overlay
+// their associated execution span and retain their native position.
+function isStackableDurationSpan(d) {
+  return (dur(d) > NSEC10) && (is_kernel(d) || is_user(d) || is_idle(d) ||
+      (is_special(d) && !is_mark(d) && !is_pstate(d)));
+}
+
+// Return the first visual sub-lane that does not overlap this span. Events are
+// ordered by time within each drawable row, so retaining only each lane's
+// right edge is enough.
+function assignSpanStackLane(laneEnds, interval) {
+  for (var lane = 0; lane < laneEnds.length; ++lane) {
+    if (laneEnds[lane] + 0.75 <= interval.start) {
+      laneEnds[lane] = interval.end;
+      return lane;
+    }
+  }
+  laneEnds.push(interval.end);
+  return laneEnds.length - 1;
+}
+
+function finishSpanStackCluster(cluster, row) {
+  if ((cluster == null) || (cluster.laneEnds.length <= 1)) {return;}
+  var depth = cluster.laneEnds.length;
+  for (var i = 0; i < cluster.items.length; ++i) {
+    var item = cluster.items[i];
+    var byRow = spanStackGeometryByEvent.get(item.event);
+    if (byRow == null) {
+      byRow = new Map();
+      spanStackGeometryByEvent.set(item.event, byRow);
+    }
+    byRow.set(row, {lane:item.lane, depth:depth});
+  }
+}
+
+function recordSpanStackDepth(row, d, clustersByRow) {
+  if (!Number.isInteger(row) || (row < 0) || (rowToHeight[row] == 0) ||
+      !onscreen_ytrack(rowToTrack[row], rowToHeight[row])) {return;}
+  var interval = spanVisualInterval(row, d);
+  var cluster = clustersByRow[row];
+  if ((cluster == null) || (cluster.end + 0.75 <= interval.start)) {
+    finishSpanStackCluster(cluster, row);
+    cluster = {end:interval.end, laneEnds:[], items:[]};
+    clustersByRow[row] = cluster;
+  }
+  var lane = assignSpanStackLane(cluster.laneEnds, interval);
+  cluster.end = Math.max(cluster.end, interval.end);
+  cluster.items.push({event:d, lane:lane});
+}
+
+// Retain geometry only for connected clusters that actually overlap. Isolated
+// spans elsewhere in the same row keep their original full height.
+function prepareSpanStacking(candidateCount) {
+  spanStackGeometryByEvent = new WeakMap();
+  var clustersByRow = new Array(sortNumSize);
+  for (var eventPos = 0; eventPos < candidateCount; ++eventPos) {
+    var i = filteredEventIndices == null ? eventPos : filteredEventIndices[eventPos];
+    var d = data.events[i];
+    if (!isStackableDurationSpan(d) || !onscreen_x(d)) {continue;}
+    if (0 <= cpu(d)) {
+      recordSpanStackDepth(eventToRow[prefixCpu * 65536 + low16of(cpu(d))], d, clustersByRow);
+    }
+    if (0 < pid(d)) {
+      recordSpanStackDepth(eventToRow[prefixPid * 65536 + low16of(pid(d))], d, clustersByRow);
+    }
+    if (0 < rpc(d)) {
+      recordSpanStackDepth(eventToRow[prefixRpc * 65536 + low16of(rpc(d))], d, clustersByRow);
+    }
+    if (0 <= res(d)) {
+      recordSpanStackDepth(eventToRow[prefixRes * 65536 + low16of(res(d))], d, clustersByRow);
+    }
+  }
+  for (var row = 0; row < clustersByRow.length; ++row) {
+    finishSpanStackCluster(clustersByRow[row], row);
+  }
+}
+
+function spanStackGeometry(row, d) {
+  var byRow = spanStackGeometryByEvent.get(d);
+  return byRow == null ? null : byRow.get(row);
+}
+
+function spanDrawGeometry(row, d) {
+  var tHeight = rowToHeight[row];
+  var eventHeight = perTracksize[tHeight].eventheight;
+  var rowTop = y_zoomed(rowToTrack[row]);
+  var stack = isStackableDurationSpan(d) ? spanStackGeometry(row, d) : null;
+  if (stack == null) {
+    return {y:rowTop + perTracksize[tHeight].eventoffset, height:eventHeight};
+  }
+  var laneHeight = eventHeight / stack.depth;
+  var drawHeight = laneHeight > 1.5 ? laneHeight - 1 : laneHeight * 0.8;
+  return {y:rowTop + stack.lane * laneHeight + laneHeight / 2, height:drawHeight};
+}
+
 
 // Draw one entry on given track. Gray'd entries: skip marks and IPC and arcs
 // if fade, draw kernel/user/idle as single light gray; keep all decorations
-function slowDrawOnRow(row, d, gray) {
+function slowDrawOnRow(row, d, gray, geometry) {
   var track = rowToTrack[row];
   var t_height = rowToHeight[row];
   var x0 = x_zoomed(ts(d));
@@ -3559,12 +3681,13 @@ function slowDrawOnRow(row, d, gray) {
 //console.log("x0", ts(d), rowToMinT[row], ts(d) - rowToMinT[row] + dataBaseSecond, x0);
   }
 
-  var y0 = y_zoomed(track) + perTracksize[t_height].eventoffset;
-  var e_height = perTracksize[t_height].eventheight;
+  if (geometry == null) {geometry = spanDrawGeometry(row, d);}
+  var y0 = geometry.y;
+  var e_height = geometry.height;
 
   if (e_height < 7) {
     // Too small to see well -- draw as single line
-    fastDrawOnRow(row, d, gray);
+    fastDrawOnRow(row, d, gray, geometry);
     return;
   }
 
@@ -3583,7 +3706,7 @@ function slowDrawOnRow(row, d, gray) {
 
   if (is_kernel(d)) {
 //console.log("kernel", path);
-    if (0 < fade_value) {fastDrawOnRow(row, d, gray); return;}
+    if (0 < fade_value) {fastDrawOnRow(row, d, gray, geometry); return;}
     // Draw the syscall/irq/fault four lines
     innersvgdotg.append("path")
       .attr("class", "graphlinex")
@@ -3611,7 +3734,7 @@ function slowDrawOnRow(row, d, gray) {
       .attr("stroke", l2color(d, gray));
 
   } else if (is_user(d)) {
-    if (0 < fade_value) {fastDrawOnRow(row, d, gray); return;}
+    if (0 < fade_value) {fastDrawOnRow(row, d, gray, geometry); return;}
 
     // Draw stacked user colors
     var path1 = "M" + Rnd1(x0) + "," + Rnd1(y0 - (l1width(d, e_height) / 2)) + 
@@ -3634,7 +3757,7 @@ function slowDrawOnRow(row, d, gray) {
 
   } else if (is_idle(d)) {
 //console.log("idle", path);
-    if (0 < fade_value) {fastDrawOnRow(row, d, gray); return;}
+    if (0 < fade_value) {fastDrawOnRow(row, d, gray, geometry); return;}
 
     // Draw the idle line; dashed if low-power
     if (arg0(d) == 1) {
@@ -3717,13 +3840,14 @@ function slowDrawOnRow(row, d, gray) {
 
 
 // Draw one small entry on given track, using just one line and color. Skip marks and IPC
-function fastDrawOnRow(row, d2, gray) {
+function fastDrawOnRow(row, d2, gray, geometry) {
   var track = rowToTrack[row];
   var t_height = rowToHeight[row];
   var x0 = x_zoomed(ts(d2));
   var x1 = x_zoomed(tsend(d2));
-  var y0 = y_zoomed(track) + perTracksize[t_height].eventoffset;
-  var e_height = perTracksize[t_height].eventheight;
+  if (geometry == null) {geometry = spanDrawGeometry(row, d2);}
+  var y0 = geometry.y;
+  var e_height = geometry.height;
 
   var path = "M" + Rnd1(x0) + "," + Rnd1(y0) + " H" + Rnd1(x1);
 
@@ -3805,6 +3929,11 @@ function draw_on_row(row, d, gray) {
   if (is_rpcpkt(d)) {can_defer = false;}
   if (is_pkt(d)) {can_defer = false;}
   if (is_dots(d)) {
+    can_defer = false;
+  }
+  // Keep the same intervals used by the stacking prepass. Combining tiny
+  // overlapping spans would make the drawing replay choose different lanes.
+  if (isStackableDurationSpan(d) && (spanStackGeometry(row, d) != null)) {
     can_defer = false;
   }
 
@@ -3969,6 +4098,7 @@ function fastdrawevents() {
   var overlay_set = new Set();
   var candidateCount = filteredEventIndices == null ?
       data.events.length : filteredEventIndices.length;
+  prepareSpanStacking(candidateCount);
   for (var eventPos = 0; eventPos < candidateCount; ++eventPos) {
     var i = filteredEventIndices == null ? eventPos : filteredEventIndices[eventPos];
     var d = data.events[i];
@@ -7555,6 +7685,7 @@ function focusLastLaneFilterControl() {
 function openLaneFilterPanelAndFocus() {
   var panel = document.getElementById("laneFilterPanel");
   if (panel == null) {return;}
+  closeExportSubsetPanel();
   var advancedPanel = document.getElementById("advancedSearchPanel");
   if ((advancedPanel != null) && !advancedPanel.hidden) {
     saveAdvancedSearchUiState();
@@ -7915,6 +8046,7 @@ function clampAdvancedSearchPanel() {
 function openAdvancedSearchPanel() {
   var panel = document.getElementById("advancedSearchPanel");
   if (panel == null) {return;}
+  closeExportSubsetPanel();
   var lanePanel = document.getElementById("laneFilterPanel");
   if ((lanePanel != null) && !lanePanel.hidden) {saveLaneFilterUiState(); lanePanel.hidden = true;}
   var historyPanel = document.getElementById("timeHistoryPanel");
@@ -8140,6 +8272,7 @@ function clampTimeHistoryPanel() {
 function openTimeHistoryPanel() {
   var panel = document.getElementById("timeHistoryPanel");
   if (panel == null) {return;}
+  closeExportSubsetPanel();
   var lanePanel = document.getElementById("laneFilterPanel");
   var advancedPanel = document.getElementById("advancedSearchPanel");
   if ((lanePanel != null) && !lanePanel.hidden) {saveLaneFilterUiState(); lanePanel.hidden = true;}
@@ -8374,6 +8507,248 @@ function doToggleFade(e) {
   fade_value = doToggle(true, fade_value, fade_max);
   redrawUI();
   redrawEvents();
+}
+
+function setExportSubsetStatus(message, isError) {
+  var status = document.getElementById("exportSubsetStatus");
+  if (status == null) {return;}
+  status.textContent = message;
+  status.style.color = isError ? "#a00000" : "";
+}
+
+function exportSubsetWindow() {
+  var startText = document.getElementById("exportStartTime").value.trim();
+  var endText = document.getElementById("exportEndTime").value.trim();
+  if (!startText || !endText) {throw new Error("Enter both a start and end time.");}
+  var start = Number(startText);
+  var end = Number(endText);
+  if (!isFinite(start) || !isFinite(end)) {throw new Error("Start and end must be numbers.");}
+  start = Math.max(dataTsLo, start);
+  end = Math.min(dataTsHi, end);
+  if (end <= start) {throw new Error("End time must be after start time.");}
+  return {start:start, end:end};
+}
+
+function setExportSubsetWindow(start, end) {
+  document.getElementById("exportStartTime").value = (+start).toFixed(9);
+  document.getElementById("exportEndTime").value = (+end).toFixed(9);
+  refreshExportSubsetSummary();
+}
+
+function exportSubsetUsesEventIndex(index) {
+  if (!document.getElementById("exportRespectFilters").checked ||
+      (filteredEventIndices == null)) {return true;}
+  if (exportSubsetUsesEventIndex.allowed == null) {
+    exportSubsetUsesEventIndex.allowed = new Set(filteredEventIndices);
+  }
+  return exportSubsetUsesEventIndex.allowed.has(index);
+}
+
+function eventIntersectsExportWindow(d, start, end) {
+  if (0 < dur(d)) {return (ts(d) < end) && (start < tsend(d));}
+  return (start <= ts(d)) && (ts(d) <= end);
+}
+
+function exportEventCopy(d, start, end, clip) {
+  var copy = d.slice();
+  if (clip && (0 < dur(d))) {
+    var clippedStart = Math.max(start, ts(d));
+    var clippedEnd = Math.min(end, tsend(d));
+    copy[0] = clippedStart;
+    copy[1] = Math.max(0, clippedEnd - clippedStart);
+  }
+  return copy;
+}
+
+function countExportSubsetEvents(start, end) {
+  exportSubsetUsesEventIndex.allowed = null;
+  var count = 0;
+  for (var i = 0; i < data.events.length; ++i) {
+    if (exportSubsetUsesEventIndex(i) &&
+        eventIntersectsExportWindow(data.events[i], start, end)) {++count;}
+  }
+  exportSubsetUsesEventIndex.allowed = null;
+  return count;
+}
+
+function refreshExportSubsetSummary() {
+  if (data == null) {return;}
+  try {
+    var windowRange = exportSubsetWindow();
+    var count = countExportSubsetEvents(windowRange.start, windowRange.end);
+    var percent = data.events.length ? (100 * count / data.events.length) : 0;
+    var duration = windowRange.end - windowRange.start;
+    setExportSubsetStatus(count.toLocaleString() + " of " +
+        data.events.length.toLocaleString() + " events (" + percent.toFixed(1) +
+        "%) · " + formatSpanSearchTime(duration), false);
+    document.getElementById("downloadSubsetJson").disabled = count == 0;
+    document.getElementById("downloadSubsetHtml").disabled = count == 0;
+  } catch (error) {
+    setExportSubsetStatus(error.message, true);
+    document.getElementById("downloadSubsetJson").disabled = true;
+    document.getElementById("downloadSubsetHtml").disabled = true;
+  }
+}
+
+function scheduleExportSubsetSummary() {
+  if (exportSubsetTimerHandle != null) {clearTimeout(exportSubsetTimerHandle);}
+  exportSubsetTimerHandle = setTimeout(function() {
+    exportSubsetTimerHandle = null;
+    refreshExportSubsetSummary();
+  }, 120);
+}
+
+function openExportSubsetPanel() {
+  var panel = document.getElementById("exportSubsetPanel");
+  if ((panel == null) || (data == null)) {return;}
+  ["laneFilterPanel", "advancedSearchPanel", "timeHistoryPanel"].forEach(function(id) {
+    var other = document.getElementById(id);
+    if (other != null) {other.hidden = true;}
+  });
+  panel.hidden = false;
+  var title = document.getElementById("exportSubsetTitle");
+  if (!title.value) {title.value = (data.title || "kutrace") + " subset";}
+  setExportSubsetWindow(Math.max(dataTsLo, realxleft), Math.min(dataTsHi, realxright));
+  document.getElementById("exportStartTime").focus();
+}
+
+function closeExportSubsetPanel() {
+  var panel = document.getElementById("exportSubsetPanel");
+  if (panel != null) {panel.hidden = true;}
+}
+
+function cloneExportMetadata() {
+  var subset = {};
+  Object.keys(data).forEach(function(key) {
+    if ((key == "events") || (key == "extra") || (key == "savedview") ||
+        (key == "randomid")) {return;}
+    var serialized = JSON.stringify(data[key]);
+    if (typeof serialized !== "undefined") {subset[key] = JSON.parse(serialized);}
+  });
+  return subset;
+}
+
+function buildExportSubset() {
+  var windowRange = exportSubsetWindow();
+  var clip = document.getElementById("exportClipSpans").checked;
+  var subset = cloneExportMetadata();
+  var title = document.getElementById("exportSubsetTitle").value.trim();
+  subset.title = title || ((data.title || "KUtrace") + " subset");
+  subset.randomid = (window.crypto && window.crypto.getRandomValues) ?
+      window.crypto.getRandomValues(new Uint32Array(1))[0] :
+      Math.floor(Math.random() * 0xFFFFFFFF);
+  subset.exportWindow = {start:windowRange.start, end:windowRange.end,
+    sourceTitle:data.title || "", clipped:clip};
+  subset.events = [];
+  exportSubsetUsesEventIndex.allowed = null;
+  for (var i = 0; i < data.events.length; ++i) {
+    var d = data.events[i];
+    if (!exportSubsetUsesEventIndex(i) ||
+        !eventIntersectsExportWindow(d, windowRange.start, windowRange.end)) {continue;}
+    subset.events.push(exportEventCopy(d, windowRange.start, windowRange.end, clip));
+  }
+  exportSubsetUsesEventIndex.allowed = null;
+  // newdata2 removes this traditional terminal marker after parsing.
+  subset.events.push([999.0, 0.0, 0, 0, 0, 0, 0, 0, 0, ""]);
+  subset.extra = [];
+  if (document.getElementById("exportIncludeCallouts").checked) {
+    for (var extraIndex = 0; extraIndex < data.extra.length; ++extraIndex) {
+      var extra = data.extra[extraIndex];
+      if (eventIntersectsExportWindow(extra, windowRange.start, windowRange.end)) {
+        subset.extra.push(exportEventCopy(extra, windowRange.start, windowRange.end, clip));
+      }
+    }
+  }
+  return subset;
+}
+
+function exportSubsetFilename(extension) {
+  var title = document.getElementById("exportSubsetTitle").value.trim() || "kutrace_subset";
+  var stem = title.toLowerCase().replace(/[^a-z0-9._-]+/g, "_").replace(/^_+|_+$/g, "");
+  return (stem || "kutrace_subset") + extension;
+}
+
+function downloadExportBlob(content, type, filename) {
+  var url = URL.createObjectURL(new Blob([content], {type:type}));
+  var link = document.createElement("a");
+  link.href = url;
+  link.download = filename;
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+  setTimeout(function() {URL.revokeObjectURL(url);}, 1000);
+}
+
+async function gzipExportText(text) {
+  if (typeof CompressionStream === "undefined") {
+    throw new Error("This browser cannot build compressed standalone HTML; download JSON instead.");
+  }
+  var compressed = new Blob([text]).stream().pipeThrough(new CompressionStream("gzip"));
+  return new Uint8Array(await new Response(compressed).arrayBuffer());
+}
+
+async function standaloneExportHtml(subset) {
+  var bytes = await gzipExportText(JSON.stringify(subset));
+  var clone = document.documentElement.cloneNode(true);
+  var anchor = clone.querySelector("#anchorsvg");
+  if (anchor != null) {anchor.textContent = "";}
+  clone.querySelectorAll("svg").forEach(function(node) {node.remove();});
+  clone.querySelectorAll("[id]").forEach(function(node) {
+    if (/^view\d+$/.test(node.id)) {node.remove();}
+  });
+  ["laneFilterPanel", "advancedSearchPanel", "timeHistoryPanel", "exportSubsetPanel"].forEach(function(id) {
+    var panel = clone.querySelector("#" + id);
+    if (panel != null) {panel.setAttribute("hidden", "");}
+  });
+  var declaration = "var myString = new Uint8Array([" +
+      Array.from(bytes).join(",") + "]);";
+  var replaced = false;
+  clone.querySelectorAll("script").forEach(function(script) {
+    if (replaced || script.textContent.indexOf("var myString") < 0) {return;}
+    var pattern = /(^|\n)([ \t]*)var myString\s*=\s*(?:new Uint8Array\(\[[\s\S]*?\]\)|'[^']*'|"[^"]*")\s*;/;
+    var updated = script.textContent.replace(pattern, "$1$2" + declaration);
+    if (updated != script.textContent) {
+      script.textContent = updated;
+      replaced = true;
+    }
+  });
+  if (!replaced) {
+    throw new Error("Standalone HTML export requires a self-contained KUtrace viewer; download JSON instead.");
+  }
+  return "<!DOCTYPE html>\\n" + clone.outerHTML;
+}
+
+async function downloadExportSubset(format) {
+  var jsonButton = document.getElementById("downloadSubsetJson");
+  var htmlButton = document.getElementById("downloadSubsetHtml");
+  jsonButton.disabled = true;
+  htmlButton.disabled = true;
+  try {
+    setExportSubsetStatus("Building smaller trace\u2026", false);
+    var subset = buildExportSubset();
+    if (subset.events.length <= 1) {throw new Error("No events are inside that selection.");}
+    var json = JSON.stringify(subset);
+    if (format == "json") {
+      downloadExportBlob(json, "application/json", exportSubsetFilename(".json"));
+    } else {
+      var html = await standaloneExportHtml(subset);
+      downloadExportBlob(html, "text/html", exportSubsetFilename(".html"));
+    }
+    setExportSubsetStatus("Exported " + (subset.events.length - 1).toLocaleString() +
+        " events · " + (json.length / 1024).toFixed(1) + " KiB JSON", false);
+  } catch (error) {
+    setExportSubsetStatus(error.message || String(error), true);
+  } finally {
+    try {
+      var windowRange = exportSubsetWindow();
+      var hasEvents = 0 < countExportSubsetEvents(windowRange.start, windowRange.end);
+      jsonButton.disabled = !hasEvents;
+      htmlButton.disabled = !hasEvents;
+    } catch (ignore) {
+      jsonButton.disabled = true;
+      htmlButton.disabled = true;
+    }
+  }
 }
 
 // extra[n] is a 10-item event
@@ -10709,6 +11084,7 @@ function initAll() {
   document.getElementById("showfilters").onclick = doToggleLaneFilterPanel;
   document.getElementById("showAdvancedSearch").onclick = doToggleAdvancedSearchPanel;
   document.getElementById("showTimeHistory").onclick = doToggleTimeHistoryPanel;
+  document.getElementById("showExportSubset").onclick = openExportSubsetPanel;
   document.getElementById("shareCurrentView").onclick = shareCurrentView;
   document.getElementById("resetVerticalView").onclick = resetVerticalPanZoom;
   document.getElementById("spanLabelDecrease").onclick = function() {adjustSpanLabelScale(-0.25);};
@@ -10725,6 +11101,24 @@ function initAll() {
   document.getElementById("closeLaneFilters").onclick = doToggleLaneFilterPanel;
   document.getElementById("closeAdvancedSearch").onclick = doToggleAdvancedSearchPanel;
   document.getElementById("closeTimeHistory").onclick = doToggleTimeHistoryPanel;
+  document.getElementById("closeExportSubset").onclick = closeExportSubsetPanel;
+  document.getElementById("exportUseCurrentView").onclick = function() {
+    setExportSubsetWindow(Math.max(dataTsLo, realxleft), Math.min(dataTsHi, realxright));
+  };
+  document.getElementById("exportUseFullTrace").onclick = function() {
+    setExportSubsetWindow(dataTsLo, dataTsHi);
+  };
+  ["exportStartTime", "exportEndTime"].forEach(function(id) {
+    document.getElementById(id).addEventListener("input", scheduleExportSubsetSummary);
+  });
+  ["exportRespectFilters", "exportClipSpans", "exportIncludeCallouts"].forEach(function(id) {
+    document.getElementById(id).addEventListener("change", refreshExportSubsetSummary);
+  });
+  document.getElementById("downloadSubsetJson").onclick = function() {downloadExportSubset("json");};
+  document.getElementById("downloadSubsetHtml").onclick = function() {downloadExportSubset("html");};
+  document.getElementById("exportSubsetPanel").addEventListener("keydown", function(e) {
+    if (e.key == "Escape") {closeExportSubsetPanel(); e.preventDefault();}
+  });
   document.getElementById("previousTimeView").onclick = function() {navigateTimeHistory(-1);};
   document.getElementById("forwardTimeView").onclick = function() {navigateTimeHistory(1);};
   document.getElementById("spanRegexSearch").addEventListener("input", spanSearchInputChanged);
@@ -10780,9 +11174,8 @@ function initAll() {
   window.addEventListener("hashchange", restoreSharedViewFromHash);
   // Load initial data, if any
   if (typeof(myString) !== 'undefined') {
-    // const compressedData = Uint8Array.from(myString, c => c.charCodeAt(0));
-    const compressedData = Uint8Array.from(
-        myString.split(',').filter(Boolean), value => Number(value));
+    const compressedData = (myString instanceof Uint8Array) ? myString :
+        Uint8Array.from(myString.split(',').filter(Boolean), value => Number(value));
     decompress(compressedData).then(decompressed => {
       var data2 = JSON.parse(decompressed);
       newdata2(data2);
@@ -11023,6 +11416,48 @@ function unloadSaveState() {
   </div>
 </span>
 
+<span class="lane-filter-wrap">
+  <button id="showExportSubset" type="button" style="border-radius:6px"
+          title="Export a smaller trace from a selected time window">Export subset</button>
+  <div id="exportSubsetPanel" class="lane-filter-panel export-subset-panel" role="dialog"
+       aria-label="Export a smaller trace" hidden>
+    <div class="lane-filter-head">
+      <div>
+        <div class="lane-filter-title">Export smaller trace</div>
+        <div class="lane-filter-hint">Choose a time window, optional active filters, and output format.</div>
+      </div>
+      <button id="closeExportSubset" class="lane-filter-close" type="button" aria-label="Close">&#x00d7;</button>
+    </div>
+    <div class="export-subset-grid">
+      <label>Start time (seconds)
+        <input id="exportStartTime" type="number" step="any">
+      </label>
+      <label>End time (seconds)
+        <input id="exportEndTime" type="number" step="any">
+      </label>
+    </div>
+    <div class="lane-filter-actions">
+      <button id="exportUseCurrentView" type="button">Use current view</button>
+      <button id="exportUseFullTrace" type="button">Use full trace</button>
+    </div>
+    <div class="export-subset-grid">
+      <label style="grid-column:1 / -1">Export title
+        <input id="exportSubsetTitle" type="text" maxlength="160">
+      </label>
+    </div>
+    <div class="export-subset-options">
+      <label><input id="exportRespectFilters" type="checkbox"> Respect active PID, CPU, symbol, and span filters</label>
+      <label><input id="exportClipSpans" type="checkbox" checked> Clip partial spans to the selected boundaries</label>
+      <label><input id="exportIncludeCallouts" type="checkbox" checked> Include callouts inside the selection</label>
+    </div>
+    <div id="exportSubsetStatus" class="export-subset-status" role="status" aria-live="polite"></div>
+    <div class="lane-filter-actions" style="justify-content:flex-end">
+      <button id="downloadSubsetJson" type="button">Download JSON</button>
+      <button id="downloadSubsetHtml" type="button">Download standalone HTML</button>
+    </div>
+  </div>
+</span>
+
 <button id="shareCurrentView" type="button" style="border-radius:6px"
         title="Copy a link that restores this exact view">Share view</button>
 <span id="shareViewStatus" role="status" aria-live="polite"
@@ -11150,6 +11585,7 @@ function unloadSaveState() {
      H				 open time-view history
      J / K			 previous / forward time view
      Share view			 copy a trace-specific link to this exact saved state
+     Export subset		 choose a time window and download smaller JSON or standalone HTML
      O / Reset Y		 reset vertical shift and zoom only
      Span labels - / % / +	 decrease, reset, or increase span-name text
      Filter/Search/History	 drag by title; resize from the lower-right corner
@@ -11167,7 +11603,8 @@ function unloadSaveState() {
    (3) anywhere 		mouse and wheel to pan/zoom horizontally	
      Red dot 			resets display
      Yellow overlay indicates slow CPU clock rate (power saving)
-    
+     Overlapping duration spans stack downward inside their existing row
+
    (5) Basetime date		normal/relative to row start
   
    (6) Buttons
