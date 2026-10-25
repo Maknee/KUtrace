@@ -1065,6 +1065,7 @@ void kutrace::mark_a(const char* label) {::DoMark(KUTRACE_MARKA, ::CharToBase40(
 void kutrace::mark_b(const char* label) {::DoMark(KUTRACE_MARKB, ::CharToBase40(label));}
 void kutrace::mark_c(const char* label) {::DoMark(KUTRACE_MARKC, ::CharToBase40(label));}
 void kutrace::mark_d(uint64 n) {::DoMark(KUTRACE_MARKD, n);}
+void kutrace::mark_e(const char* label, uint64 num) {::InsertVariableEntry(label, KUTRACE_MARKE_NAME, num);}
 
 // Returns number of words inserted 1..8, or
 //   0 if tracing is off, negative if module is not not loaded 
