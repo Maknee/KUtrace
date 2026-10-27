@@ -1702,7 +1702,9 @@ static u64 kutrace_control(u64 command, u64 arg)
 	}
 
 	/* If checking, disallow calls from tasks without CAP_SYS_PTRACE */
-	if (check && !has_capability(current, CAP_SYS_PTRACE)) 
+	/* has_capability() is gone upstream and has_ns_capability() is not */
+	/* exported; the _noaudit variant gives the same answer, minus audit */
+	if (check && !has_capability_noaudit(current, CAP_SYS_PTRACE)) 
 		return ~CLU(0);
 
 	/* Generally, more likely calls are near the front of this list */

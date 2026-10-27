@@ -5,11 +5,15 @@
 
 sudo apt install build-essential libncurses-dev bison flex libssl-dev libelf-dev fakeroot dwarves -y
 
-wget https://cdn.kernel.org/pub/linux/kernel/v6.x/linux-6.6.36.tar.xz
-tar xvf linux-6.6.36.tar.xz
-cd linux-6.6.36
+# Linux >= 6.7 is needed for the AMD uncore memory-controller PMU (amd_umc_*);
+# amd_df / amd_l3 come from the same driver (PERF_EVENTS_AMD_UNCORE, see below).
+KERNEL_VERSION=7.2.13
 
-patch -p1 < ../kutrace_patch_file_6.6.36.txt 
+wget https://cdn.kernel.org/pub/linux/kernel/v7.x/linux-${KERNEL_VERSION}.tar.xz
+tar xvf linux-${KERNEL_VERSION}.tar.xz
+cd linux-${KERNEL_VERSION}
+
+patch -p1 < ../kutrace_patch_file_${KERNEL_VERSION}.txt 
 
 cp -v /boot/config-$(uname -r) .config
 yes "" | make localmodconfig
@@ -162,6 +166,35 @@ scripts/config --enable VLAN_8021Q
 scripts/config --enable BRIDGE_VLAN_FILTERING
 scripts/config --enable IKCONFIG
 scripts/config --enable IKCONFIG_PROC
+
+# AMD / Intel performance-monitoring drivers. Built in (=y) so that
+# localmodconfig cannot drop them when they are not loaded on the build host.
+# PERF_EVENTS_AMD_UNCORE provides amd_df, amd_l3 and amd_umc_*.
+scripts/config --enable PERF_EVENTS_AMD_UNCORE
+scripts/config --enable PERF_EVENTS_AMD_POWER
+scripts/config --enable PERF_EVENTS_AMD_BRS
+scripts/config --enable PERF_EVENTS_INTEL_UNCORE
+scripts/config --enable PERF_EVENTS_INTEL_RAPL
+scripts/config --enable PERF_EVENTS_INTEL_CSTATE
+scripts/config --enable X86_MSR
+# IOMMU PMUs: amd_iommu_* (arch/x86/events/amd/iommu.c, built with AMD_IOMMU)
+# and Intel dmar* (INTEL_IOMMU_PERF_EVENTS)
+scripts/config --enable AMD_IOMMU
+scripts/config --enable INTEL_IOMMU
+scripts/config --enable INTEL_IOMMU_PERF_EVENTS
+
+# Platform DMA engines for memory-to-memory DMA tests
+scripts/config --enable DMADEVICES
+scripts/config --enable DMA_ENGINE
+scripts/config --enable AMD_PTDMA
+scripts/config --enable AMD_AE4DMA
+scripts/config --enable DCA
+scripts/config --enable INTEL_IOATDMA
+scripts/config --enable PCI_MSI
+scripts/config --enable PCI_PASID
+scripts/config --enable INTEL_IDXD
+scripts/config --enable INTEL_IDXD_PERFMON
+scripts/config --module DMATEST
 yes "" | make olddefconfig
 
 fakeroot make -j$(($(nproc) - 1))
