@@ -167,6 +167,29 @@ scripts/config --enable BRIDGE_VLAN_FILTERING
 scripts/config --enable IKCONFIG
 scripts/config --enable IKCONFIG_PROC
 
+# Since Linux 6.13 the iptables-legacy tables (iptable_filter/nat/..., used by
+# iptables v1.8.7 (legacy) and Docker on these nodes) need
+# NETFILTER_XTABLES_LEGACY; without it the IP_NF_* / IP6_NF_* lines above are
+# silently dropped. Re-enable them here, after the last localmodconfig.
+scripts/config --enable NETFILTER_XTABLES_LEGACY
+scripts/config --enable IP_NF_IPTABLES_LEGACY
+scripts/config --enable IP6_NF_IPTABLES_LEGACY
+scripts/config --enable IP_NF_FILTER
+scripts/config --enable IP_NF_NAT
+scripts/config --enable IP_NF_MANGLE
+scripts/config --enable IP_NF_RAW
+scripts/config --enable IP_NF_TARGET_MASQUERADE
+scripts/config --enable IP_NF_TARGET_REDIRECT
+scripts/config --enable IP6_NF_FILTER
+scripts/config --enable IP6_NF_NAT
+scripts/config --enable IP6_NF_MANGLE
+scripts/config --enable IP6_NF_RAW
+scripts/config --enable IP6_NF_TARGET_MASQUERADE
+# Socket diagnostics for ss(8) (tcp_diag/inet_diag are loaded on these nodes)
+scripts/config --enable INET_DIAG
+scripts/config --enable INET_TCP_DIAG
+scripts/config --enable INET_UDP_DIAG
+
 # AMD / Intel performance-monitoring drivers. Built in (=y) so that
 # localmodconfig cannot drop them when they are not loaded on the build host.
 # PERF_EVENTS_AMD_UNCORE provides amd_df, amd_l3 and amd_umc_*.
