@@ -78,17 +78,36 @@ rdma link
 sudo insmod module/kutrace_mod.ko tracemb=40 check=0 && lsmod | grep kutrace && sudo rmmod kutrace_mod
 ```
 
-DRAM traffic per memory channel on Zen 4 (encodings from
-`tools/perf/pmu-events/arch/x86/amdzen4/memory-controller.json`; the
-`rdwrmask` field is `config:8-9` in `arch/x86/events/amd/uncore.c`):
+DRAM traffic on Zen 4. The encodings come from 7.2.13
+`tools/perf/pmu-events/arch/x86/amdzen4/{memory-controller,data-fabric}.json`.
+The `rdwrmask` field is `config:8-9` in `arch/x86/events/amd/uncore.c`.
+
+| What | Event | Unit |
+|---|---|---|
+| DRAM reads, per channel | `amd_umc_N/event=0x0a,rdwrmask=0x1/` (config 0x10a, `umc_cas_cmd.rd`) | 64 B per count |
+| DRAM writes, per channel | `amd_umc_N/event=0x0a,rdwrmask=0x2/` (config 0x20a, `umc_cas_cmd.wr`) | 64 B per count |
+| DRAM reads via DF, CS k=0..11 | `amd_df/event=0x1f+0x40*k,umask=0x7fe/` (`local_processor_read_data_beats_csk`) | 64 B per count |
+| DRAM writes via DF, CS k=0..11 | `amd_df/event=0x1f+0x40*k,umask=0x7ff/` | 64 B per count |
+| L3 accesses / misses / hits | `amd_l3/event=0x04,umask=0xff/`, `umask=0x01`, `umask=0xfe` | lines |
+
+An EPYC 9354P has 12 UMC instances (`amd_umc_0..11`). Sum over all of them,
+for example:
 
 ```
-# CAS commands for reads / writes; each one is 64 bytes
-sudo perf stat -a -e amd_umc_0/event=0x0a,rdwrmask=0x1/,amd_umc_0/event=0x0a,rdwrmask=0x2/ -- <workload>
-sudo perf stat -a -M umc_mem_read_bandwidth,umc_mem_write_bandwidth -- <workload>
+EV=""; for i in $(seq 0 11); do EV="$EV,amd_umc_$i/event=0x0a,rdwrmask=0x1,name=rd$i/,amd_umc_$i/event=0x0a,rdwrmask=0x2,name=wr$i/"; done
+sudo perf stat -a -x, -e ${EV#,} -- <workload> 2>&1 | awk -F, '$3~/^rd/{r+=$1} $3~/^wr/{w+=$1} END{print r*64/2^30" GiB read, "w*64/2^30" GiB written"}'
 ```
 
-To get the system total, sum the counts over every `amd_umc_N` instance.
+The perf 6.6.36 userspace knows the `amd_df/...` event names but not the UMC
+names. Use the raw form above, or build `tools/perf` from the 7.2.13 tree.
 
-The DMA engines (AMD PTDMA/AE4DMA, Intel IOAT/IDXD) are built in, and
-`dmatest` is built as a module. Run `ls /sys/class/dma` to see the channels.
+Checked on clnode367 (EPYC 9354P, NPS4) running 7.2.13. Each 4 GiB streaming
+pass measured about 4.03 GiB of UMC reads; the same pass with NT stores measured
+about 4.0 GiB of UMC writes and close to 0 reads. The amd_df counts matched
+within 1-2%.
+
+DMA engines: PTDMA (`1022:1498`, Rome/Milan) and AE4DMA are not present on Genoa.
+The Genoa CCP/PSP (`1022:14ca`) binds to `ccp` with the PSP/SEV function only
+and creates no DMA channels. The Genoa SDXI functions (`1022:14dc`) have no
+driver in 7.2.13. So `/sys/class/dma` is empty and `dmatest` has nothing to
+run on.
