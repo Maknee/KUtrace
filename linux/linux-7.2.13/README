@@ -1,15 +1,15 @@
-Installing KUtrace for Linux 6.6.36
-dsites 2024.07.15
+Installing KUtrace for Linux 7.2.13
+dsites 2024.07.15 (updated for Linux 7.2.13)
 
-Download and unpack a copy of Linux 6.6.36 from kernel.org or one of its clones, 
-putting everything in a directory named linux-6.6.36 
+Download and unpack a copy of Linux 7.2.13 from kernel.org or one of its clones, 
+putting everything in a directory named linux-7.2.13 
 
 Install any tools needed for a kernel build. I follow the directions in 
   https://davidaugustat.com/linux/how-to-compile-linux-kernel-on-ubuntu
 
 
 (1) Initial unpatched build, a version tailored to your specific machine
-$ cd linux-6.6.36
+$ cd linux-7.2.13
 $ cp -v /boot/config-$(uname -r) .config
 $ make localmodconfig
 
@@ -27,23 +27,23 @@ $ sudo reboot
 ...
 
 Hold down shift key while booting to get to grub advanced choices, and pick off the 
-newly-built 6.6.36 kernel to load
+newly-built 7.2.13 kernel to load
 
 When it comes up and you log in, do
 $ uname -a
 
-to confirm that the kernel version and date are the just-built 6.6.36 version.
+to confirm that the kernel version and date are the just-built 7.2.13 version.
 
 If there are difficulties, stay with it (perhaps with help from someone) until you 
-have a successful unmodified 6.6.36 kernel running.
+have a successful unmodified 7.2.13 kernel running.
 
 
 (2) Initial patched build
 Apply the patch file via
-$ cd linux-6.6.36
-$ patch -p1 kutrace_patch_file_6.6.36.txt
+$ cd linux-7.2.13
+$ patch -p1 < ../kutrace_patch_file_7.2.13.txt
 
-This changes about 24 files, installing new files include/linux/kutrace.h,
+This changes 23 files, installing new files include/linux/kutrace.h,
 kernel/kutrace/kutrace.c, and kernel/kutrace/Makefile. All the other changes are simple
 mostly-one-line hooks to record individual KUtrace events.
 

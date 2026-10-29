@@ -1,19 +1,21 @@
 # KUtrace on Linux 7.2.13
 
-Linux 6.6.36 cannot expose the AMD memory-controller PMU (`amd_umc_*` was added
-in 6.7). This directory can now also build a KUtrace kernel based on 7.2.13. That
-kernel has `amd_df`, `amd_l3` and `amd_umc_*` built in, along with the AMD/Intel
-PMU and DMA-engine drivers.
+This directory builds a KUtrace kernel based on Linux 7.2.13, the newest stable
+release. Older kernels cannot expose the AMD memory-controller PMU (`amd_umc_*`
+was added in 6.7). This kernel has `amd_df`, `amd_l3` and `amd_umc_*` built in,
+along with the AMD/Intel PMU and DMA-engine drivers.
 
 Files:
-- `kutrace_patch_file_7.2.13.txt`: the 6.6.36 KUtrace patch ported to 7.2.13.
-  The hooks are unchanged. The 64-bit syscall hook moved from
-  `arch/x86/entry/common.c` to `arch/x86/entry/syscall_64.c`, because upstream
-  moved the code there.
+- `kutrace_patch_file_7.2.13.txt`: the KUtrace kernel patch for 7.2.13 (a copy
+  is in `linux/linux-7.2.13/` with the step-by-step README). The hooks are the
+  same as in earlier KUtrace kernels. The 64-bit syscall hook is in
+  `arch/x86/entry/syscall_64.c`, where upstream moved that code.
 - `setup.sh`: downloads 7.2.13, applies the patch, and configures the kernel
   (see the comments in it), then builds and installs it.
-- `kutrace_patch_file_6.6.36.txt` is unchanged. To build 6.6.36 again, use the
-  `setup.sh` from master.
+- `update_grub.sh`: makes 7.2.13 the GRUB default, using the exact menu titles
+  from `grub.cfg`.
+- `module/kutrace_mod.c`: uses `has_capability_noaudit()`, since 7.x removed
+  `has_capability()`.
 
 ## Build
 
@@ -44,7 +46,7 @@ sudo update-grub
 Build the KUtrace module against the tree:
 `make -C <linux-7.2.13> M=$PWD/module modules`.
 
-## Boot once (keep 6.6.36 as the fallback)
+## Boot once (keep the previous kernel as the fallback)
 
 ```
 grep -E '^GRUB_DEFAULT' /etc/default/grub      # must name an entry that really exists in grub.cfg
@@ -55,7 +57,7 @@ sudo reboot
 GRUB menu titles are case-sensitive. If `GRUB_DEFAULT` does not match a
 title in `/boot/grub/grub.cfg` exactly, GRUB boots entry 0. Entry 0 is the
 newest kernel, which is now 7.2.13. In that case a failed boot does *not* fall
-back to 6.6.36.
+back to the previous kernel.
 
 ## After boot: re-mount /ssd
 
@@ -98,8 +100,8 @@ EV=""; for i in $(seq 0 11); do EV="$EV,amd_umc_$i/event=0x0a,rdwrmask=0x1,name=
 sudo perf stat -a -x, -e ${EV#,} -- <workload> 2>&1 | awk -F, '$3~/^rd/{r+=$1} $3~/^wr/{w+=$1} END{print r*64/2^30" GiB read, "w*64/2^30" GiB written"}'
 ```
 
-The perf 6.6.36 userspace knows the `amd_df/...` event names but not the UMC
-names. Use the raw form above, or build `tools/perf` from the 7.2.13 tree.
+An older `perf` (for example one built for 6.6) knows the `amd_df/...` event
+names but not the UMC names. Use the raw form above, or build `tools/perf` from the 7.2.13 tree.
 
 Checked on clnode367 (EPYC 9354P, NPS4) running 7.2.13. Each 4 GiB streaming
 pass measured about 4.03 GiB of UMC reads; the same pass with NT stores measured

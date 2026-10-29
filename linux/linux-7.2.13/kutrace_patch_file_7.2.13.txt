@@ -1,16 +1,16 @@
-diff -Naur original/arch/x86/entry/common.c patched/arch/x86/entry/common.c
---- original/arch/x86/entry/common.c	2024-07-15 09:10:38.771859555 -0700
-+++ patched/arch/x86/entry/common.c	2024-07-15 09:11:08.056275279 -0700
-@@ -36,6 +36,8 @@
+diff -Naur original/arch/x86/entry/syscall_64.c patched/arch/x86/entry/syscall_64.c
+--- original/arch/x86/entry/syscall_64.c	2026-10-26 15:01:14.000000000 +0000
++++ patched/arch/x86/entry/syscall_64.c	2026-10-27 22:27:11.434470788 +0000
+@@ -9,6 +9,8 @@
+ #include <linux/nospec.h>
  #include <asm/syscall.h>
- #include <asm/irq_stack.h>
  
 +#include <linux/kutrace.h>
 +
- #ifdef CONFIG_X86_64
- 
- static __always_inline bool do_syscall_x64(struct pt_regs *regs, int nr)
-@@ -48,8 +50,34 @@
+ #define __SYSCALL(nr, sym) extern long __x64_##sym(const struct pt_regs *);
+ #define __SYSCALL_NORETURN(nr, sym) extern long __noreturn __x64_##sym(const struct pt_regs *);
+ #include <asm/syscalls_64.h>
+@@ -60,8 +62,34 @@
  
  	if (likely(unr < NR_syscalls)) {
  		unr = array_index_nospec(unr, NR_syscalls);
@@ -24,7 +24,7 @@ diff -Naur original/arch/x86/entry/common.c patched/arch/x86/entry/common.c
 +		/* Pass in low 16 bits of return value */
 +		kutrace1(KUTRACE_SYSRET64 | kutrace_map_nr(unr), regs->ax & 0xFFFFul);
 +	
- 		return true;
++		return true;
 +		
 +#ifdef CONFIG_KUTRACE
 +	/* dsites 2023.02.18 hook for controlling kutrace */
@@ -39,16 +39,16 @@ diff -Naur original/arch/x86/entry/common.c patched/arch/x86/entry/common.c
 +		/*  syscall arg0 in rdi (command), arg1 in rsi (arg) */
 +		regs->ax = (*kutrace_global_ops.kutrace_trace_control)(
 +			regs->di, regs->si);
-+		return true;
+ 		return true;
 +#endif
 +
  	}
  	return false;
  }
 diff -Naur original/arch/x86/Kconfig patched/arch/x86/Kconfig
---- original/arch/x86/Kconfig	2024-07-15 09:10:38.771859555 -0700
-+++ patched/arch/x86/Kconfig	2024-07-15 09:11:08.056275279 -0700
-@@ -47,6 +47,15 @@
+--- original/arch/x86/Kconfig	2026-10-26 15:01:14.000000000 +0000
++++ patched/arch/x86/Kconfig	2026-10-27 22:26:47.106520601 +0000
+@@ -49,6 +49,15 @@
  	  generic code, as other architectures still use it. But we
  	  only need to keep it around for x86_64. No need to keep it
  	  for x86_32. For x86_32, force DYNAMIC_FTRACE.
@@ -65,18 +65,18 @@ diff -Naur original/arch/x86/Kconfig patched/arch/x86/Kconfig
  # Arch settings
  #
 diff -Naur original/arch/x86/kernel/acpi/cstate.c patched/arch/x86/kernel/acpi/cstate.c
---- original/arch/x86/kernel/acpi/cstate.c	2024-07-15 09:10:38.771859555 -0700
-+++ patched/arch/x86/kernel/acpi/cstate.c	2024-07-15 09:11:08.056275279 -0700
-@@ -16,6 +16,8 @@
- #include <asm/mwait.h>
+--- original/arch/x86/kernel/acpi/cstate.c	2026-10-26 15:01:14.000000000 +0000
++++ patched/arch/x86/kernel/acpi/cstate.c	2026-10-27 22:26:47.106520601 +0000
+@@ -19,6 +19,8 @@
  #include <asm/special_insns.h>
+ #include <asm/smp.h>
  
 +#include <linux/kutrace.h>
 +
  /*
   * Initialize bm_flags based on the CPU cache properties
   * On SMP it depends on cache configuration
-@@ -210,8 +212,10 @@
+@@ -222,8 +224,10 @@
  	struct cstate_entry *percpu_entry;
  
  	percpu_entry = per_cpu_ptr(cpu_cstate_entry, cpu);
@@ -88,9 +88,9 @@ diff -Naur original/arch/x86/kernel/acpi/cstate.c patched/arch/x86/kernel/acpi/c
  EXPORT_SYMBOL_GPL(acpi_processor_ffh_cstate_enter);
  
 diff -Naur original/arch/x86/kernel/apic/apic.c patched/arch/x86/kernel/apic/apic.c
---- original/arch/x86/kernel/apic/apic.c	2024-07-15 09:10:38.771859555 -0700
-+++ patched/arch/x86/kernel/apic/apic.c	2024-07-15 09:11:08.056275279 -0700
-@@ -65,6 +65,8 @@
+--- original/arch/x86/kernel/apic/apic.c	2026-10-26 15:01:14.000000000 +0000
++++ patched/arch/x86/kernel/apic/apic.c	2026-10-27 22:26:47.106520601 +0000
+@@ -69,6 +69,8 @@
  #include <asm/irq_regs.h>
  #include <asm/cpu.h>
  
@@ -98,8 +98,8 @@ diff -Naur original/arch/x86/kernel/apic/apic.c patched/arch/x86/kernel/apic/api
 +
  #include "local.h"
  
- unsigned int num_processors;
-@@ -1078,9 +1080,22 @@
+ /* Processor that is doing the boot up */
+@@ -1064,9 +1066,22 @@
  	struct pt_regs *old_regs = set_irq_regs(regs);
  
  	apic_eoi();
@@ -123,9 +123,9 @@ diff -Naur original/arch/x86/kernel/apic/apic.c patched/arch/x86/kernel/apic/api
  	set_irq_regs(old_regs);
  }
 diff -Naur original/arch/x86/kernel/apic/ipi.c patched/arch/x86/kernel/apic/ipi.c
---- original/arch/x86/kernel/apic/ipi.c	2024-07-15 09:10:38.771859555 -0700
-+++ patched/arch/x86/kernel/apic/ipi.c	2024-07-15 09:11:08.056275279 -0700
-@@ -8,6 +8,8 @@
+--- original/arch/x86/kernel/apic/ipi.c	2026-10-26 15:01:14.000000000 +0000
++++ patched/arch/x86/kernel/apic/ipi.c	2026-10-27 22:26:47.106520601 +0000
+@@ -9,6 +9,8 @@
  
  #include "local.h"
  
@@ -134,7 +134,7 @@ diff -Naur original/arch/x86/kernel/apic/ipi.c patched/arch/x86/kernel/apic/ipi.
  DEFINE_STATIC_KEY_FALSE(apic_use_ipi_shorthand);
  
  #ifdef CONFIG_SMP
-@@ -70,16 +72,20 @@
+@@ -71,16 +73,20 @@
  		WARN(1, "sched: Unexpected reschedule of offline CPU#%d!\n", cpu);
  		return;
  	}
@@ -156,42 +156,41 @@ diff -Naur original/arch/x86/kernel/apic/ipi.c patched/arch/x86/kernel/apic/ipi.
  		unsigned int cpu = smp_processor_id();
  
 diff -Naur original/arch/x86/kernel/irq.c patched/arch/x86/kernel/irq.c
---- original/arch/x86/kernel/irq.c	2024-07-15 09:10:38.771859555 -0700
-+++ patched/arch/x86/kernel/irq.c	2024-07-15 09:11:08.056275279 -0700
-@@ -26,6 +26,8 @@
- #define CREATE_TRACE_POINTS
+--- original/arch/x86/kernel/irq.c	2026-10-26 15:01:14.000000000 +0000
++++ patched/arch/x86/kernel/irq.c	2026-10-27 22:32:24.597826335 +0000
+@@ -31,6 +31,8 @@
  #include <asm/trace/irq_vectors.h>
+ #endif
  
 +#include <linux/kutrace.h>
 +
  DEFINE_PER_CPU_SHARED_ALIGNED(irq_cpustat_t, irq_stat);
  EXPORT_PER_CPU_SYMBOL(irq_stat);
  
-@@ -249,6 +251,8 @@
+@@ -274,12 +276,16 @@
+ {
  	struct pt_regs *old_regs = set_irq_regs(regs);
- 	struct irq_desc *desc;
  
 +	kutrace1(KUTRACE_IRQ + (vector & 0xFF), 0);
 +
  	/* entry code tells RCU that we're not quiescent.  Check it. */
  	RCU_LOCKDEP_WARN(!rcu_is_watching(), "IRQ failed to wake up RCU");
  
-@@ -267,6 +271,8 @@
- 		}
- 	}
+ 	if (unlikely(!call_irq_handler(vector, regs)))
+ 		apic_eoi();
  
 +	kutrace1(KUTRACE_IRQRET + (vector & 0xFF), 0);
 +
  	set_irq_regs(old_regs);
  }
  
-@@ -281,11 +287,13 @@
+@@ -294,11 +300,13 @@
  	struct pt_regs *old_regs = set_irq_regs(regs);
  
  	apic_eoi();
 +	kutrace1(KUTRACE_IRQ + X86_PLATFORM_IPI_VECTOR, 0);
  	trace_x86_platform_ipi_entry(X86_PLATFORM_IPI_VECTOR);
- 	inc_irq_stat(x86_platform_ipis);
+ 	inc_irq_stat(X86_PLATFORM_IPI);
  	if (x86_platform_ipi_callback)
  		x86_platform_ipi_callback();
  	trace_x86_platform_ipi_exit(X86_PLATFORM_IPI_VECTOR);
@@ -200,8 +199,8 @@ diff -Naur original/arch/x86/kernel/irq.c patched/arch/x86/kernel/irq.c
  }
  #endif
 diff -Naur original/arch/x86/kernel/irq_work.c patched/arch/x86/kernel/irq_work.c
---- original/arch/x86/kernel/irq_work.c	2024-07-15 09:10:38.771859555 -0700
-+++ patched/arch/x86/kernel/irq_work.c	2024-07-15 09:11:08.056275279 -0700
+--- original/arch/x86/kernel/irq_work.c	2026-10-26 15:01:14.000000000 +0000
++++ patched/arch/x86/kernel/irq_work.c	2026-10-27 22:32:24.597826335 +0000
 @@ -13,14 +13,18 @@
  #include <asm/trace/irq_vectors.h>
  #include <linux/interrupt.h>
@@ -214,7 +213,7 @@ diff -Naur original/arch/x86/kernel/irq_work.c patched/arch/x86/kernel/irq_work.
  	apic_eoi();
 +	kutrace1(KUTRACE_IRQ + IRQ_WORK_VECTOR, 0);
  	trace_irq_work_entry(IRQ_WORK_VECTOR);
- 	inc_irq_stat(apic_irq_work_irqs);
+ 	inc_irq_stat(IRQ_WORK);
  	irq_work_run();
  	trace_irq_work_exit(IRQ_WORK_VECTOR);
 +	kutrace1(KUTRACE_IRQRET + IRQ_WORK_VECTOR, 0);
@@ -222,9 +221,9 @@ diff -Naur original/arch/x86/kernel/irq_work.c patched/arch/x86/kernel/irq_work.
  
  void arch_irq_work_raise(void)
 diff -Naur original/arch/x86/kernel/process.c patched/arch/x86/kernel/process.c
---- original/arch/x86/kernel/process.c	2024-07-15 09:10:38.771859555 -0700
-+++ patched/arch/x86/kernel/process.c	2024-07-15 09:11:08.056275279 -0700
-@@ -55,6 +55,8 @@
+--- original/arch/x86/kernel/process.c	2026-10-26 15:01:14.000000000 +0000
++++ patched/arch/x86/kernel/process.c	2026-10-27 22:32:24.597826335 +0000
+@@ -57,6 +57,8 @@
  
  #include "process.h"
  
@@ -233,17 +232,17 @@ diff -Naur original/arch/x86/kernel/process.c patched/arch/x86/kernel/process.c
  /*
   * per-CPU TSS segments. Threads are completely 'soft' on Linux,
   * no more per-task TSS's. The TSS size is kept cacheline-aligned
-@@ -927,6 +929,7 @@
- 		__monitor((void *)&current_thread_info()->flags, 0, 0);
- 		if (!need_resched()) {
- 			__sti_mwait(0, 0);
-+			kutrace1(KUTRACE_MONITOREXIT, 0);
- 			raw_local_irq_disable();
- 		}
+@@ -928,6 +930,7 @@
+ 			goto out;
+ 
+ 		__sti_mwait(0, 0);
++		kutrace1(KUTRACE_MONITOREXIT, 0);
+ 		raw_local_irq_disable();
  	}
+ 
 diff -Naur original/arch/x86/kernel/smp.c patched/arch/x86/kernel/smp.c
---- original/arch/x86/kernel/smp.c	2024-07-15 09:10:38.771859555 -0700
-+++ patched/arch/x86/kernel/smp.c	2024-07-15 09:11:08.056275279 -0700
+--- original/arch/x86/kernel/smp.c	2026-10-26 15:01:14.000000000 +0000
++++ patched/arch/x86/kernel/smp.c	2026-10-27 22:32:24.597826335 +0000
 @@ -23,6 +23,8 @@
  #include <linux/gfp.h>
  #include <linux/kexec.h>
@@ -253,13 +252,13 @@ diff -Naur original/arch/x86/kernel/smp.c patched/arch/x86/kernel/smp.c
  #include <asm/mtrr.h>
  #include <asm/tlbflush.h>
  #include <asm/mmu_context.h>
-@@ -244,28 +246,34 @@
+@@ -249,28 +251,34 @@
  DEFINE_IDTENTRY_SYSVEC_SIMPLE(sysvec_reschedule_ipi)
  {
  	apic_eoi();
 +	kutrace1(KUTRACE_IRQ + RESCHEDULE_VECTOR, 0);
  	trace_reschedule_entry(RESCHEDULE_VECTOR);
- 	inc_irq_stat(irq_resched_count);
+ 	inc_irq_stat(RESCHEDULE);
  	scheduler_ipi();
  	trace_reschedule_exit(RESCHEDULE_VECTOR);
 +	kutrace1(KUTRACE_IRQRET + RESCHEDULE_VECTOR, 0);
@@ -270,7 +269,7 @@ diff -Naur original/arch/x86/kernel/smp.c patched/arch/x86/kernel/smp.c
  	apic_eoi();
 +	kutrace1(KUTRACE_IRQ + CALL_FUNCTION_VECTOR, 0);
  	trace_call_function_entry(CALL_FUNCTION_VECTOR);
- 	inc_irq_stat(irq_call_count);
+ 	inc_irq_stat(CALL_FUNCTION);
  	generic_smp_call_function_interrupt();
  	trace_call_function_exit(CALL_FUNCTION_VECTOR);
 +	kutrace1(KUTRACE_IRQRET + CALL_FUNCTION_VECTOR, 0);
@@ -281,7 +280,7 @@ diff -Naur original/arch/x86/kernel/smp.c patched/arch/x86/kernel/smp.c
  	apic_eoi();
 +	kutrace1(KUTRACE_IRQ + CALL_FUNCTION_SINGLE_VECTOR, 0);
  	trace_call_function_single_entry(CALL_FUNCTION_SINGLE_VECTOR);
- 	inc_irq_stat(irq_call_count);
+ 	inc_irq_stat(CALL_FUNCTION);
  	generic_smp_call_function_single_interrupt();
  	trace_call_function_single_exit(CALL_FUNCTION_SINGLE_VECTOR);
 +	kutrace1(KUTRACE_IRQRET + CALL_FUNCTION_SINGLE_VECTOR, 0);
@@ -289,18 +288,18 @@ diff -Naur original/arch/x86/kernel/smp.c patched/arch/x86/kernel/smp.c
  
  static int __init nonmi_ipi_setup(char *str)
 diff -Naur original/arch/x86/mm/fault.c patched/arch/x86/mm/fault.c
---- original/arch/x86/mm/fault.c	2024-07-15 09:10:38.771859555 -0700
-+++ patched/arch/x86/mm/fault.c	2024-07-15 09:11:08.056275279 -0700
-@@ -38,6 +38,8 @@
+--- original/arch/x86/mm/fault.c	2026-10-26 15:01:14.000000000 +0000
++++ patched/arch/x86/mm/fault.c	2026-10-27 22:32:24.597826335 +0000
+@@ -40,6 +40,8 @@
  #define CREATE_TRACE_POINTS
- #include <asm/trace/exceptions.h>
+ #include <trace/events/exceptions.h>
  
 +#include <linux/kutrace.h>
 +
  /*
   * Returns 0 if mmiotrace is disabled, or if the fault is not
   * handled by mmiotrace:
-@@ -1458,6 +1460,8 @@
+@@ -1476,6 +1478,8 @@
  	if (unlikely(kmmio_fault(regs, address)))
  		return;
  
@@ -309,28 +308,28 @@ diff -Naur original/arch/x86/mm/fault.c patched/arch/x86/mm/fault.c
  	/* Was the fault on kernel-controlled part of the address space? */
  	if (unlikely(fault_in_kernel_space(address))) {
  		do_kern_addr_fault(regs, error_code, address);
-@@ -1472,6 +1476,8 @@
- 		 */
- 		local_irq_disable();
- 	}
+@@ -1487,6 +1491,8 @@
+ 	 * make sure to disable them again.
+ 	 */
+ 	local_irq_disable();
 +	
 +	kutrace1(KUTRACE_TRAPRET + KUTRACE_PAGEFAULT, 0);
  }
  
  DEFINE_IDTENTRY_RAW_ERRORCODE(exc_page_fault)
 diff -Naur original/drivers/acpi/acpi_pad.c patched/drivers/acpi/acpi_pad.c
---- original/drivers/acpi/acpi_pad.c	2024-07-15 09:10:38.771859555 -0700
-+++ patched/drivers/acpi/acpi_pad.c	2024-07-15 09:11:08.056275279 -0700
-@@ -21,6 +21,8 @@
+--- original/drivers/acpi/acpi_pad.c	2026-10-26 15:01:14.000000000 +0000
++++ patched/drivers/acpi/acpi_pad.c	2026-10-27 22:32:24.597826335 +0000
+@@ -23,6 +23,8 @@
  #include <asm/mwait.h>
  #include <xen/xen.h>
  
 +#include <linux/kutrace.h>
 +
- #define ACPI_PROCESSOR_AGGREGATOR_CLASS	"acpi_pad"
- #define ACPI_PROCESSOR_AGGREGATOR_DEVICE_NAME "Processor Aggregator"
  #define ACPI_PROCESSOR_AGGREGATOR_NOTIFY 0x80
-@@ -173,7 +175,9 @@
+ 
+ #define ACPI_PROCESSOR_AGGREGATOR_STATUS_SUCCESS	0
+@@ -179,7 +181,9 @@
  			tick_broadcast_enter();
  			stop_critical_timings();
  
@@ -340,7 +339,7 @@ diff -Naur original/drivers/acpi/acpi_pad.c patched/drivers/acpi/acpi_pad.c
  
  			start_critical_timings();
  			tick_broadcast_exit();
-@@ -204,8 +208,10 @@
+@@ -210,8 +214,10 @@
  		 * we need to deal with it, or this loop will continue to
  		 * spin without calling __mwait().
  		 */
@@ -353,18 +352,18 @@ diff -Naur original/drivers/acpi/acpi_pad.c patched/drivers/acpi/acpi_pad.c
  
  	exit_round_robin(tsk_index);
 diff -Naur original/drivers/acpi/processor_idle.c patched/drivers/acpi/processor_idle.c
---- original/drivers/acpi/processor_idle.c	2024-07-15 09:10:38.771859555 -0700
-+++ patched/drivers/acpi/processor_idle.c	2024-07-15 09:11:08.056275279 -0700
-@@ -25,6 +25,8 @@
- #include <acpi/processor.h>
- #include <linux/context_tracking.h>
+--- original/drivers/acpi/processor_idle.c	2026-10-26 15:01:14.000000000 +0000
++++ patched/drivers/acpi/processor_idle.c	2026-10-27 22:26:47.110520591 +0000
+@@ -26,6 +26,8 @@
+ 
+ #include "internal.h"
  
 +#include <linux/kutrace.h>
 +
  /*
   * Include the apic definitions for x86 to have the APIC timer related defines
   * available also for UP (on SMP it gets magically included via linux/smp.h).
-@@ -526,6 +528,7 @@
+@@ -521,6 +523,7 @@
  static __cpuidle void io_idle(unsigned long addr)
  {
  	/* IO port based C-state */
@@ -373,20 +372,20 @@ diff -Naur original/drivers/acpi/processor_idle.c patched/drivers/acpi/processor
  
  #ifdef	CONFIG_X86
 diff -Naur original/drivers/idle/intel_idle.c patched/drivers/idle/intel_idle.c
---- original/drivers/idle/intel_idle.c	2024-07-15 09:10:38.771859555 -0700
-+++ patched/drivers/idle/intel_idle.c	2024-07-15 09:11:08.056275279 -0700
-@@ -58,6 +58,8 @@
- #include <asm/msr.h>
+--- original/drivers/idle/intel_idle.c	2026-10-26 15:01:14.000000000 +0000
++++ patched/drivers/idle/intel_idle.c	2026-10-27 22:32:24.597826335 +0000
+@@ -65,6 +65,8 @@
  #include <asm/fpu/api.h>
+ #include <asm/smp.h>
  
 +#include <linux/kutrace.h>
 +
- #define INTEL_IDLE_VERSION "0.5.1"
- 
  static struct cpuidle_driver intel_idle_driver = {
-@@ -138,7 +140,9 @@
- 	unsigned long eax = flg2MWAIT(state->flags);
- 	unsigned long ecx = 1*irqoff; /* break on interrupt flag */
+ 	.name = "intel_idle",
+ 	.owner = THIS_MODULE,
+@@ -171,7 +173,9 @@
+ 	unsigned int eax = flg2MWAIT(state->flags);
+ 	unsigned int ecx = 1*irqoff; /* break on interrupt flag */
  
 +	kutrace1(KUTRACE_MWAIT, eax);
  	mwait_idle_with_hints(eax, ecx);
@@ -394,7 +393,7 @@ diff -Naur original/drivers/idle/intel_idle.c patched/drivers/idle/intel_idle.c
  
  	return index;
  }
-@@ -216,7 +220,9 @@
+@@ -249,7 +253,9 @@
  	if (state->flags & CPUIDLE_FLAG_INIT_XSTATE)
  		fpu_idle_fpregs();
  
@@ -405,30 +404,33 @@ diff -Naur original/drivers/idle/intel_idle.c patched/drivers/idle/intel_idle.c
  	return 0;
  }
 diff -Naur original/fs/exec.c patched/fs/exec.c
---- original/fs/exec.c	2024-07-15 09:10:38.771859555 -0700
-+++ patched/fs/exec.c	2024-07-15 09:11:08.056275279 -0700
-@@ -76,6 +76,8 @@
- 
- #include <trace/events/sched.h>
+--- original/fs/exec.c	2026-10-26 15:01:14.000000000 +0000
++++ patched/fs/exec.c	2026-10-27 22:32:24.597826335 +0000
+@@ -83,6 +83,8 @@
+ /* For vma exec functions. */
+ #include "../mm/internal.h"
  
 +#include <linux/kutrace.h>
 +
  static int bprm_creds_from_file(struct linux_binprm *bprm);
  
  int suid_dumpable = 0;
-@@ -1966,6 +1968,9 @@
+@@ -1896,7 +1898,11 @@
+ 			     current->comm, bprm->filename);
  	}
  
- 	retval = bprm_execve(bprm, fd, filename, flags);
+-	return bprm_execve(bprm);
++	retval = bprm_execve(bprm);
 +	/* Unconditionally put new pid name into trace */
 +	kutrace_pidrename(current);
 +
- out_free:
- 	free_bprm(bprm);
++	return retval;
+ }
  
+ int kernel_execve(const char *kernel_filename,
 diff -Naur original/include/linux/kutrace.h patched/include/linux/kutrace.h
---- original/include/linux/kutrace.h	1969-12-31 16:00:00.000000000 -0800
-+++ patched/include/linux/kutrace.h	2024-07-15 09:11:08.056275279 -0700
+--- original/include/linux/kutrace.h	1970-01-01 00:00:00.000000000 +0000
++++ patched/include/linux/kutrace.h	2026-10-27 22:26:47.110520591 +0000
 @@ -0,0 +1,185 @@
 +// SPDX-License-Identifier: BSD-3-Clause
 +/*
@@ -616,8 +618,8 @@ diff -Naur original/include/linux/kutrace.h patched/include/linux/kutrace.h
 +#endif /* _LINUX_KUTRACE_H */
 +
 diff -Naur original/kernel/kutrace/kutrace.c patched/kernel/kutrace/kutrace.c
---- original/kernel/kutrace/kutrace.c	1969-12-31 16:00:00.000000000 -0800
-+++ patched/kernel/kutrace/kutrace.c	2024-07-15 09:11:08.056275279 -0700
+--- original/kernel/kutrace/kutrace.c	1970-01-01 00:00:00.000000000 +0000
++++ patched/kernel/kutrace/kutrace.c	2026-10-27 22:26:47.110520591 +0000
 @@ -0,0 +1,37 @@
 +// SPDX-License-Identifier: BSD-3-Clause
 +/*
@@ -657,49 +659,45 @@ diff -Naur original/kernel/kutrace/kutrace.c patched/kernel/kutrace/kutrace.c
 +EXPORT_PER_CPU_SYMBOL(kutrace_traceblock_per_cpu);
 +
 diff -Naur original/kernel/kutrace/Makefile patched/kernel/kutrace/Makefile
---- original/kernel/kutrace/Makefile	1969-12-31 16:00:00.000000000 -0800
-+++ patched/kernel/kutrace/Makefile	2024-07-15 09:11:08.056275279 -0700
+--- original/kernel/kutrace/Makefile	1970-01-01 00:00:00.000000000 +0000
++++ patched/kernel/kutrace/Makefile	2026-10-27 22:26:47.110520591 +0000
 @@ -0,0 +1,3 @@
 +# dssites 2024.07.02
 +obj-$(CONFIG_KUTRACE) += kutrace.o
 +
 diff -Naur original/kernel/Makefile patched/kernel/Makefile
---- original/kernel/Makefile	2024-07-15 09:10:38.775859611 -0700
-+++ patched/kernel/Makefile	2024-07-15 09:11:08.056275279 -0700
-@@ -158,4 +158,6 @@
- $(obj)/kheaders_data.tar.xz: FORCE
- 	$(call cmd,genikh)
+--- original/kernel/Makefile	2026-10-26 15:01:14.000000000 +0000
++++ patched/kernel/Makefile	2026-10-27 22:31:53.121891375 +0000
+@@ -206,4 +206,6 @@
+ $(obj)/kheaders.md5: $(obj)/kheaders-srclist FORCE
+ 	$(call filechk,kheaders_md5sum)
  
 +obj-$(CONFIG_KUTRACE) += kutrace/
 +
- clean-files := kheaders_data.tar.xz kheaders.md5
+ clean-files := kheaders.md5 kheaders-srclist kheaders-objlist
 diff -Naur original/kernel/sched/core.c patched/kernel/sched/core.c
---- original/kernel/sched/core.c	2024-07-15 09:10:38.775859611 -0700
-+++ patched/kernel/sched/core.c	2024-07-15 09:11:08.056275279 -0700
-@@ -96,6 +96,8 @@
- #include "../../io_uring/io-wq.h"
+--- original/kernel/sched/core.c	2026-10-26 15:01:14.000000000 +0000
++++ patched/kernel/sched/core.c	2026-10-27 22:32:30.237814674 +0000
+@@ -100,6 +100,8 @@
  #include "../smpboot.h"
+ #include "../locking/mutex.h"
  
 +#include <linux/kutrace.h>
 +
  EXPORT_TRACEPOINT_SYMBOL_GPL(ipi_send_cpu);
  EXPORT_TRACEPOINT_SYMBOL_GPL(ipi_send_cpumask);
  
-@@ -1058,8 +1060,10 @@
- 
- 	if (set_nr_and_not_polling(curr))
- 		smp_send_reschedule(cpu);
--	else
-+	else {
+@@ -1225,6 +1227,7 @@
+ 		if (tif == TIF_NEED_RESCHED)
+ 			smp_send_reschedule(cpu);
+ 	} else {
 +		kutrace1(KUTRACE_MONITORSTORE, cpu);
  		trace_sched_wake_idle_without_ipi(cpu);
-+	}
+ 	}
  }
- 
- void resched_cpu(int cpu)
-@@ -1134,8 +1138,10 @@
- 
- 	if (set_nr_and_not_polling(rq->idle))
+@@ -1363,8 +1366,10 @@
+ 	 */
+ 	if (set_nr_and_not_polling(task_thread_info(rq->idle), TIF_NEED_RESCHED))
  		smp_send_reschedule(cpu);
 -	else
 +	else {
@@ -709,15 +707,15 @@ diff -Naur original/kernel/sched/core.c patched/kernel/sched/core.c
  }
  
  static bool wake_up_full_nohz_cpu(int cpu)
-@@ -3763,6 +3769,7 @@
-  */
+@@ -3744,6 +3749,7 @@
  static inline void ttwu_do_wakeup(struct task_struct *p)
  {
+ 	p->is_blocked = 0;
 +	kutrace1(KUTRACE_RUNNABLE, p->pid);
  	WRITE_ONCE(p->__state, TASK_RUNNING);
  	trace_sched_wakeup(p);
  }
-@@ -3917,6 +3924,7 @@
+@@ -3958,6 +3964,7 @@
  bool call_function_single_prep_ipi(int cpu)
  {
  	if (set_nr_if_polling(cpu_rq(cpu)->idle)) {
@@ -725,35 +723,35 @@ diff -Naur original/kernel/sched/core.c patched/kernel/sched/core.c
  		trace_sched_wake_idle_without_ipi(cpu);
  		return false;
  	}
-@@ -4855,6 +4863,8 @@
- 	struct rq *rq;
+@@ -4969,6 +4976,8 @@
+ 	int wake_flags = WF_FORK;
  
  	raw_spin_lock_irqsave(&p->pi_lock, rf.flags);
 +
 +	kutrace1(KUTRACE_RUNNABLE, p->pid);	
  	WRITE_ONCE(p->__state, TASK_RUNNING);
- #ifdef CONFIG_SMP
  	/*
-@@ -6584,6 +6594,8 @@
- 	struct rq *rq;
- 	int cpu;
+ 	 * Fork balancing, do it here and not earlier because:
+@@ -6749,6 +6758,7 @@
+ 	WARN_ON_ONCE(p->is_blocked);
+ 
+ 	if (signal_pending_state(task_state, p)) {
++		/* No kutrace here; just gives bogus arc */
+ 		WRITE_ONCE(p->__state, TASK_RUNNING);
+ 		*task_state_p = TASK_RUNNING;
+ 		clear_task_blocked_on(p, NULL);
+@@ -7122,6 +7132,8 @@
+ 	/* Trace preemptions consistently with task switches */
+ 	trace_sched_entry_tp(sched_mode == SM_PREEMPT);
  
 +	kutrace1(KUTRACE_SYSCALL64 + kutrace_map_nr(KUTRACE_SCHEDSYSCALL), 0);
 +
  	cpu = smp_processor_id();
  	rq = cpu_rq(cpu);
  	prev = rq->curr;
-@@ -6628,6 +6640,7 @@
- 	prev_state = READ_ONCE(prev->__state);
- 	if (!(sched_mode & SM_MASK_PREEMPT) && prev_state) {
- 		if (signal_pending_state(prev_state, prev)) {
-+			/* No kutrace here; just gives bogus arc */
- 			WRITE_ONCE(prev->__state, TASK_RUNNING);
- 		} else {
- 			prev->sched_contributes_to_load =
-@@ -6694,6 +6707,10 @@
+@@ -7276,6 +7288,10 @@
  
- 		trace_sched_switch(sched_mode & SM_MASK_PREEMPT, prev, next, prev_state);
+ 		trace_sched_switch(preempt, prev, next, prev_state);
  
 +		/* Put pid name into trace first time */
 +		kutrace_pidname(next);
@@ -762,18 +760,18 @@ diff -Naur original/kernel/sched/core.c patched/kernel/sched/core.c
  		/* Also unlocks the rq: */
  		rq = context_switch(rq, prev, next, &rf);
  	} else {
-@@ -6701,6 +6718,7 @@
- 		__balance_callbacks(rq);
+@@ -7285,6 +7301,7 @@
  		raw_spin_rq_unlock_irq(rq);
  	}
+ 	trace_sched_exit_tp(is_switch);
 +	kutrace1(KUTRACE_SYSRET64 + kutrace_map_nr(KUTRACE_SCHEDSYSCALL), 0);
  }
  
  void __noreturn do_task_dead(void)
 diff -Naur original/kernel/softirq.c patched/kernel/softirq.c
---- original/kernel/softirq.c	2024-07-15 09:10:38.775859611 -0700
-+++ patched/kernel/softirq.c	2024-07-15 09:11:08.056275279 -0700
-@@ -33,6 +33,8 @@
+--- original/kernel/softirq.c	2026-10-26 15:01:14.000000000 +0000
++++ patched/kernel/softirq.c	2026-10-27 22:32:24.597826335 +0000
+@@ -34,6 +34,8 @@
  #define CREATE_TRACE_POINTS
  #include <trace/events/irq.h>
  
@@ -782,13 +780,13 @@ diff -Naur original/kernel/softirq.c patched/kernel/softirq.c
  /*
     - No shared variables, all the data are CPU local.
     - If a softirq needs serialization, let it serialize itself
-@@ -549,9 +551,12 @@
+@@ -618,9 +620,12 @@
  
  		kstat_incr_softirqs_this_cpu(vec_nr);
  
 +		kutrace1(KUTRACE_IRQ + KUTRACE_BOTTOM_HALF, vec_nr);
  		trace_softirq_entry(vec_nr);
- 		h->action(h);
+ 		h->action();
  		trace_softirq_exit(vec_nr);
 +		kutrace1(KUTRACE_IRQRET + KUTRACE_BOTTOM_HALF, 0);
 +
@@ -796,9 +794,9 @@ diff -Naur original/kernel/softirq.c patched/kernel/softirq.c
  			pr_err("huh, entered softirq %u %s %p with preempt_count %08x, exited with %08x?\n",
  			       vec_nr, softirq_to_name[vec_nr], h->action,
 diff -Naur original/net/ipv4/tcp_input.c patched/net/ipv4/tcp_input.c
---- original/net/ipv4/tcp_input.c	2024-07-15 09:10:38.775859611 -0700
-+++ patched/net/ipv4/tcp_input.c	2024-07-15 09:11:08.056275279 -0700
-@@ -81,6 +81,8 @@
+--- original/net/ipv4/tcp_input.c	2026-10-26 15:01:14.000000000 +0000
++++ patched/net/ipv4/tcp_input.c	2026-10-27 22:26:47.114520584 +0000
+@@ -84,6 +84,8 @@
  #include <net/busy_poll.h>
  #include <net/mptcp.h>
  
@@ -807,7 +805,7 @@ diff -Naur original/net/ipv4/tcp_input.c patched/net/ipv4/tcp_input.c
  int sysctl_tcp_max_orphans __read_mostly = NR_FILE;
  
  #define FLAG_DATA		0x01 /* Incoming frame contained data.		*/
-@@ -5890,6 +5892,19 @@
+@@ -6511,6 +6513,19 @@
  	struct tcp_sock *tp = tcp_sk(sk);
  	unsigned int len = skb->len;
  
@@ -828,18 +826,18 @@ diff -Naur original/net/ipv4/tcp_input.c patched/net/ipv4/tcp_input.c
  	trace_tcp_probe(sk, skb);
  
 diff -Naur original/net/ipv4/tcp_output.c patched/net/ipv4/tcp_output.c
---- original/net/ipv4/tcp_output.c	2024-07-15 09:10:38.775859611 -0700
-+++ patched/net/ipv4/tcp_output.c	2024-07-15 09:11:08.056275279 -0700
-@@ -47,6 +47,8 @@
+--- original/net/ipv4/tcp_output.c	2026-10-26 15:01:14.000000000 +0000
++++ patched/net/ipv4/tcp_output.c	2026-10-27 22:32:24.597826335 +0000
+@@ -52,6 +52,8 @@
  
  #include <trace/events/tcp.h>
  
 +#include <linux/kutrace.h>
 +
- /* Refresh clocks of a TCP socket,
-  * ensuring monotically increasing values.
-  */
-@@ -1412,6 +1414,15 @@
+ void noinline tcp_mstamp_refresh(struct tcp_sock *tp)
+ {
+ 	tcp_mstamp_refresh_inline(tp);
+@@ -1713,6 +1715,15 @@
  
  	tcp_add_tx_delay(skb, tp);
  
@@ -856,18 +854,18 @@ diff -Naur original/net/ipv4/tcp_output.c patched/net/ipv4/tcp_output.c
  				 inet6_csk_xmit, ip_queue_xmit,
  				 sk, skb, &inet->cork.fl);
 diff -Naur original/net/ipv4/udp.c patched/net/ipv4/udp.c
---- original/net/ipv4/udp.c	2024-07-15 09:10:38.775859611 -0700
-+++ patched/net/ipv4/udp.c	2024-07-15 09:11:08.056275279 -0700
-@@ -119,6 +119,8 @@
- #include <net/ipv6_stubs.h>
- #endif
+--- original/net/ipv4/udp.c	2026-10-26 15:01:14.000000000 +0000
++++ patched/net/ipv4/udp.c	2026-10-27 22:26:47.118520575 +0000
+@@ -120,6 +120,8 @@
+ #include <net/gro.h>
+ #include <net/rps.h>
  
 +#include <linux/kutrace.h>
 +
  struct udp_table udp_table __read_mostly;
- EXPORT_SYMBOL(udp_table);
  
-@@ -979,6 +981,14 @@
+ long sysctl_udp_mem[3] __read_mostly;
+@@ -1178,6 +1180,14 @@
  		uh->check = CSUM_MANGLED_0;
  
  send:
@@ -880,10 +878,10 @@ diff -Naur original/net/ipv4/udp.c patched/net/ipv4/udp.c
 +        }
 +#endif
  	err = ip_send_skb(sock_net(sk), skb);
- 	if (err) {
+ 	if (unlikely(err)) {
  		if (err == -ENOBUFS &&
-@@ -2418,6 +2428,17 @@
- 	if (udp4_csum_init(skb, uh, proto))
+@@ -2667,6 +2677,17 @@
+ 	if (udp4_csum_init(skb, uh))
  		goto csum_error;
  
 +/* Apply quick filter and if it passes, make a KUtrace entry for rx packet. */

@@ -249,7 +249,7 @@ sudo make install
 sudo DEBIAN_FRONTEND=noninteractive apt-get install kexec-tools -y
 # sudo kexec -l arch/x86/boot/bzImage --append="$(cat /proc/cmdline) modulepath=$(pwd)/lib/modules" --reuse-cmdline
 # cat /sys/kernel/kexec_loaded
-# sudo kexec -l /boot/vmlinuz-6.6.36 --initrd=/boot/initrd.img-6.6.36 --append="$(cat /proc/cmdline)"
+# sudo kexec -l /boot/vmlinuz-7.2.13 --initrd=/boot/initrd.img-7.2.13 --append="$(cat /proc/cmdline)"
 # sudo kexec -e
 
 # cd module
